@@ -7,7 +7,7 @@ export default defineConfig({
    * default per-platform snapshot suffix is dropped. They are rendered by CI on
    * Linux; regenerating locally will produce font differences.
    */
-  snapshotPathTemplate: '.github/assets/{arg}{ext}',
+  snapshotPathTemplate: 'assets/{arg}{ext}',
   use: {
     viewport: { width: 1200, height: 760 },
     deviceScaleFactor: 2,
