@@ -1,3 +1,4 @@
+import type { Buffer } from 'node:buffer'
 /**
  * Boots one `nuxt dev` per cell of [nuxt 4, nuxt 5] x [`experimental.nitroViteEnvironment`
  * off, on]. The shared app lives in `test/fixtures/nuxt-app` and is copied into
@@ -9,10 +10,12 @@
  * `experimental.nitroViteEnvironment` resolver are skipped with a reason.
  */
 import type { ChildProcess } from 'node:child_process'
+import type { AddressInfo } from 'node:net'
 import type { ErrorReport } from '../src/types'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { cp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -67,10 +70,14 @@ function log(message: string): void {
   process.stdout.write(`${message}\n`)
 }
 
-async function waitFor<T>(check: () => Promise<T | undefined>, timeout: number, label: string): Promise<T> {
+async function waitFor<T>(check: () => Promise<T | undefined>, timeout: number, label: string, fatal?: () => string | undefined): Promise<T> {
   const deadline = Date.now() + timeout
   let last: unknown
   while (Date.now() < deadline) {
+    const stop = fatal?.()
+    if (stop) {
+      throw new Error(`gave up waiting for ${label}: ${stop}`)
+    }
     try {
       const result = await check()
       if (result !== undefined) {
@@ -83,6 +90,18 @@ async function waitFor<T>(check: () => Promise<T | undefined>, timeout: number, 
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   throw new Error(`timed out waiting for ${label}${last ? `: ${last}` : ''}`)
+}
+
+/** Ask the OS for a free port, so a port already in use cannot look like a slow boot. */
+async function freePort(): Promise<number> {
+  const server = createServer()
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const { port } = server.address() as AddressInfo
+  await new Promise(resolve => server.close(resolve))
+  return port
 }
 
 /** Copy the shared app over the version fixture so both cells share one source of truth. */
@@ -120,7 +139,7 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
 
   beforeAll(async () => {
     await syncApp(root)
-    const port = 3100 + Math.floor(Math.random() * 400)
+    const port = await freePort()
     url = `http://127.0.0.1:${port}`
     dev = spawn(process.execPath, [`${root}node_modules/nuxt/bin/nuxt.mjs`, 'dev', '--port', String(port)], {
       cwd: root,
@@ -132,9 +151,32 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
         MY_BAD_NUXT_VERSION: nuxtVersion,
         MY_BAD_VUE_VERSION: vueVersion,
       },
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
-    await waitFor(async () => await fetch(url).then(res => res.ok || undefined), 180_000, 'the Nuxt dev server')
+    // The pipes are drained as they arrive: an undrained pipe would block the dev server once its buffer filled.
+    const output: string[] = []
+    const collect = (chunk: Buffer) => {
+      output.push(chunk.toString())
+      if (output.length > 200) {
+        output.shift()
+      }
+    }
+    dev.stdout!.on('data', collect)
+    dev.stderr!.on('data', collect)
+    let died: string | undefined
+    dev.once('exit', (code, signal) => {
+      died = `it exited with code ${code}${signal ? ` (${signal})` : ''}`
+    })
+    dev.once('error', (error) => {
+      died = `it could not be spawned: ${error.message}`
+    })
+    try {
+      await waitFor(async () => await fetch(url).then(res => res.ok || undefined), 180_000, 'the Nuxt dev server', () => died)
+    }
+    catch (error) {
+      const tail = output.join('').trimEnd()
+      throw new Error(`${(error as Error).message}\n--- nuxt dev output ---\n${tail || '(no output)'}`)
+    }
   }, 240_000)
 
   afterAll(async () => {
