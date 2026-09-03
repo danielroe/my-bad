@@ -16,17 +16,21 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const dir = await mkdtemp(join(tmpdir(), 'my-bad-pack-'))
 
 try {
-  const { stdout } = await run('pnpm', ['pack', '--pack-destination', dir], { cwd: root })
-  const tarball = (await readdir(dir)).find(file => file.endsWith('.tgz'))
-  if (!tarball) {
-    throw new Error(`pnpm pack produced no tarball: ${stdout}`)
-  }
-  const dist = await readdir(join(root, 'dist'), { recursive: true })
+  const dist = await readdir(join(root, 'dist'), { recursive: true }).catch(() => {
+    throw new Error('dist/ is missing: run `pnpm build` first')
+  })
   for (const file of dist.filter(file => file.endsWith('.mjs'))) {
     const code = await readFile(join(root, 'dist', file), 'utf8')
     if (/(?:from\s*|import\()['"]\\?0?virtual:my-bad-client/.test(code)) {
       throw new Error(`dist/${file} still references virtual:my-bad-client`)
     }
+  }
+
+  // `--ignore-scripts` keeps `prepack` from rebuilding a different `dist` than the one checked above.
+  const { stdout } = await run('pnpm', ['pack', '--config.ignore-scripts=true', '--pack-destination', dir], { cwd: root })
+  const tarball = (await readdir(dir)).find(file => file.endsWith('.tgz'))
+  if (!tarball) {
+    throw new Error(`pnpm pack produced no tarball: ${stdout}`)
   }
 
   await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'consumer', private: true, type: 'module' }))

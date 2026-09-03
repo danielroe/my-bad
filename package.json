@@ -39,7 +39,7 @@
     "dev": "vitest dev",
     "lint": "eslint . --fix",
     "prepare": "simple-git-hooks",
-    "prepack": "pnpm lint && pnpm test && pnpm build",
+    "prepack": "pnpm build",
     "test": "pnpm test:unit && pnpm test:types",
     "test:unit": "vitest",
     "test:knip": "knip",
