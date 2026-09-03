@@ -1,12 +1,12 @@
 import type { ErrorReport, Frame, Snippet } from '../../types'
 import type { Palette } from './style'
 import process from 'node:process'
-import { link } from 'clickable-path'
+import { hyperlink, link } from 'clickable-path'
 import { displayPath, isFilePath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { snippetTokens } from '../../report/tokenize'
 import { groupFrames, groupSummary } from '../frames'
-import { createPalette, detectAnsiEnv, hyperlink, truncateMiddle, wrap } from './style'
+import { createPalette, detectAnsiEnv, truncateMiddle, wrap } from './style'
 
 export interface RenderAnsiOptions {
   cwd?: string
@@ -73,7 +73,7 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     }
   }
   if (report.docsUrl) {
-    out.push(`${indent}  ${p.dim('→')} ${hyperlink(p.underline(p.cyan(report.docsUrl)), report.docsUrl, ctx.hyperlinks)}`)
+    out.push(`${indent}  ${p.dim('→')} ${hyperlink(p.underline(p.cyan(report.docsUrl)), report.docsUrl, { enabled: ctx.hyperlinks })}`)
   }
 
   if (report.trace?.length) {

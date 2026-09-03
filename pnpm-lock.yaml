@@ -12,8 +12,8 @@ importers:
   .:
     dependencies:
       clickable-path:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
       errx:
         specifier: ^0.2.0
         version: 0.2.0
@@ -2430,6 +2430,10 @@ packages:
 
   clickable-path@0.1.0:
     resolution: {integrity: sha512-JRBIpDbw7S1vaEGvCXfm728cfchkUDtv4I2DjWMMm7IoEygxuFWhO6UQOrg+u61TPI13c/HsGG/RLwl3NBt+4w==}
+    engines: {node: '>=22.1.0'}
+
+  clickable-path@0.1.1:
+    resolution: {integrity: sha512-ROn/mdV2pR8WFdpJjFDCSouLRg9myf95xacO1iy8G/AVO/x5y124pjF3EaoWrTBRWC3vh0DPqa/MhKyx3mMeKg==}
     engines: {node: '>=22.1.0'}
 
   cliui@9.0.1:
@@ -8169,6 +8173,8 @@ snapshots:
   citty@0.2.2: {}
 
   clickable-path@0.1.0: {}
+
+  clickable-path@0.1.1: {}
 
   cliui@9.0.1:
     dependencies:

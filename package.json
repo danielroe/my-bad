@@ -62,7 +62,7 @@
     }
   },
   "dependencies": {
-    "clickable-path": "^0.1.0",
+    "clickable-path": "^0.1.1",
     "errx": "^0.2.0",
     "fnv1a-64": "^0.1.2"
   },

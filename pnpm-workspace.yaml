@@ -2,6 +2,7 @@ allowBuilds:
   esbuild: false
   simple-git-hooks: true
 
+minimumReleaseAgeExcludePrune: true
 minimumReleaseAgeExclude:
   - errx
   - clickable-path
