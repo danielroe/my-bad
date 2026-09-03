@@ -1,0 +1,9 @@
+{
+  "name": "fixture-nitro-v3",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "my-bad": "latest",
+    "nitro": "3.0.260610-beta"
+  }
+}

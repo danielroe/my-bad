@@ -1,0 +1,9 @@
+{
+  "name": "fixture-vite-ssr",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "my-bad": "latest",
+    "vite": "^8.2.2"
+  }
+}

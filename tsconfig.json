@@ -2,11 +2,13 @@
   "compilerOptions": {
     "target": "es2022",
     "lib": [
-      "es2022"
+      "es2022",
+      "dom"
     ],
     "moduleDetection": "force",
     "module": "preserve",
     "resolveJsonModule": true,
+    "types": ["node"],
     "allowJs": true,
     "strict": true,
     "noImplicitOverride": true,
@@ -19,8 +21,14 @@
     "skipLibCheck": true
   },
   "include": [
+    "scripts",
     "src",
     "test",
     "playground"
+  ],
+  "exclude": [
+    "test/fixtures/nuxt-app",
+    "test/fixtures/nuxt-v4",
+    "test/fixtures/nuxt-v5"
   ]
 }

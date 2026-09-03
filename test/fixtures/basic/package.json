@@ -1,0 +1,8 @@
+{
+  "name": "fixture-basic",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "tsdown": "0.22.14"
+  }
+}

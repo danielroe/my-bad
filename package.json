@@ -1,33 +1,39 @@
 {
-  "name": "package-name",
+  "name": "my-bad",
   "type": "module",
   "version": "0.0.0",
   "packageManager": "pnpm@11.24.0",
-  "description": "",
+  "description": "Beautiful dev-server error pages: HTML, ANSI and JSON from one sourcemapped report",
   "license": "MIT",
-  "repository": "danielroe/package-name",
+  "repository": "danielroe/my-bad",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./channel": "./src/channel/index.ts",
+    "./presets": "./src/presets/index.ts",
+    "./sinks": "./src/sinks/index.ts",
+    "./vite": "./src/vite/index.ts",
+    "./vite/client": "./src/vite/client.ts",
     "./package.json": "./package.json"
   },
   "types": "./dist/index.d.mts",
   "publishConfig": {
     "exports": {
       ".": "./dist/index.mjs",
+      "./channel": "./dist/channel/index.mjs",
+      "./presets": "./dist/presets/index.mjs",
+      "./sinks": "./dist/sinks/index.mjs",
+      "./vite": "./dist/vite/index.mjs",
+      "./vite/client": "./dist/vite/client.mjs",
       "./package.json": "./package.json"
-    }
-  },
-  "typesVersions": {
-    "*": {
-      "*": [
-        "./dist/index.d.mts"
-      ]
     }
   },
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "vitest dev",
@@ -38,18 +44,46 @@
     "test:unit": "vitest",
     "test:knip": "knip",
     "test:versions": "installed-check -d --no-workspaces",
-    "test:types": "tsc --noEmit"
+    "test:types": "tsc --noEmit",
+    "play": "pnpm build && node playground/dev.ts",
+    "screenshot": "pnpm build && node playground/screenshot.ts",
+    "test:pack": "pnpm build && node scripts/check-pack.ts",
+    "test:a11y": "vitest run test/a11y.test.ts test/browser.test.ts",
+    "play:vite": "pnpm build && node playground/vite/server.ts",
+    "release:preview": "pkg-pr-new publish --compact --pnpm"
+  },
+  "peerDependencies": {
+    "vite": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "clickable-path": "^0.1.0",
+    "errx": "^0.2.0",
+    "fnv1a-64": "^0.1.2"
   },
   "devDependencies": {
     "@antfu/eslint-config": "9.3.0",
+    "@types/node": "^26.4.0",
     "@vitest/coverage-v8": "4.1.11",
+    "ansivision": "^0.4.0",
+    "axe-core": "^4.13.0",
+    "consola": "^3.4.2",
     "eslint": "10.9.1",
+    "fast-check": "^4.9.0",
     "installed-check": "11.0.0",
     "knip": "6.33.0",
     "nano-staged": "1.0.2",
+    "pkg-pr-new": "0.0.88",
+    "playwright": "^1.62.1",
+    "rolldown": "~1.2.0",
     "simple-git-hooks": "2.14.0",
     "tsdown": "0.22.14",
     "typescript": "6.0.3",
+    "vite": "^8.2.2",
     "vitest": "4.1.11"
   },
   "simple-git-hooks": {

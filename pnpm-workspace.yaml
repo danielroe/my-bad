@@ -1,9 +1,26 @@
-packages:
-  - playground
-
 allowBuilds:
   esbuild: false
   simple-git-hooks: true
 
+minimumReleaseAgeExclude:
+  - errx
+  - clickable-path
+  - '@nuxt/kit-nightly@5.0.0-29806258.d070492f'
+  - '@nuxt/nitro-server-nightly@5.0.0-29806258.d070492f'
+  - '@nuxt/schema-nightly@5.0.0-29806258.d070492f'
+  - '@nuxt/vite-builder-nightly@5.0.0-29806258.d070492f'
+  - '@nuxt/vite-server-nightly@5.0.0-29806258.d070492f'
+  - nuxt-nightly@5.0.0-29806258.d070492f
+shellEmulator: true
+
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  - semver@6.3.1
+
+packages:
+  - playground
+  - playground/vite
+  - test/fixtures/*
+
 overrides:
-  package-name: "link:."
+  my-bad: 'link:.'

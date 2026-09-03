@@ -2,9 +2,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "node index.js"
+    "screenshot": "node screenshot.ts"
   },
   "dependencies": {
-    "package-name": "latest"
+    "my-bad": "latest"
   }
 }
