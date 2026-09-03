@@ -2,7 +2,7 @@
   "name": "my-bad",
   "type": "module",
   "version": "0.0.0",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@11.25.0",
   "description": "Beautiful dev-server error pages: HTML, ANSI and JSON from one sourcemapped report",
   "license": "MIT",
   "repository": "danielroe/my-bad",
@@ -67,8 +67,8 @@
     "fnv1a-64": "^0.1.2"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "9.3.0",
-    "@types/node": "26.4.0",
+    "@antfu/eslint-config": "9.5.1",
+    "@types/node": "26.4.1",
     "@vitest/coverage-v8": "4.1.11",
     "ansivision": "0.4.0",
     "axe-core": "4.13.0",
@@ -80,7 +80,7 @@
     "nano-staged": "1.0.2",
     "pkg-pr-new": "0.0.88",
     "playwright": "1.62.1",
-    "rolldown": "1.2.0",
+    "rolldown": "1.2.7",
     "simple-git-hooks": "2.14.0",
     "tsdown": "0.22.14",
     "typescript": "6.0.3",
