@@ -68,8 +68,8 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
 
   if (report.hint) {
     out.push('')
-    for (const line of wrap(report.hint, width - 4)) {
-      out.push(`${indent}  ${p.cyan('ℹ')} ${line}`)
+    for (const [index, line] of wrap(report.hint, width - 4).entries()) {
+      out.push(`${indent}  ${index === 0 ? p.cyan('ℹ') : ' '} ${line}`)
     }
   }
   if (report.docsUrl) {

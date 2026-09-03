@@ -90,6 +90,17 @@ describe('renderAnsi', () => {
   })
 })
 
+describe('renderAnsi hint wrapping', () => {
+  it('marks only the first line of a wrapped hint', async () => {
+    const report = await createReport(new Error('Careful'), { loaders: [], snippets: false })
+    report.frames = []
+    report.hint = 'The widget factory received an empty name, so check the name prop passed from the parent component.'
+    const lines = renderAnsi(report, { colors: false, width: 60 }).split('\n').filter(line => line.trim())
+    expect(lines.filter(line => line.includes('\u2139'))).toHaveLength(1)
+    expect(lines.at(-1)).toMatch(/^ {4}\w/)
+  })
+})
+
 describe('stripAnsi', () => {
   it('removes hyperlinks as well as colours', async () => {
     const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
