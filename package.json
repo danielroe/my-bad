@@ -1,7 +1,7 @@
 {
   "name": "my-bad",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "packageManager": "pnpm@11.24.0",
   "description": "Beautiful dev-server error pages: HTML, ANSI and JSON from one sourcemapped report",
   "license": "MIT",
