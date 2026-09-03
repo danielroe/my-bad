@@ -8,7 +8,9 @@
     ".": {
       "entry": [
         "src/render/html/client/main.ts",
-        "scripts/*.ts"
+        "scripts/*.ts",
+        "playwright.config.ts",
+        "test/visual/*.spec.ts"
       ]
     },
     "playground": {

@@ -9,6 +9,7 @@
     "module": "preserve",
     "resolveJsonModule": true,
     "types": ["node"],
+    "allowImportingTsExtensions": true,
     "allowJs": true,
     "strict": true,
     "noImplicitOverride": true,

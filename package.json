@@ -47,6 +47,7 @@
     "test:types": "tsc --noEmit",
     "play": "pnpm build && node playground/dev.ts",
     "screenshot": "pnpm build && node playground/screenshot.ts",
+    "assets": "pnpm build && playwright test -u changed",
     "test:pack": "pnpm build && node scripts/check-pack.ts",
     "test:a11y": "vitest run test/a11y.test.ts test/browser.test.ts",
     "play:vite": "pnpm build && node playground/vite/server.ts",

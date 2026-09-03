@@ -1,32 +1,14 @@
-import { execFile } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 import { chromium } from 'playwright'
-import { createReport, renderOverlay, renderPage } from '../dist/index.mjs'
+import { renderOverlay, renderPage } from '../dist/index.mjs'
 import { nuxtTheme } from '../dist/presets/index.mjs'
+import { demoReport, fixtures } from './demo.ts'
 
-const fixtures = fileURLToPath(new URL('../test/fixtures/basic/', import.meta.url))
 const out = fileURLToPath(new URL('./out/', import.meta.url))
 
-async function fixtureError(fn: string): Promise<Error> {
-  const { stdout } = await promisify(execFile)(process.execPath, [`${fixtures}run.mjs`, 'sidecar', fn])
-  const revive = (data: any): Error => {
-    const error = new Error(data.message, data.cause ? { cause: revive(data.cause) } : undefined)
-    error.name = data.name
-    error.stack = data.stack
-    return error
-  }
-  return revive(JSON.parse(stdout))
-}
-
 await mkdir(out, { recursive: true })
-const report = await createReport(await fixtureError('withCause'), { cwd: fixtures })
-report.code = 'E1001'
-report.docsUrl = 'https://nuxt.com/docs/errors/e1001'
-report.hint = 'The widget factory received an empty name. Check the `name` prop passed from the parent component.'
-report.trace = [{ label: '<App>', file: `${fixtures}src/app.vue` }, { label: '<NuxtLayout>' }, { label: '<WidgetList>', file: `${fixtures}src/widget-list.vue`, line: 12 }]
-report.sections.push({ id: 'request', title: 'Request', content: { 'method': 'GET', 'url': '/widgets?page=2', 'user-agent': 'Mozilla/5.0' } })
+const report = await demoReport()
 
 const theme = process.argv.includes('--neutral') ? { name: 'my-bad' } : nuxtTheme
 const page = renderPage(report, { cwd: fixtures, channel: '/__my-bad', theme })

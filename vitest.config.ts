@@ -10,6 +10,7 @@ export default defineConfig({
     },
   },
   test: {
+    exclude: ['**/node_modules/**', 'test/visual/**'],
     globalSetup: ['./test/setup/build.ts'],
     coverage: {
       include: ['src'],

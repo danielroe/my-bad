@@ -1,0 +1,40 @@
+name: assets
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assets-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: corepack enable
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: 📦 Install dependencies
+        run: pnpm install
+
+      - name: 🌐 Install Chromium
+        run: pnpm playwright install --with-deps chromium
+
+      # Rewrites an asset only when the rendering moved beyond `maxDiffPixels`,
+      # so a Chromium bump does not commit a fresh copy of every screenshot.
+      - name: 🖼 Render README assets
+        run: pnpm assets
+
+      - uses: autofix-ci/action@c5b2d67aa2274e7b5a18224e8171550871fc7e4a # v1.3.4
+        with:
+          commit-message: 'chore: update README assets'

@@ -11,6 +11,15 @@
 
 You can then use `my-bad` to render that report as a full HTML page, a shadow-DOM overlay for an existing page, or ANSI for the terminal. A small SSE channel keeps browser-based pages live, meaning errors can be updated, the page can reload when the error is fixed, and additional warnings and server logs are surfaced as they occur.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/.github/assets/page-dark.png">
+  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/.github/assets/page-light.png" alt="An error page showing the error name, message, hint, component trace and a syntax-highlighted source snippet with the failing line marked">
+</picture>
+
+The same report, rendered to the terminal with `renderAnsi`:
+
+<img src="https://raw.githubusercontent.com/danielroe/my-bad/main/.github/assets/ansi.svg" alt="Terminal output showing the error, a hint, the component trace, source snippets for the error and its cause, and the collapsed stack frames">
+
 ## Install
 
 ```sh
@@ -153,6 +162,9 @@ pnpm dev
 pnpm test:a11y
 # render screenshots of the ui
 pnpm screenshot
+
+# re-render the README assets in .github/assets (autofix.ci keeps these current)
+pnpm assets
 # experiment in the playground
 pnpm play
 pnpm play:vite
