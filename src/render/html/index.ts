@@ -7,8 +7,27 @@ import { renderView } from './view'
 
 export type { PageState, Theme } from './state'
 
+/**
+ * The client script and stylesheet that `renderPage` and `renderOverlay` inline
+ * by default, for serving them yourself and passing the URLs as `assets`.
+ */
+export const clientAssets: { script: string, styles: string } = { script: clientScript, styles: clientStyles }
+
+export interface ClientAssets {
+  /** URL serving `clientAssets.script`. */
+  script?: string
+  /** URL serving `clientAssets.styles`. */
+  styles?: string
+}
+
 export interface RenderHtmlOptions {
   cwd?: string
+  /**
+   * Load the client script and stylesheet from these URLs instead of inlining
+   * them, which keeps ~60kB out of every rendered page. Serve the contents of
+   * `clientAssets` at the URLs you pass.
+   */
+  assets?: ClientAssets
   /** Base path of the live channel, e.g. `/__my-bad`. */
   channel?: string
   history?: HistoryEntry[]
@@ -34,7 +53,7 @@ export interface RenderOverlayOptions extends RenderHtmlOptions {
 
 const CSS_VAR_RE = /^--[\w-]+$/
 
-/** Stylesheet plus theme overrides, with custom property names and values validated. */
+/** Theme overrides, with custom property names and values validated. */
 function themeStyles(theme: Theme | undefined, selector: string): string {
   const vars: string[] = []
   if (theme?.accent) {
@@ -45,15 +64,21 @@ function themeStyles(theme: Theme | undefined, selector: string): string {
       vars.push(`${name}:${cssValue(value)}`)
     }
   }
-  return `${clientStyles}${vars.length ? `\n${selector}{${vars.join(';')}}` : ''}${theme?.css ? `\n${theme.css}` : ''}`
+  return `${vars.length ? `${selector}{${vars.join(';')}}\n` : ''}${theme?.css ?? ''}`
+}
+
+/** The built-in stylesheet, inlined unless it is served separately. */
+function sheet(assets: ClientAssets | undefined): string {
+  return assets?.styles ? '' : clientStyles
 }
 
 function cssValue(value: string): string {
   return String(value).replace(/[;{}<]/g, '')
 }
 
-function stateScript(state: PageState & { styles?: string }): string {
-  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script>${clientScript}</script>`
+function stateScript(state: PageState, assets: ClientAssets | undefined): string {
+  const script = assets?.script ? `<script src="${escapeHtml(assets.script)}"></script>` : `<script>${clientScript}</script>`
+  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n${script}`
 }
 
 function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageState['mode']): PageState {
@@ -81,12 +106,12 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${escapeHtml(title)}</title>
-<style>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${themeStyles(options.theme, ':root')}</style>
+${options.assets?.styles ? `<link rel="stylesheet" href="${escapeHtml(options.assets.styles)}">\n` : ''}<style>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${sheet(options.assets)}${themeStyles(options.theme, ':root')}</style>
 ${options.head ?? ''}
 </head>
 <body>
 <div class="mb-root" data-my-bad-root>${renderView(state)}</div>
-${stateScript(state)}
+${stateScript(state, options.assets)}
 ${options.inject ?? ''}
 </body>
 </html>`
@@ -101,13 +126,14 @@ export function renderOverlay(report: ErrorReport, options: RenderOverlayOptions
   if (!/^[a-z][a-z0-9]*-[a-z0-9-]+$/.test(tag)) {
     throw new Error(`Invalid custom element name: ${tag}`)
   }
-  const state: PageState & { styles: string } = {
+  const state: PageState = {
     ...baseState(report, options, 'overlay'),
     startMinimized: options.startMinimized,
     tag,
-    styles: `${themeStyles(options.theme, ':host')}\n:host{all:initial;display:contents}`,
+    styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n:host{all:initial;display:contents}`,
+    stylesUrl: options.assets?.styles,
   }
-  return `<${tag}></${tag}>\n${stateScript(state)}`
+  return `<${tag}></${tag}>\n${stateScript(state, options.assets)}`
 }
 
 /** Insert the overlay before `</body>`, or append it. Avoids `String.replace`, whose `$` patterns would corrupt the inlined script. */

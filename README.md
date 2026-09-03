@@ -61,6 +61,20 @@ html = injectOverlay(html, report, { channel: '/__my-bad', startMinimized: statu
 
 Use `injectOverlay` rather than `html.replace('</body>', ...)`: the inlined client contains `$` sequences that a string replacement would interpret.
 
+### Serving the client separately
+
+`renderPage` and `renderOverlay` inline the client script and stylesheet, which makes the output self-contained at the cost of ~60kB per response. Serve `clientAssets` yourself and pass the URLs to keep them out of the HTML and let the browser cache them:
+
+```ts
+import { clientAssets, renderPage } from 'my-bad'
+
+// GET /__my-bad/client.js  -> clientAssets.script (text/javascript)
+// GET /__my-bad/client.css -> clientAssets.styles (text/css)
+renderPage(report, { assets: { script: '/__my-bad/client.js', styles: '/__my-bad/client.css' } })
+```
+
+Theme overrides stay inline, so a shared stylesheet still themes per response.
+
 ### Theming
 
 The page is dark by default and follows `prefers-color-scheme`. Everything is derived from a handful of CSS custom properties, so it's possible to restyle it without forking the stylesheet:
@@ -145,6 +159,8 @@ export default defineConfig({ plugins: [myBad()] })
 ```
 
 The plugin maps frames through Vite's module graph, forwards compile errors from the HMR channel as `kind: 'compile'` reports, mounts the channel at `/__my-bad`, injects a tiny client into `index.html` so a running app shows the overlay, and clears it when the next update succeeds. Use `useMyBad(server)` from your own SSR middleware to build reports and pages with the same configuration.
+
+The client script and stylesheet are served from `/__my-bad/client.js` and `/__my-bad/client.css` with content-hashed URLs, rather than inlined into every error page. Pass `inlineClient: true` for self-contained output.
 
 ## Presets
 

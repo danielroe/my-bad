@@ -81,6 +81,53 @@ describe('vite', () => {
   })
 })
 
+describe('client assets', () => {
+  it('serves the client script and stylesheet instead of inlining them', async () => {
+    const ctx = useMyBad(server)!
+    const report = await ctx.report(await thrown())
+    const page = ctx.page(report)
+    expect(page.slice(0, page.indexOf('</head>'))).toMatch(/<link rel="stylesheet" href="\/__my-bad\/client\.css\?v=\w+">/)
+    expect(page.slice(0, page.indexOf('</head>'))).not.toContain('--mb-accent')
+    expect(page).toMatch(/<script src="\/__my-bad\/client\.js\?v=\w+"><\/script>/)
+    expect(ctx.overlay(report)).toContain('"stylesUrl":"/__my-bad/client.css?v=')
+
+    const http = createHttpServer(server.middlewares)
+    await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve))
+    const { port } = http.address() as { port: number }
+    const [script, styles] = await Promise.all([
+      fetch(`http://127.0.0.1:${port}/__my-bad/client.js?v=1`),
+      fetch(`http://127.0.0.1:${port}/__my-bad/client.css`),
+    ])
+    const [scriptBody, stylesBody] = await Promise.all([script.text(), styles.text()])
+    http.close()
+    expect(script.headers.get('content-type')).toContain('text/javascript')
+    expect(styles.headers.get('content-type')).toContain('text/css')
+    expect(styles.headers.get('cache-control')).toContain('immutable')
+    expect(scriptBody).toContain('mb-overlay')
+    expect(stylesBody).toContain('--mb-accent')
+  })
+
+  it('inlines the client when asked', async () => {
+    const inlined = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      appType: 'custom',
+      server: { middlewareMode: true, hmr: false },
+      plugins: [myBad({ inlineClient: true })],
+    })
+    try {
+      const ctx = useMyBad(inlined)!
+      const page = ctx.page(await ctx.report(new Error('inline')))
+      expect(page.slice(0, page.indexOf('</head>'))).toContain('--mb-accent')
+      expect(page).not.toContain('<script src=')
+    }
+    finally {
+      await inlined.close()
+    }
+  })
+})
+
 describe('hmr replay', () => {
   it('replays the latest overlay to clients that connect after the error', async () => {
     const ctx = useMyBad(server)!

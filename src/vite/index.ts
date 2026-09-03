@@ -3,9 +3,10 @@ import type { Channel, ChannelOptions } from '../channel'
 import type { RenderOverlayOptions, RenderPageOptions } from '../render/html'
 import type { ErrorReport, ReportOptions, ReportPreset, SourceLoader } from '../types'
 import { fileURLToPath } from 'node:url'
+import { fnv1a64Base36 } from 'fnv1a-64'
 import { createChannel } from '../channel'
 import { fsLoader } from '../loaders/fs'
-import { renderOverlay, renderPage } from '../render/html'
+import { clientAssets, renderOverlay, renderPage } from '../render/html'
 import { createReport } from '../report/create'
 import { viteLoader } from './loader'
 
@@ -20,6 +21,11 @@ export interface MyBadViteOptions {
   presets?: ReportPreset[]
   report?: Omit<ReportOptions, 'loaders' | 'presets'>
   overlay?: Omit<RenderOverlayOptions, 'channel' | 'cwd'>
+  /**
+   * Inline the client script and stylesheet into every rendered page instead of
+   * serving them as two cacheable files under `base`. Default `false`.
+   */
+  inlineClient?: boolean
   /** Replace Vite's built-in error overlay for compile errors. Default `true`. */
   replaceOverlay?: boolean
 }
@@ -51,6 +57,14 @@ const RESOLVED_CLIENT_ID = `\0${CLIENT_ID}`
 /** Browser URL for the virtual module, following Vite's `\0` encoding. */
 const CLIENT_URL = `/@id/__x00__${CLIENT_ID}`
 
+/** Content-hashed URLs so the served client can be cached indefinitely. */
+function assetUrls(base: string): { script: string, styles: string } {
+  return {
+    script: `${base}/client.js?v=${fnv1a64Base36(clientAssets.script)}`,
+    styles: `${base}/client.css?v=${fnv1a64Base36(clientAssets.styles)}`,
+  }
+}
+
 /** Import the client that ships next to this module by absolute path, so the project never resolves `my-bad` itself. */
 function clientSource(): string {
   const file = fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './client.ts' : './client.mjs', import.meta.url))
@@ -79,6 +93,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
       const cwd = options.report?.cwd ?? devServer.config.root
       const loaders = [viteLoader(devServer), fsLoader()]
       const presets = options.presets ?? []
+      const assets = options.inlineClient ? undefined : assetUrls(base)
 
       const hots = (): HotChannel[] => {
         const environments = (devServer as unknown as { environments?: Record<string, { hot: HotChannel }> }).environments
@@ -105,8 +120,8 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
         base,
         loaders,
         report: (error, reportOptions) => createReport(error, { cwd, loaders, presets, ...options.report, ...reportOptions }),
-        page: (report, pageOptions) => renderPage(report, { cwd, channel: live ? base : undefined, history: channel.history, ...pageOptions }),
-        overlay: (report, overlayOptions) => renderOverlay(report, { cwd, channel: live ? base : undefined, history: channel.history, ...options.overlay, ...overlayOptions }),
+        page: (report, pageOptions) => renderPage(report, { cwd, channel: live ? base : undefined, history: channel.history, assets, ...pageOptions }),
+        overlay: (report, overlayOptions) => renderOverlay(report, { cwd, channel: live ? base : undefined, history: channel.history, assets, ...options.overlay, ...overlayOptions }),
         async emit(error, reportOptions) {
           const report = await ctx!.report(error, reportOptions)
           channel.setError(report)
@@ -125,6 +140,24 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
         },
       }
       contexts.set(devServer.config, ctx)
+
+      if (assets) {
+        devServer.middlewares.use((req, res, next) => {
+          const path = req.url?.split('?')[0]
+          const asset = path === `${base}/client.js`
+            ? { type: 'text/javascript', body: clientAssets.script }
+            : path === `${base}/client.css`
+              ? { type: 'text/css', body: clientAssets.styles }
+              : undefined
+          if (!asset) {
+            next()
+            return
+          }
+          res.setHeader('content-type', `${asset.type}; charset=utf-8`)
+          res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+          res.end(asset.body)
+        })
+      }
 
       if (!live) {
         return
