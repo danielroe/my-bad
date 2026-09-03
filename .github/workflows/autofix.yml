@@ -27,6 +27,9 @@ jobs:
       - name: 📦 Install dependencies
         run: pnpm install
 
+      - name: 🔠 Lint project
+        run: pnpm lint --fix
+
       - name: 🌐 Install Chromium
         run: pnpm playwright install --with-deps chromium
 
@@ -37,4 +40,4 @@ jobs:
 
       - uses: autofix-ci/action@c5b2d67aa2274e7b5a18224e8171550871fc7e4a # v1.3.4
         with:
-          commit-message: 'chore: update README assets'
+          commit-message: 'chore: apply automated fixes'

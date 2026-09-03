@@ -37,7 +37,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "vitest dev",
-    "lint": "eslint . --fix",
+    "lint": "eslint .",
     "prepare": "simple-git-hooks",
     "prepack": "pnpm build",
     "test": "pnpm test:unit && pnpm test:types",
