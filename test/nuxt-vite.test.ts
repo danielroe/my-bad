@@ -92,6 +92,17 @@ async function waitFor<T>(check: () => Promise<T | undefined>, timeout: number, 
   throw new Error(`timed out waiting for ${label}${last ? `: ${last}` : ''}`)
 }
 
+/**
+ * Vitest sets `NODE_ENV=test`, `TEST` and `VITEST`, which the dev server would
+ * otherwise inherit. `std-env` reads those as "this is a test run", which drops
+ * consola to `warn` and so hides every boot log; the unjs stack also branches on
+ * them elsewhere. A dev server should see a development environment.
+ */
+function devEnv(): Record<string, string | undefined> {
+  const { NODE_ENV: _node, TEST: _test, VITEST: _vitest, ...env } = process.env
+  return { ...env, NODE_ENV: 'development', CONSOLA_LEVEL: '4' }
+}
+
 /** Ask the OS for a free port, so a port already in use cannot look like a slow boot. */
 async function freePort(): Promise<number> {
   const server = createServer()
@@ -144,7 +155,7 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     dev = spawn(process.execPath, [`${root}node_modules/nuxt/bin/nuxt.mjs`, 'dev', '--port', String(port)], {
       cwd: root,
       env: {
-        ...process.env,
+        ...devEnv(),
         NUXT_IGNORE_LOCK: '1',
         NUXT_TELEMETRY_DISABLED: '1',
         MY_BAD_NITRO_VITE_ENVIRONMENT: String(cell.nitroViteEnvironment),
@@ -170,12 +181,26 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     dev.once('error', (error) => {
       died = `it could not be spawned: ${error.message}`
     })
+    // `fetch failed` alone says nothing: record the status or the underlying code, since a
+    // dev server answering 500s and one that never binds otherwise look identical here.
+    let seen = 'no response'
+    const reachable = async () => {
+      const response = await fetch(url).catch((error: Error & { cause?: { code?: string } }) => {
+        seen = `${error.message}${error.cause?.code ? ` (${error.cause.code})` : ''}`
+        return undefined
+      })
+      if (!response) {
+        return undefined
+      }
+      seen = `HTTP ${response.status}`
+      return response.ok || undefined
+    }
     try {
-      await waitFor(async () => await fetch(url).then(res => res.ok || undefined), 180_000, 'the Nuxt dev server', () => died)
+      await waitFor(reachable, 180_000, 'the Nuxt dev server', () => died)
     }
     catch (error) {
       const tail = output.join('').trimEnd()
-      throw new Error(`${(error as Error).message}\n--- nuxt dev output ---\n${tail || '(no output)'}`)
+      throw new Error(`${(error as Error).message}\nlast seen: ${seen}\n--- nuxt dev output ---\n${tail || '(no output)'}`)
     }
   }, 240_000)
 
