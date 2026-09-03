@@ -52,8 +52,14 @@ jobs:
       - name: 🛠 Build project
         run: pnpm build
 
+      - name: 🌐 Install Chromium
+        run: pnpm playwright install --with-deps chromium
+
       - name: 💪 Test types
         run: pnpm test:types
+
+      - name: 📦 Check packed output
+        run: node scripts/check-pack.ts
 
       - name: 🧪 Test project
         run: pnpm test:unit -- --coverage

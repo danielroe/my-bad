@@ -1,0 +1,10 @@
+{
+  "name": "fixture-nitropack-v2",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "h3": "^1.15.4",
+    "my-bad": "latest",
+    "nitropack": "^2.13.4"
+  }
+}

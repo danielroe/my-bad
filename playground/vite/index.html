@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>my-bad Vite playground</title>
+  <style>body { font-family: system-ui; padding: 48px; max-width: 640px; margin: 0 auto; }</style>
+</head>
+<body>
+  <h1>my-bad × Vite</h1>
+  <p>This page is served by Vite with the <code>myBad()</code> plugin.</p>
+  <ul>
+    <li>Edit <code>src/broken.ts</code> to introduce a syntax error: the overlay appears in place via the HMR channel and disappears when you fix it.</li>
+    <li>Open <a href="/ssr-error">/ssr-error</a> for a full-page server error rendered through <code>useMyBad(server).page()</code>.</li>
+  </ul>
+  <p id="out"></p>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

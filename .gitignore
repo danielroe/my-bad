@@ -6,3 +6,14 @@ coverage
 .eslintcache
 *.log*
 *.env*
+.workmux
+!test/fixtures/**/dist
+playground/out
+.nitro
+.nuxt
+.output
+
+test/fixtures/nuxt-v4/*
+!test/fixtures/nuxt-v4/package.json
+test/fixtures/nuxt-v5/*
+!test/fixtures/nuxt-v5/package.json

@@ -1,0 +1,11 @@
+{
+  "name": "playground-vite",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node server.ts"
+  },
+  "dependencies": {
+    "vite": "^8.2.2"
+  }
+}

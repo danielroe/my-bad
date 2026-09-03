@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "ignore": [
+    "test/fixtures/**"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/render/html/client/main.ts",
+        "scripts/*.ts"
+      ]
+    },
+    "playground": {
+      "entry": [
+        "*.ts"
+      ],
+      "ignoreDependencies": [
+        "my-bad"
+      ]
+    },
+    "playground/vite": {
+      "entry": [
+        "src/server-route.ts"
+      ]
+    }
+  }
+}
