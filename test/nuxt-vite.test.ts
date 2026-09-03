@@ -152,7 +152,9 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     await syncApp(root)
     const port = await freePort()
     url = `http://127.0.0.1:${port}`
-    dev = spawn(process.execPath, [`${root}node_modules/nuxt/bin/nuxt.mjs`, 'dev', '--port', String(port)], {
+    // `--host` is pinned because an unpinned dev server resolves `localhost` and binds only the
+    // first result, which on a dual-stack runner is `::1`, leaving this IPv4 probe refused.
+    dev = spawn(process.execPath, [`${root}node_modules/nuxt/bin/nuxt.mjs`, 'dev', '--port', String(port), '--host', '127.0.0.1'], {
       cwd: root,
       env: {
         ...devEnv(),
