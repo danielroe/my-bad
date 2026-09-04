@@ -1,5 +1,5 @@
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i
-const WINDOWS_DRIVE_RE = /^\/?[a-z]:\//i
+const WINDOWS_DRIVE_RE = /^\/?[a-z]:[\\/]/i
 
 /** Convert a `file:` URL to a filesystem path. Other inputs are returned unchanged. */
 export function toPath(source: string): string {
