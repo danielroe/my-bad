@@ -135,6 +135,33 @@ describe('browser client', () => {
     await page.close()
   }, 30_000)
 
+  it('shows the build progress label below the bar, clear of the header', async () => {
+    for (const path of ['/', '/overlay']) {
+      channel.setError(await report(`progress ${path}`))
+      const page = await browser.newPage({ viewport: { width: 1200, height: 760 } })
+      await page.goto(`${origin}${path}`)
+      await waitFor(() => page.locator('[data-message]').first().textContent(), `progress ${path}`)
+      channel.progress({ phase: 'build', percent: 40, message: 'Building server' })
+      await waitFor(() => page.locator('[data-progress]:not([hidden])').count(), 1)
+
+      const bar = (await page.locator('[data-progress]').boundingBox())!
+      const label = (await page.locator('[data-progress-label]').boundingBox())!
+      const header = (await page.locator('.mb-header').boundingBox())!
+      const tools = (await page.locator('.mb-tools').boundingBox())!
+      const brand = (await page.locator('.mb-brand').boundingBox())!
+
+      expect(bar.y + bar.height, path).toBeCloseTo(header.y + header.height, 0)
+      expect(label.y, path).toBeGreaterThanOrEqual(bar.y + bar.height)
+      for (const other of [tools, brand]) {
+        expect(label.y >= other.y + other.height || label.x >= other.x + other.width || other.x >= label.x + label.width, path).toBe(true)
+      }
+
+      channel.progress({ phase: 'done', percent: 100 })
+      await waitFor(() => page.locator('[data-progress][hidden]').count(), 1)
+      await page.close()
+    }
+  }, 30_000)
+
   it('mounts the overlay in a shadow root and minimises', async () => {
     channel.setError(await report('overlay'))
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
