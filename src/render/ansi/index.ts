@@ -145,7 +145,7 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
   const prefix = [frame.isAsync && 'async', frame.isConstructor && 'new'].filter(Boolean).join(' ')
   const fn = frame.function ?? (frame.isEval ? 'eval' : '<anonymous>')
   const location = frame.file
-    ? `${displayPath(frame.file, ctx.cwd)}${frame.line !== undefined ? `:${frame.line}${frame.column !== undefined ? `:${frame.column}` : ''}` : ''}`
+    ? `${displayPath(frame, ctx.cwd)}${frame.line !== undefined ? `:${frame.line}${frame.column !== undefined ? `:${frame.column}` : ''}` : ''}`
     : frame.raw?.trim().replace(/^at\s+/, '') ?? ''
   const available = ctx.width - indent.length - 4 - fn.length - (prefix ? prefix.length + 1 : 0)
   const shown = truncateMiddle(location, Math.max(20, available))

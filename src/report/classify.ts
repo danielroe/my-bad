@@ -8,7 +8,12 @@ export function matchesPattern(value: string, pattern: string | RegExp): boolean
   return typeof pattern === 'string' ? value.includes(pattern) : pattern.test(value)
 }
 
-export function classifyFrame(frame: Pick<Frame, 'file' | 'function' | 'line'> & { isNative?: boolean }, internal: (string | RegExp)[]): FrameType {
+/**
+ * `pkg` is the name of the package the frame's file belongs to, when it is
+ * outside `cwd`; patterns are matched against it so framework frames are
+ * recognised wherever the package physically resolved from.
+ */
+export function classifyFrame(frame: Pick<Frame, 'file' | 'function' | 'line'> & { isNative?: boolean }, internal: (string | RegExp)[], pkg?: string): FrameType {
   if (frame.isNative || !frame.file) {
     return 'native'
   }
@@ -17,7 +22,7 @@ export function classifyFrame(frame: Pick<Frame, 'file' | 'function' | 'line'> &
     return 'native'
   }
   for (const pattern of internal) {
-    if (matchesPattern(file, pattern) || (frame.function && matchesPattern(frame.function, pattern))) {
+    if (matchesPattern(file, pattern) || (frame.function && matchesPattern(frame.function, pattern)) || (pkg && matchesPattern(pkg, pattern))) {
       return 'internal'
     }
   }

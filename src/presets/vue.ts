@@ -48,7 +48,7 @@ export interface VuePresetOptions {
  */
 export function vuePreset(options: VuePresetOptions = {}): ReportPreset {
   return {
-    internal: [/\/node_modules\/(?:@vue|vue)\//, /\/@vue\/(?:runtime|reactivity|shared|server-renderer|compiler)/, ...(options.internal ?? [])],
+    internal: [/\/node_modules\/(?:@vue|vue)\//, /^(?:vue|@vue\/[^/]+)$/, /\/@vue\/(?:runtime|reactivity|shared|server-renderer|compiler)/, ...(options.internal ?? [])],
     plugins: [{
       name: 'vue',
       transform(report, ctx) {

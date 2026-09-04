@@ -27,6 +27,8 @@ export interface Snippet {
 
 export interface Location {
   file: string
+  /** Path as shown to the user, when it cannot be derived from `cwd`. */
+  displayFile?: string
   line?: number
   column?: number
   /** Source around the location, when it could be read. */
@@ -36,6 +38,8 @@ export interface Location {
 export interface Frame {
   /** Absolute path or URL after sourcemapping. */
   file?: string
+  /** Path as shown to the user, when it cannot be derived from `cwd`. */
+  displayFile?: string
   line?: number
   column?: number
   function?: string

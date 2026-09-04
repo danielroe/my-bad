@@ -4,6 +4,7 @@ import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
 import { fsLoader } from '../loaders/fs'
 import { classifyFrame } from './classify'
+import { externalPackage } from './package'
 import { hasScheme, isFilePath, resolvePath, stripCacheQuery, toPath } from './path'
 import { extractSnippet, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
@@ -211,6 +212,7 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
     else if (frame.snippet) {
       frame.snippet = withTokens(frame.snippet, options)
     }
+    addDisplayPaths(frame, options.cwd)
     return [frame]
   }
 
@@ -232,13 +234,13 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
       ...(trace.isEval && { isEval: true }),
       ...('raw' in trace && typeof trace.raw === 'string' && { raw: trace.raw }),
     }
-    frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal)
+    frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
 
     if (frame.type !== 'native') {
       const mapped = await mapFrame(frame, options)
       const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
       frame = mapped
-      frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal)
+      frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
       if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
         frame.snippet = await loadSnippet(frame.file, frame.line, options)
         if (frame.compiled?.line !== undefined) {
@@ -249,9 +251,29 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
         }
       }
     }
+    addDisplayPaths(frame, options.cwd)
     frames.push(frame)
   }
   return frames
+}
+
+function packageName(file: string | undefined, cwd: string): string | undefined {
+  return file ? externalPackage(file, cwd)?.name : undefined
+}
+
+/**
+ * Resolve display paths while the filesystem is available: renderers, including
+ * the browser client, only ever see the resulting strings.
+ */
+function addDisplayPaths(frame: Frame, cwd: string): void {
+  const own = frame.file ? externalPackage(frame.file, cwd)?.displayFile : undefined
+  if (own) {
+    frame.displayFile = own
+  }
+  const compiled = frame.compiled ? externalPackage(frame.compiled.file, cwd)?.displayFile : undefined
+  if (compiled) {
+    frame.compiled = { ...frame.compiled!, displayFile: compiled }
+  }
 }
 
 async function mapFrame(frame: Frame, options: ResolvedReportOptions): Promise<Frame> {

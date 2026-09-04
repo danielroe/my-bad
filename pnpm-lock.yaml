@@ -97,6 +97,8 @@ importers:
         specifier: 0.22.14
         version: 0.22.14(@vitejs/devtools@0.6.3)(oxc-resolver@11.24.2)(typescript@6.0.3)
 
+  test/fixtures/monorepo: {}
+
   test/fixtures/nitro-v3:
     dependencies:
       my-bad:

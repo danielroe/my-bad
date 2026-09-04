@@ -62,8 +62,20 @@ export function relativeToCwd(file: string, cwd: string): string {
   return file
 }
 
-/** Path as shown to the user: relative to `cwd`, or the part after the last `node_modules/`. */
-export function displayPath(file: string, cwd?: string): string {
+export interface DisplayTarget {
+  file?: string
+  displayFile?: string
+}
+
+/**
+ * Path as shown to the user: the `displayFile` resolved when the report was
+ * built, else relative to `cwd`, or the part after the last `node_modules/`.
+ */
+export function displayPath(target: string | DisplayTarget, cwd?: string): string {
+  if (typeof target !== 'string') {
+    return target.displayFile ?? (target.file ? displayPath(target.file, cwd) : '')
+  }
+  const file = target
   const normalized = normalizeSlashes(file)
   const index = normalized.lastIndexOf('/node_modules/')
   if (index !== -1) {

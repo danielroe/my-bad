@@ -1,3 +1,4 @@
+import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../types'
 import type { PageState } from './state'
 import { displayPath } from '../../report/path'
@@ -134,14 +135,14 @@ function renderFrame(frame: Frame, state: PageState, open: boolean, id: string):
     ? [frame.isAsync && '<i>async</i>', frame.isConstructor && '<i>new</i>', escapeHtml(frame.function ?? (frame.isEval ? 'eval' : '<anonymous>'))].filter(Boolean).join('')
     : ''
   const location = frame.file
-    ? `<button type="button" class="mb-loc" data-loc data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)}${attr('title', frame.file)}>${renderLocation(frame.file, frame.line, frame.column, state)}</button>`
+    ? `<button type="button" class="mb-loc" data-loc data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)}${attr('title', frame.file)}>${renderLocation(frame, frame.line, frame.column, state)}</button>`
     : `<span class="mb-loc" data-loc data-loc-raw>${escapeHtml(frame.raw?.trim().replace(/^at\s+/, '') ?? '')}</span>`
   const inMemory = frame.compiled && frame.compiled.file === frame.file
   const compiled = frame.compiled
-    ? `<button type="button" class="mb-loc mb-loc-compiled" data-loc data-loc-compiled data-action="open"${attr('data-file', frame.compiled.file)}${attr('data-line', frame.compiled.line)}${attr('data-column', frame.compiled.column)}${attr('title', inMemory ? 'Transformed module code held by the dev server; the file on disk is the source' : undefined)}>${renderLocation(frame.compiled.file, frame.compiled.line, frame.compiled.column, state)}${inMemory ? '<span class="mb-loc-note">in memory</span>' : ''}</button><span class="mb-switch" role="group" aria-label="Location"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>`
+    ? `<button type="button" class="mb-loc mb-loc-compiled" data-loc data-loc-compiled data-action="open"${attr('data-file', frame.compiled.file)}${attr('data-line', frame.compiled.line)}${attr('data-column', frame.compiled.column)}${attr('title', inMemory ? 'Transformed module code held by the dev server; the file on disk is the source' : undefined)}>${renderLocation(frame.compiled, frame.compiled.line, frame.compiled.column, state)}${inMemory ? '<span class="mb-loc-note">in memory</span>' : ''}</button><span class="mb-switch" role="group" aria-label="Location"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>`
     : ''
   const body = frame.snippet && frame.line !== undefined
-    ? `<details class="mb-frame-body" data-frame-body id="${id}"${attr('open', open)}><summary class="mb-sr-only">Source</summary><div data-snippet-source>${renderSnippet(frame.snippet, frame.line, frame.column, frame.file ? shortPath(frame.file, state) : undefined)}</div>${frame.compiled?.snippet && frame.compiled.line !== undefined ? `<div data-snippet-compiled hidden>${renderSnippet(frame.compiled.snippet, frame.compiled.line, frame.compiled.column, shortPath(frame.compiled.file, state))}</div>` : ''}</details>`
+    ? `<details class="mb-frame-body" data-frame-body id="${id}"${attr('open', open)}><summary class="mb-sr-only">Source</summary><div data-snippet-source>${renderSnippet(frame.snippet, frame.line, frame.column, frame.file ? shortPath(frame, state) : undefined)}</div>${frame.compiled?.snippet && frame.compiled.line !== undefined ? `<div data-snippet-compiled hidden>${renderSnippet(frame.compiled.snippet, frame.compiled.line, frame.compiled.column, shortPath(frame.compiled, state))}</div>` : ''}</details>`
     : ''
   return `<li class="mb-frame" data-frame data-frame-type="${frame.type}"${attr('data-has-snippet', !!body)}>
   <div class="mb-frame-head">${body ? `<button type="button" class="mb-frame-toggle" data-frame-toggle data-action="toggle-frame" aria-expanded="${open}" aria-controls="${id}" title="Toggle source" aria-label="Toggle source">${ICONS.chevron}</button>` : '<span class="mb-frame-toggle" aria-hidden="true"></span>'}<span class="mb-fn" data-fn>${fn}</span><span>${location}${compiled}</span></div>
@@ -149,16 +150,16 @@ function renderFrame(frame: Frame, state: PageState, open: boolean, id: string):
 </li>`
 }
 
-function renderLocation(file: string, line: number | undefined, column: number | undefined, state: PageState): string {
-  const short = shortPath(file, state)
+function renderLocation(target: DisplayTarget, line: number | undefined, column: number | undefined, state: PageState): string {
+  const short = shortPath(target, state)
   const slash = short.lastIndexOf('/')
   const dir = slash === -1 ? '' : short.slice(0, slash + 1)
   const base = slash === -1 ? short : short.slice(slash + 1)
   return `<span class="mb-dir">${escapeHtml(dir)}</span><span class="mb-base">${escapeHtml(base)}</span>${line !== undefined ? `<span class="mb-pos">:${line}${column !== undefined ? `:${column}` : ''}</span>` : ''}`
 }
 
-function shortPath(file: string, state: PageState): string {
-  return displayPath(file, state.cwd)
+function shortPath(target: string | DisplayTarget, state: PageState): string {
+  return displayPath(target, state.cwd)
 }
 
 export function renderSnippet(snippet: Snippet, line: number, column?: number, label?: string): string {

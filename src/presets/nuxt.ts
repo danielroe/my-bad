@@ -24,9 +24,10 @@ export function nuxtPreset(options: NuxtPresetOptions = {}): ReportPreset {
   return {
     internal: [
       /\/node_modules\/(?:nuxt|@nuxt|nuxt-nightly|@nuxt\/[^/]+|unctx|hookable|ofetch|vue-router)\//,
+      /^(?:nuxt|nuxt-nightly|unctx|hookable|ofetch|vue-router|@nuxt\/[^/]+)$/,
       /\/\.nuxt\/(?:dev\/|dist\/server\/)/,
       /#app\//,
-      /^(?:callWithNuxt|applyPlugin|applyPlugins|executeAsync|runWithContext|callAsync)$/,
+      /^(?:callWithNuxt|applyPlugin|applyPlugins|executeAsync|runWithContext|callAsync|createError|showError)$/,
       ...parts.flatMap(part => part.internal ?? []),
     ],
     plugins: [
