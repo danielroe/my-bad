@@ -28,6 +28,7 @@ export interface PageState {
   channel?: string
   history?: HistoryEntry[]
   theme?: Theme
+  /** Mount minimised regardless of the user's remembered preference. */
   startMinimized?: boolean
   /** Custom element tag name hosting the overlay. */
   tag?: string

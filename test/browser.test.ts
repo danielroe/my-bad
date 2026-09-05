@@ -61,6 +61,10 @@ beforeAll(async () => {
       res.end(renderOverlay(current, { cwd: '/proj', assets }))
       return
     }
+    if (req.url === '/overlay-minimized') {
+      res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: '/proj', channel: '/__my-bad', startMinimized: true })}</body></html>`)
+      return
+    }
     if (req.url === '/overlay') {
       res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: '/proj', channel: '/__my-bad' })}</body></html>`)
       return
@@ -198,6 +202,37 @@ describe('browser client', () => {
     await waitFor(() => overlay.locator('[data-action="restore"]').isVisible(), true)
     channel.clearError()
     await waitFor(() => page.locator('my-bad-overlay').count(), 0)
+    await page.close()
+  }, 30_000)
+
+  it('keeps a startMinimized overlay minimised whatever the user last chose', async () => {
+    channel.setError(await report('always minimized'))
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.goto(`${origin}/blank`)
+    await page.evaluate(() => localStorage.setItem('my-bad:overlay:minimized', '0'))
+    await page.goto(`${origin}/overlay-minimized`)
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'always minimized')
+    expect(await overlay.locator('[data-overlay]').getAttribute('data-minimized')).toBe('')
+    expect(await page.evaluate(() => localStorage.getItem('my-bad:overlay:minimized'))).toBe('0')
+    await overlay.locator('[data-action="expand"]').click()
+    await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-minimized'), null)
+    await page.close()
+  }, 30_000)
+
+  it('mounts minimised when the user last minimised an overlay, and stays minimised on a new error', async () => {
+    channel.setError(await report('remembered'))
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.goto(`${origin}/blank`)
+    await page.evaluate(() => localStorage.setItem('my-bad:overlay:minimized', '1'))
+    await page.goto(`${origin}/overlay`)
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'remembered')
+    expect(await overlay.locator('[data-overlay]').getAttribute('data-minimized')).toBe('')
+
+    channel.setError(await report('arrived while minimised'))
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'arrived while minimised')
+    expect(await overlay.locator('[data-overlay]').getAttribute('data-minimized')).toBe('')
     await page.close()
   }, 30_000)
 

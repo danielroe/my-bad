@@ -397,7 +397,6 @@ function connect(m: Mount): void {
       bar.hidden = true
     }
     if (m.overlay) {
-      setMinimized(m, false)
       setHidden(m, false)
     }
   })
@@ -444,7 +443,8 @@ function connect(m: Mount): void {
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
-function setMinimized(m: Mount, value: boolean, animate = true): void {
+function setMinimized(m: Mount, value: boolean, options: { animate?: boolean, persist?: boolean } = {}): void {
+  const { animate = true, persist = true } = options
   if (!m.overlay) {
     return
   }
@@ -460,7 +460,9 @@ function setMinimized(m: Mount, value: boolean, animate = true): void {
       focusHeading(m)
     }
     m.overlay!.setAttribute('aria-modal', String(!value))
-    storage(STORAGE.minimized, value ? '1' : '0')
+    if (persist) {
+      storage(STORAGE.minimized, value ? '1' : '0')
+    }
     document.documentElement.style.overflow = value ? '' : 'hidden'
     setHostInert(m, !value && !m.overlay!.hasAttribute('data-hidden'))
     updatePreview(m)
@@ -637,7 +639,7 @@ function setupOverlay(m: Mount): void {
   overlay.setAttribute('data-dock', dock)
   m.preview?.setAttribute('data-dock', dock)
   const minimized = storage(STORAGE.minimized)
-  setMinimized(m, minimized === null ? !!m.state.startMinimized : minimized === '1', false)
+  setMinimized(m, !!m.state.startMinimized || minimized === '1', { animate: false, persist: false })
   setHidden(m, storage(STORAGE.hidden) === '1')
 
   draggable(m, overlay, () => overlay.hasAttribute('data-minimized'), () => setMinimized(m, false))

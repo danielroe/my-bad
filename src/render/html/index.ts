@@ -46,6 +46,7 @@ export interface RenderPageOptions extends RenderHtmlOptions {
 }
 
 export interface RenderOverlayOptions extends RenderHtmlOptions {
+  /** Mount minimised regardless of the user's remembered preference, which can otherwise only mount minimised, never expanded. */
   startMinimized?: boolean
   /** Custom element tag name. Default `my-bad-overlay`. */
   tag?: string

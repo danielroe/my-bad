@@ -59,6 +59,8 @@ import { injectOverlay } from 'my-bad'
 html = injectOverlay(html, report, { channel: '/__my-bad', startMinimized: status < 500 })
 ```
 
+`startMinimized: true` always mounts minimised, even if the user last expanded an overlay in this origin. Errors arriving over the channel leave the current minimised state alone.
+
 Use `injectOverlay` rather than `html.replace('</body>', ...)`: the inlined client contains `$` sequences that a string replacement would interpret.
 
 ### Serving the client separately
