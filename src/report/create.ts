@@ -25,6 +25,7 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
     snippets: options.snippets ?? true,
     context: options.context ?? {},
     tokenizer: options.tokenizer,
+    compiled: options.compiled,
   }
 }
 
@@ -123,7 +124,7 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
 
   if (depth < options.maxCauses) {
     if (error.cause !== undefined && !(typeof error.cause === 'object' && error.cause !== null && seen.has(error.cause))) {
-      report.causes.push(await buildReport(error.cause, { ...options, kind: undefined }, depth + 1, seen))
+      report.causes.push(await buildReport(error.cause, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen))
     }
     if (Array.isArray(error.errors)) {
       report.errors = []
@@ -131,7 +132,7 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
         if (typeof nested === 'object' && nested !== null && seen.has(nested)) {
           continue
         }
-        report.errors.push(await buildReport(nested, { ...options, kind: undefined }, depth + 1, seen))
+        report.errors.push(await buildReport(nested, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen))
       }
     }
   }
@@ -198,13 +199,41 @@ function compileLoc(input: CompileErrorInput): { file?: string, line: number, co
 async function buildFrames(input: unknown, error: NormalizedError, options: ResolvedReportOptions, kind: ReportKind): Promise<Frame[]> {
   if (kind === 'compile' && isCompileInput(input)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
-    const loc = compileLoc(input) ?? (typeof input.frame === 'string' ? locFromCodeFrame(input.frame) : undefined) ?? labelled
-    const file = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
+    const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
+    const frameLoc = typeof input.frame === 'string' ? locFromCodeFrame(input.frame) : undefined
+    const declared = compileLoc(input)
+    // when the snippet *is* the parsed frame, the frame's own caret is the position that matches it
+    const loc = snippet && frameLoc ? { ...declared, ...frameLoc } : declared ?? frameLoc ?? labelled
+    const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
+    const file = rawFile ? resolveFile(rawFile, options.cwd) : undefined
+
+    if (options.compiled) {
+      const source = typeof options.compiled === 'object' ? options.compiled.sourceLoc : undefined
+      const sourceFile = source?.file ? resolveFile(source.file, options.cwd) : file
+      const frame: Frame = {
+        ...(sourceFile && { file: sourceFile }),
+        ...(source && { line: source.line, ...(source.column !== undefined && { column: source.column }) }),
+        type: 'app',
+        ...(file && {
+          compiled: {
+            file,
+            ...(loc && { line: loc.line, column: loc.column }),
+            ...(snippet && { snippet: withTokens(snippet, options) }),
+          },
+        }),
+      }
+      if (frame.file && frame.line !== undefined && options.snippets) {
+        frame.snippet = await loadSnippet(frame.file, frame.line, options)
+      }
+      addDisplayPaths(frame, options.cwd)
+      return [frame]
+    }
+
     const frame: Frame = {
-      ...(file && { file: stripCacheQuery(toPath(isFilePath(file) || hasScheme(file) ? file : resolvePath(options.cwd, file))) }),
+      ...(file && { file }),
       ...(loc && { line: loc.line, column: loc.column }),
       type: 'app',
-      ...(input.frame && { snippet: parseCodeFrame(input.frame) }),
+      ...(snippet && { snippet }),
     }
     if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
       frame.snippet = await loadSnippet(frame.file, frame.line, options)
@@ -255,6 +284,10 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
     frames.push(frame)
   }
   return frames
+}
+
+function resolveFile(file: string, cwd: string): string {
+  return stripCacheQuery(toPath(isFilePath(file) || hasScheme(file) ? file : resolvePath(cwd, file)))
 }
 
 function packageName(file: string | undefined, cwd: string): string | undefined {

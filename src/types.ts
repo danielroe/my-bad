@@ -137,6 +137,14 @@ export interface ReportOptions {
   context?: Record<string, unknown>
   /** Custom syntax tokenizer for snippets. Tokens are stored on the report. */
   tokenizer?: Tokenizer
+  /**
+   * For `kind: 'compile'`, treat the error's `loc` and `frame` as positions in
+   * the transformed module rather than in the file they name: they land on
+   * `frame.compiled` and the frame gets no misleading source line or snippet.
+   * Pass `{ sourceLoc }` when a mapped source position is known, to get a
+   * source snippet alongside the generated one.
+   */
+  compiled?: boolean | { sourceLoc?: { file?: string, line: number, column?: number } }
 }
 
 export interface ResolvedReportOptions {
@@ -150,6 +158,7 @@ export interface ResolvedReportOptions {
   snippets: boolean
   context: Record<string, unknown>
   tokenizer?: Tokenizer
+  compiled?: boolean | { sourceLoc?: { file?: string, line: number, column?: number } }
 }
 
 /** Shape of a Vite `ErrorPayload['err']`, accepted as input alongside `Error`. */

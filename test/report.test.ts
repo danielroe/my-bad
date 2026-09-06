@@ -204,3 +204,67 @@ describe('oxc style compile errors', () => {
     expect(report.frames[0]!.snippet!.lines[1]).toContain('return `Hello')
   })
 })
+
+const rolldownFrame = '6  |      _createCommentVNode(" ... "),\n7  |      _createElementVNode("div", {\n8  |        class: _normalizeClass(_ctx.bob !)\n   |                                        ^\n9  |      }, " Nuxt Playground ", 2 /* CLASS */)\n10 |    ], 2112 /* STABLE_FRAGMENT, DEV_ROOT_FRAGMENT */))'
+const rolldownBody = ' 6:     _createCommentVNode(" ... "),\n 7:     _createElementVNode("div", {\n 8:       class: _normalizeClass(_ctx.bob !)\n                                          ^\n 9:     }, " Nuxt Playground ", 2 /* CLASS */)\n10:   ], 2112 /* STABLE_FRAGMENT, DEV_ROOT_FRAGMENT */))'
+const rolldownMessage = `Parse failed with 1 error:\nExpected \`,\` or \`)\` but found \`!\`\n${rolldownBody}\n${rolldownBody}`
+
+function rolldownError() {
+  return {
+    name: 'RolldownError',
+    code: 'PARSE_ERROR',
+    message: rolldownMessage,
+    id: '/proj/app/app.vue',
+    loc: { file: '/proj/app/app.vue', line: 6, column: 18 },
+    frame: rolldownFrame,
+  }
+}
+
+describe('rolldown style compile errors', () => {
+  it('keeps only the prose and takes the position from the frame caret', async () => {
+    const report = await createReport(rolldownError(), { cwd: '/proj', loaders: [], snippets: false })
+    expect(report.kind).toBe('compile')
+    expect(report.message).toBe('Parse failed with 1 error:\nExpected `,` or `)` but found `!`')
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39, type: 'app' })
+    expect(report.frames[0]!.snippet).toMatchObject({ start: 6 })
+    expect(report.frames[0]!.snippet!.lines[2]).toBe('      class: _normalizeClass(_ctx.bob !)')
+  })
+
+  it('reads the frame out of the message when no frame is attached', async () => {
+    const { frame: _frame, loc: _loc, ...error } = rolldownError()
+    const report = await createReport({ ...error, frame: rolldownMessage }, { cwd: '/proj', loaders: [], snippets: false })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+    expect(report.frames[0]!.snippet!.lines).toHaveLength(5)
+  })
+
+  it('leaves numbered prose in ordinary messages alone', async () => {
+    const report = await createReport({ message: 'Request failed\nHTTP 404: not found', loc: { file: '/proj/a.ts', line: 1, column: 1 } }, { cwd: '/proj', loaders: [], snippets: false })
+    expect(report.message).toBe('Request failed\nHTTP 404: not found')
+  })
+})
+
+describe('compiled compile errors', () => {
+  it('puts the position and generated frame on frame.compiled', async () => {
+    const report = await createReport(rolldownError(), { cwd: '/proj', kind: 'compile', compiled: true, loaders: [], snippets: false })
+    const [frame] = report.frames
+    expect(frame).toMatchObject({ file: '/proj/app/app.vue', type: 'app' })
+    expect(frame!.line).toBeUndefined()
+    expect(frame!.snippet).toBeUndefined()
+    expect(frame!.compiled).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+    expect(frame!.compiled!.snippet!.lines[2]).toBe('      class: _normalizeClass(_ctx.bob !)')
+  })
+
+  it('adds a source snippet when the caller knows the mapped position', async () => {
+    const source = '<script setup lang="ts">\nconst bob = ref<string>()\n</script>\n\n<template>\n  <div :class="bob !">\n    Nuxt Playground\n  </div>\n</template>\n'
+    const report = await createReport(rolldownError(), {
+      cwd: '/proj',
+      kind: 'compile',
+      compiled: { sourceLoc: { line: 6, column: 16 } },
+      loaders: [{ name: 'memory', read: file => file === '/proj/app/app.vue' ? source : undefined }],
+    })
+    const [frame] = report.frames
+    expect(frame).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 16 })
+    expect(frame!.snippet!.lines).toContain('  <div :class="bob !">')
+    expect(frame!.compiled).toMatchObject({ line: 8, column: 39 })
+  })
+})

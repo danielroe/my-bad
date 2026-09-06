@@ -107,6 +107,19 @@ describe('toMarkdown', () => {
       "
     `)
   })
+
+  it('labels a generated snippet when only a compiled position is known', async () => {
+    const compiled = await createReport({
+      name: 'RolldownError',
+      message: 'Parse failed with 1 error:',
+      id: '/proj/app.vue',
+      loc: { file: '/proj/app.vue', line: 8, column: 39 },
+      frame: '7  |      _createElementVNode("div", {\n8  |        class: _normalizeClass(_ctx.bob !)\n   |                                        ^',
+    }, { cwd: '/proj', kind: 'compile', compiled: true, loaders: [], snippets: false })
+    const markdown = toMarkdown(compiled, { cwd: '/proj' })
+    expect(markdown).toContain('Generated code `./app.vue:8:39`')
+    expect(markdown).toContain('> 8 |       class: _normalizeClass(_ctx.bob !)')
+  })
 })
 
 describe('injectOverlay', () => {

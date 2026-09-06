@@ -32,12 +32,14 @@ function render(report: ErrorReport, options: MarkdownOptions, level: number): s
   const top = report.frames.find(frame => frame.type === 'app' && frame.snippet)
   if (top?.snippet && top.file) {
     out.push(`\`${loc(top, options)}\``, '')
-    out.push(`\`\`\`${top.snippet.lang ?? ''}`)
-    for (const [index, line] of top.snippet.lines.entries()) {
-      const n = top.snippet.start + index
-      out.push(`${n === top.line ? '>' : ' '} ${String(n).padStart(String(top.snippet.start + top.snippet.lines.length).length)} | ${line}`)
+    out.push(...snippetBlock(top.snippet, top.line))
+  }
+  else {
+    const generated = report.frames.find(frame => frame.type === 'app' && frame.compiled?.snippet)?.compiled
+    if (generated?.snippet) {
+      out.push(`Generated code \`${loc(generated, options)}\``, '')
+      out.push(...snippetBlock(generated.snippet, generated.line))
     }
-    out.push('```', '')
   }
 
   if (report.frames.length) {
@@ -85,7 +87,17 @@ function render(report: ErrorReport, options: MarkdownOptions, level: number): s
   return out
 }
 
-function loc(frame: Frame, options: MarkdownOptions): string {
+function snippetBlock(snippet: NonNullable<Frame['snippet']>, line: number | undefined): string[] {
+  const out = [`\`\`\`${snippet.lang ?? ''}`]
+  for (const [index, text] of snippet.lines.entries()) {
+    const n = snippet.start + index
+    out.push(`${n === line ? '>' : ' '} ${String(n).padStart(String(snippet.start + snippet.lines.length).length)} | ${text}`)
+  }
+  out.push('```', '')
+  return out
+}
+
+function loc(frame: { file?: string, line?: number, column?: number, raw?: string }, options: MarkdownOptions): string {
   const file = frame.file ? (options.cwd ? relativeToCwd(frame.file, options.cwd) : frame.file) : (frame.raw?.trim() ?? '<anonymous>')
   return `${file}${frame.line !== undefined ? `:${frame.line}` : ''}${frame.column !== undefined ? `:${frame.column}` : ''}`
 }
