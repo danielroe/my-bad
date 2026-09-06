@@ -3,6 +3,9 @@ import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createReport } from '../src'
 import { createChannel } from '../src/channel'
+import { escapeCmdArg } from '../src/channel/open'
+
+const JSON_HEADERS = { 'content-type': 'application/json' }
 
 const servers: Array<() => void> = []
 afterEach(() => {
@@ -78,10 +81,12 @@ describe('createChannel', () => {
     expect(events).toEqual(['error:set', 'error:clear'])
 
     const file = resolve('a.ts')
-    const res = await fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file, line: 3 }) })
+    const res = await fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file, line: 3 }) })
     expect(res.status).toBe(204)
     expect(opened).toEqual([{ file, line: 3, column: undefined }])
-    expect((await fetch(`${url}/open`, { method: 'POST', body: '{}' })).status).toBe(400)
+    expect((await fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: '{}' })).status).toBe(400)
+    expect((await fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file }) })).status).toBe(415)
+    expect(opened).toHaveLength(1)
   })
 
   it('keeps bounded history and serves reports by id', async () => {
@@ -121,7 +126,7 @@ describe('cross-origin requests', () => {
   const file = resolve('a.ts')
 
   async function post(url: string, headers: Record<string, string>): Promise<number> {
-    const res = await fetch(`${url}/open`, { method: 'POST', headers, body: JSON.stringify({ file }) })
+    const res = await fetch(`${url}/open`, { method: 'POST', headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify({ file }) })
     return res.status
   }
 
@@ -157,13 +162,13 @@ describe('cross-origin requests', () => {
     const channel = createChannel({ open: () => {} })
     const evil = new Request('http://localhost:3000/__my-bad/open', {
       method: 'POST',
-      headers: { 'sec-fetch-site': 'cross-site' },
+      headers: { ...JSON_HEADERS, 'sec-fetch-site': 'cross-site' },
       body: JSON.stringify({ file }),
     })
     expect((await channel.fetchHandler(evil))?.status).toBe(403)
     const same = new Request('http://localhost:3000/__my-bad/open', {
       method: 'POST',
-      headers: { origin: 'http://localhost:3000', host: 'localhost:3000' },
+      headers: { ...JSON_HEADERS, origin: 'http://localhost:3000', host: 'localhost:3000' },
       body: JSON.stringify({ file }),
     })
     expect((await channel.fetchHandler(same))?.status).toBe(204)
@@ -177,23 +182,68 @@ describe('open containment', () => {
     const channel = createChannel({ open: request => void opened.push(request) })
     const url = await listen(channel)
 
-    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file }) }).then(res => res.status)
-    expect(await post('/etc/passwd')).toBe(400)
-    expect(await post(`${resolve('src')}/../../outside.ts`)).toBe(400)
+    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+    expect(await post('/etc/passwd')).toBe(403)
+    expect(await post(`${resolve('src')}/../../outside.ts`)).toBe(403)
     expect(await post(resolve('src/index.ts'))).toBe(204)
-    expect(opened).toEqual([{ file: resolve('src/index.ts'), line: undefined, column: undefined }])
+    expect(await post('src/../src/index.ts')).toBe(204)
+    expect(opened).toEqual([
+      { file: resolve('src/index.ts'), line: undefined, column: undefined },
+      { file: resolve('src/index.ts'), line: undefined, column: undefined },
+    ])
   })
 
   it('honours an explicit root and opting out', async () => {
     const opened: unknown[] = []
     const confined = createChannel({ open: request => void opened.push(request), root: resolve('src') })
     const confinedUrl = await listen(confined)
-    const post = (url: string, file: string) => fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file }) }).then(res => res.status)
-    expect(await post(confinedUrl, resolve('test/channel.test.ts'))).toBe(400)
+    const post = (url: string, file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+    expect(await post(confinedUrl, resolve('test/channel.test.ts'))).toBe(403)
     expect(await post(confinedUrl, resolve('src/index.ts'))).toBe(204)
 
     const anywhere = createChannel({ open: request => void opened.push(request), root: false })
     const anywhereUrl = await listen(anywhere)
     expect(await post(anywhereUrl, '/etc/passwd')).toBe(204)
+  })
+})
+
+describe('host validation', () => {
+  const file = resolve('a.ts')
+  const body = JSON.stringify({ file })
+
+  it('refuses browser requests addressed to a non-loopback host', async () => {
+    const channel = createChannel({ open: () => {} })
+    const post = (headers: Record<string, string>) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, ...headers }, body })).then(res => res?.status)
+
+    expect(await post({ 'sec-fetch-site': 'same-origin', 'host': 'rebound.example:3000' })).toBe(403)
+    expect(await post({ origin: 'http://rebound.example:3000', host: 'rebound.example:3000' })).toBe(403)
+    expect(await post({ host: 'rebound.example:3000' })).toBe(204)
+    expect(await post({ 'sec-fetch-site': 'same-origin', 'host': 'app.localhost:3000' })).toBe(204)
+    expect(await post({ 'sec-fetch-site': 'same-origin', 'host': '[::1]:3000' })).toBe(204)
+    channel.close()
+  })
+
+  it('honours allowedHosts', async () => {
+    const channel = createChannel({ open: () => {}, allowedHosts: ['.example.dev', 'devbox'] })
+    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body })).then(res => res?.status)
+
+    expect(await post('app.example.dev:3000')).toBe(204)
+    expect(await post('example.dev')).toBe(204)
+    expect(await post('DevBox:3000')).toBe(204)
+    expect(await post('devbox.evil.example')).toBe(403)
+    channel.close()
+
+    const any = createChannel({ open: () => {}, allowedHosts: true })
+    expect((await any.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', 'host': 'anything.example' }, body })))?.status).toBe(204)
+    any.close()
+  })
+})
+
+describe('escapeCmdArg', () => {
+  it('quotes and escapes cmd.exe metacharacters', () => {
+    expect(escapeCmdArg('C:\\proj\\a.ts:3')).toBe('^"C:\\proj\\a.ts:3^"')
+    expect(escapeCmdArg('a & calc')).toBe('^"a^ ^&^ calc^"')
+    expect(escapeCmdArg('say "hi"')).toBe('^"say^ \\^"hi\\^"^"')
+    expect(escapeCmdArg('dir\\')).toBe('^"dir\\\\^"')
   })
 })

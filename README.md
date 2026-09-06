@@ -140,10 +140,12 @@ import { fileSink } from 'my-bad/sinks'
 
 const channel = createChannel({ open: true, sink: fileSink('.nuxt/my-bad.jsonl') })
 // `open: true` launches `LAUNCH_EDITOR` / `VISUAL` / `EDITOR` at the frame's line, falling back to the OS default app
-// `open` requests are confined to `root` (default `process.cwd()`); pass `root: false` to allow any path
+// `open` requests are confined to `root` (default `process.cwd()`; the Vite plugin uses `server.fs.allow`)
+// and must be `application/json`; pass `root: false` to allow any path
 
 // The channel refuses requests a page on another origin made (`Sec-Fetch-Site`, else `Origin` must match the
-// host addressed). Requests with neither header (`curl`, editor integrations) are allowed.
+// host addressed), and browser requests addressed to a host other than loopback or `allowedHosts` (the Vite
+// plugin passes `server.allowedHosts`). Requests with neither header (`curl`, editor integrations) are allowed.
 
 // Node: mount at the channel base path
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))

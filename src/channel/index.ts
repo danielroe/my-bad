@@ -37,6 +37,12 @@ export interface ChannelOptions {
    * file in a dependency linked from outside the project.
    */
   root?: string | string[] | false
+  /**
+   * Hosts a browser may address the channel through, besides `localhost`,
+   * `*.localhost`, `127.0.0.1` and `::1`. Entries starting with `.` also match
+   * subdomains; `true` accepts any host. Guards against DNS rebinding.
+   */
+  allowedHosts?: string[] | true
   /** Receives every event for logging, files, or agent integrations. */
   sink?: Sink
   /** Keepalive interval in ms. Default 15000. */
@@ -124,11 +130,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     ? undefined
     : (Array.isArray(options.root) ? options.root : [options.root ?? process.cwd()]).map(root => resolve(root))
 
-  function contained(file: string): boolean {
+  function contained(target: string): boolean {
     if (!roots) {
       return true
     }
-    const target = resolve(file)
     return roots.some((root) => {
       const path = relative(root, target)
       return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
@@ -136,9 +141,6 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   }
 
   async function open(request: OpenRequest): Promise<boolean> {
-    if (!contained(request.file)) {
-      return false
-    }
     if (typeof options.open === 'function') {
       await options.open(request)
       return true
@@ -181,10 +183,22 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
   }
 
-  async function openStatus(body: unknown): Promise<number> {
+  async function openStatus(contentType: string | null | undefined, body: unknown): Promise<number> {
+    if (!/^application\/json\b/i.test(contentType ?? '')) {
+      return 415
+    }
     const request = parseOpen(body)
-    return request && await open(request).catch(() => false) ? 204 : 400
+    if (!request) {
+      return 400
+    }
+    request.file = resolve(request.file)
+    if (!contained(request.file)) {
+      return 403
+    }
+    return await open(request).catch(() => false) ? 204 : 400
   }
+
+  const trust = { allowedHosts: options.allowedHosts }
 
   function historyResponse(id: string): { status: number, body: string } {
     const report = reports.get(id)
@@ -200,7 +214,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       if (!matched) {
         return false
       }
-      if (!isTrustedNodeRequest(req)) {
+      if (!isTrustedNodeRequest(req, trust)) {
         res.writeHead(403).end()
         return true
       }
@@ -222,7 +236,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           return true
         }
         const body = await json(req).catch(() => undefined)
-        res.writeHead(await openStatus(body)).end()
+        res.writeHead(await openStatus(req.headers['content-type'], body)).end()
         return true
       }
       const { status, body } = historyResponse(matched.history)
@@ -236,7 +250,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       if (!matched) {
         return
       }
-      if (!isTrustedFetchRequest(request)) {
+      if (!isTrustedFetchRequest(request, trust)) {
         return new Response(null, { status: 403 })
       }
       if (matched === 'events') {
@@ -268,7 +282,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         if (request.method !== 'POST') {
           return new Response(null, { status: 405 })
         }
-        return new Response(null, { status: await openStatus(await request.json().catch(() => undefined)) })
+        return new Response(null, { status: await openStatus(request.headers.get('content-type'), await request.json().catch(() => undefined)) })
       }
       const { status, body } = historyResponse(matched.history)
       return new Response(body, { status, headers: JSON_HEADERS })

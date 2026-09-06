@@ -89,7 +89,11 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
 
     configureServer(devServer) {
       server = devServer
-      const channel = createChannel({ root: devServer.config.root, ...(typeof options.channel === 'object' ? options.channel : { open: true }) })
+      const channel = createChannel({
+        root: devServer.config.server.fs.allow,
+        allowedHosts: devServer.config.server.allowedHosts,
+        ...(typeof options.channel === 'object' ? options.channel : { open: true }),
+      })
       const cwd = options.report?.cwd ?? devServer.config.root
       const loaders = [viteLoader(devServer), fsLoader()]
       const presets = options.presets ?? []

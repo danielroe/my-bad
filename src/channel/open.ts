@@ -37,8 +37,9 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
     const name = bin.replace(/\.(?:exe|cmd|bat)$/i, '').split(/[\\/]/).pop()!.toLowerCase()
     if (!TERMINAL_EDITORS.has(name)) {
       const args = EDITORS[name] ?? goto
-      // `.cmd` / `.bat` editor shims are only executable through a shell on Windows.
-      return run(bin, [...extra, ...args(request.file, request.line, request.column)], process.platform === 'win32')
+      // `.cmd` / `.bat` editor shims (VS Code's `code` on Windows) are only executable through `cmd.exe`.
+      const shell = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(bin)
+      return run(bin, [...extra, ...args(request.file, request.line, request.column)], shell)
     }
   }
   const tinyOpen = await import('tiny-open' as string).then(mod => mod.default ?? mod).catch(() => undefined)
@@ -54,10 +55,19 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
   return run('xdg-open', [request.file])
 }
 
+/**
+ * Quote an argument for `cmd.exe`, which `spawn` does not do itself when `shell`
+ * is set: it only joins the arguments with spaces.
+ */
+export function escapeCmdArg(arg: string): string {
+  const quoted = `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1')}"`
+  return quoted.replace(/[()\][%!^"`<>&|;, *?]/g, '^$&')
+}
+
 function run(bin: string, args: string[], shell = false): Promise<boolean> {
   return new Promise((resolve) => {
     try {
-      const child = spawn(bin, args, { stdio: 'ignore', detached: true, shell })
+      const child = spawn(bin, shell ? args.map(escapeCmdArg) : args, { stdio: 'ignore', detached: true, shell })
       child.once('error', () => resolve(false))
       child.once('spawn', () => {
         child.unref()

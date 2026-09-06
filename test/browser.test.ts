@@ -9,7 +9,7 @@ let browser: Browser
 let close: () => void
 let origin: string
 const openRequests: unknown[] = []
-const channel = createChannel({ open: request => void openRequests.push(request) })
+const channel = createChannel({ open: request => void openRequests.push(request), root: '/proj' })
 const assets = { script: '/client.js', styles: '/client.css' }
 
 async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000): Promise<void> {
