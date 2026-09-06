@@ -140,6 +140,10 @@ import { fileSink } from 'my-bad/sinks'
 
 const channel = createChannel({ open: true, sink: fileSink('.nuxt/my-bad.jsonl') })
 // `open: true` launches `LAUNCH_EDITOR` / `VISUAL` / `EDITOR` at the frame's line, falling back to the OS default app
+// `open` requests are confined to `root` (default `process.cwd()`); pass `root: false` to allow any path
+
+// The channel refuses requests a page on another origin made (`Sec-Fetch-Site`, else `Origin` must match the
+// host addressed). Requests with neither header (`curl`, editor integrations) are allowed.
 
 // Node: mount at the channel base path
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))

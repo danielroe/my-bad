@@ -1,9 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ErrorReport, HistoryEntry } from '../types'
 import type { BuildProgress, ChannelEvent, LogEntry } from './protocol'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
+import process from 'node:process'
 import { json } from 'node:stream/consumers'
 import { version } from '../../package.json'
 import { openInEditor } from './open'
+import { isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
 import { toHistoryEntry } from './protocol'
 
 export { openInEditor } from './open'
@@ -28,6 +31,12 @@ export interface ChannelOptions {
    * a function receives the location. Omit to disable the action.
    */
   open?: boolean | ((request: OpenRequest) => void | Promise<void>)
+  /**
+   * Directories that `open` requests are confined to. Defaults to
+   * `process.cwd()`; pass `false` to accept any path, for example to open a
+   * file in a dependency linked from outside the project.
+   */
+  root?: string | string[] | false
   /** Receives every event for logging, files, or agent integrations. */
   sink?: Sink
   /** Keepalive interval in ms. Default 15000. */
@@ -111,7 +120,25 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     return { type: 'hello', payload: { version, actions, current, history: history() } }
   }
 
+  const roots = options.root === false
+    ? undefined
+    : (Array.isArray(options.root) ? options.root : [options.root ?? process.cwd()]).map(root => resolve(root))
+
+  function contained(file: string): boolean {
+    if (!roots) {
+      return true
+    }
+    const target = resolve(file)
+    return roots.some((root) => {
+      const path = relative(root, target)
+      return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
+    })
+  }
+
   async function open(request: OpenRequest): Promise<boolean> {
+    if (!contained(request.file)) {
+      return false
+    }
     if (typeof options.open === 'function') {
       await options.open(request)
       return true
@@ -173,6 +200,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       if (!matched) {
         return false
       }
+      if (!isTrustedNodeRequest(req)) {
+        res.writeHead(403).end()
+        return true
+      }
       if (matched === 'events') {
         res.writeHead(200, SSE_HEADERS)
         res.flushHeaders?.()
@@ -204,6 +235,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       const matched = route(new URL(request.url).pathname)
       if (!matched) {
         return
+      }
+      if (!isTrustedFetchRequest(request)) {
+        return new Response(null, { status: 403 })
       }
       if (matched === 'events') {
         const encoder = new TextEncoder()

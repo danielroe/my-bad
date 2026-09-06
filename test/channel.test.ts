@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createReport } from '../src'
 import { createChannel } from '../src/channel'
@@ -76,9 +77,10 @@ describe('createChannel', () => {
     expect(clear).toMatchObject({ event: 'error:clear' })
     expect(events).toEqual(['error:set', 'error:clear'])
 
-    const res = await fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file: '/a.ts', line: 3 }) })
+    const file = resolve('a.ts')
+    const res = await fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file, line: 3 }) })
     expect(res.status).toBe(204)
-    expect(opened).toEqual([{ file: '/a.ts', line: 3, column: undefined }])
+    expect(opened).toEqual([{ file, line: 3, column: undefined }])
     expect((await fetch(`${url}/open`, { method: 'POST', body: '{}' })).status).toBe(400)
   })
 
@@ -112,5 +114,86 @@ describe('createChannel', () => {
     const missing = await channel.fetchHandler(new Request(`http://localhost/__my-bad/history/nope`))
     expect(missing?.status).toBe(404)
     channel.close()
+  })
+})
+
+describe('cross-origin requests', () => {
+  const file = resolve('a.ts')
+
+  async function post(url: string, headers: Record<string, string>): Promise<number> {
+    const res = await fetch(`${url}/open`, { method: 'POST', headers, body: JSON.stringify({ file }) })
+    return res.status
+  }
+
+  it('refuses requests made by a page on another site', async () => {
+    const opened: unknown[] = []
+    const channel = createChannel({ open: request => void opened.push(request) })
+    const url = await listen(channel)
+
+    expect(await post(url, { 'sec-fetch-site': 'cross-site', 'origin': 'https://evil.example' })).toBe(403)
+    expect(await post(url, { 'sec-fetch-site': 'same-site' })).toBe(403)
+    expect(await post(url, { origin: 'https://evil.example' })).toBe(403)
+    expect(await post(url, { origin: 'null' })).toBe(403)
+    expect(opened).toEqual([])
+
+    expect((await fetch(`${url}/events`, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
+    expect((await fetch(`${url}/history/nope`, { headers: { origin: 'https://evil.example' } })).status).toBe(403)
+  })
+
+  it('allows same-origin and non-browser requests', async () => {
+    const opened: unknown[] = []
+    const channel = createChannel({ open: request => void opened.push(request) })
+    const url = await listen(channel)
+    const origin = new URL(url).origin
+
+    expect(await post(url, { 'sec-fetch-site': 'same-origin', 'origin': origin })).toBe(204)
+    expect(await post(url, { 'sec-fetch-site': 'none' })).toBe(204)
+    expect(await post(url, { origin })).toBe(204)
+    expect(await post(url, {})).toBe(204)
+    expect(opened).toHaveLength(4)
+  })
+
+  it('gates the fetch handler too', async () => {
+    const channel = createChannel({ open: () => {} })
+    const evil = new Request('http://localhost:3000/__my-bad/open', {
+      method: 'POST',
+      headers: { 'sec-fetch-site': 'cross-site' },
+      body: JSON.stringify({ file }),
+    })
+    expect((await channel.fetchHandler(evil))?.status).toBe(403)
+    const same = new Request('http://localhost:3000/__my-bad/open', {
+      method: 'POST',
+      headers: { origin: 'http://localhost:3000', host: 'localhost:3000' },
+      body: JSON.stringify({ file }),
+    })
+    expect((await channel.fetchHandler(same))?.status).toBe(204)
+    channel.close()
+  })
+})
+
+describe('open containment', () => {
+  it('rejects files outside the root and accepts files within it', async () => {
+    const opened: unknown[] = []
+    const channel = createChannel({ open: request => void opened.push(request) })
+    const url = await listen(channel)
+
+    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file }) }).then(res => res.status)
+    expect(await post('/etc/passwd')).toBe(400)
+    expect(await post(`${resolve('src')}/../../outside.ts`)).toBe(400)
+    expect(await post(resolve('src/index.ts'))).toBe(204)
+    expect(opened).toEqual([{ file: resolve('src/index.ts'), line: undefined, column: undefined }])
+  })
+
+  it('honours an explicit root and opting out', async () => {
+    const opened: unknown[] = []
+    const confined = createChannel({ open: request => void opened.push(request), root: resolve('src') })
+    const confinedUrl = await listen(confined)
+    const post = (url: string, file: string) => fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file }) }).then(res => res.status)
+    expect(await post(confinedUrl, resolve('test/channel.test.ts'))).toBe(400)
+    expect(await post(confinedUrl, resolve('src/index.ts'))).toBe(204)
+
+    const anywhere = createChannel({ open: request => void opened.push(request), root: false })
+    const anywhereUrl = await listen(anywhere)
+    expect(await post(anywhereUrl, '/etc/passwd')).toBe(204)
   })
 })

@@ -37,7 +37,8 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
     const name = bin.replace(/\.(?:exe|cmd|bat)$/i, '').split(/[\\/]/).pop()!.toLowerCase()
     if (!TERMINAL_EDITORS.has(name)) {
       const args = EDITORS[name] ?? goto
-      return run(bin, [...extra, ...args(request.file, request.line, request.column)])
+      // `.cmd` / `.bat` editor shims are only executable through a shell on Windows.
+      return run(bin, [...extra, ...args(request.file, request.line, request.column)], process.platform === 'win32')
     }
   }
   const tinyOpen = await import('tiny-open' as string).then(mod => mod.default ?? mod).catch(() => undefined)
@@ -53,10 +54,10 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
   return run('xdg-open', [request.file])
 }
 
-function run(bin: string, args: string[]): Promise<boolean> {
+function run(bin: string, args: string[], shell = false): Promise<boolean> {
   return new Promise((resolve) => {
     try {
-      const child = spawn(bin, args, { stdio: 'ignore', detached: true, shell: process.platform === 'win32' })
+      const child = spawn(bin, args, { stdio: 'ignore', detached: true, shell })
       child.once('error', () => resolve(false))
       child.once('spawn', () => {
         child.unref()
