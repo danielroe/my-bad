@@ -113,6 +113,24 @@ Frames are mapped by loaders, tried in order:
 
 A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice.
 
+Compile errors from a bundler often point into the module it transformed while naming the source file (rolldown failing to parse a compiled render function, say). Their position and code frame then move to `frame.compiled`, so the generated code is labelled as such rather than shown as the source of your file.
+
+That is detected by comparing the frame's **caret line**, the one line the frame asserts describes the reported position, against the file on disk at the line number the frame gives it. Indentation is ignored, and a line Vite truncated for width is matched on the part that survived. If it matches, the frame is source; if it does not, the frame is generated. Neighbouring lines are not compared, because a bare `}` or `})` matches almost any file by chance. Nothing changes when the file cannot be read, or the caret line is only punctuation, or there is no caret at all.
+
+A thrower that already knows better can say so, and is believed without any comparison. This is honoured wherever the error sits in the chain, including as a `cause` at any depth, which is how a compile error wrapped in an `HTTPError` gets it right:
+
+```ts
+throw Object.assign(error, { compiled: true })
+```
+
+The same thing is available as an option for the top-level input, where `compiled: { sourceLoc }` also supplies a position you have mapped back to source yourself, to get a source snippet alongside the generated one:
+
+```ts
+await createReport(error, { kind: 'compile', compiled: { sourceLoc: { line: 6, column: 16 } } })
+```
+
+A marker on the error wins over the option, and both win over detection in either direction (`false` opts out entirely, and the file is not read).
+
 ### Terminal
 
 ```ts

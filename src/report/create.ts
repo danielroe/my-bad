@@ -1,4 +1,4 @@
-import type { CompileErrorInput, ErrorReport, Frame, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
+import type { CompiledMarker, CompileErrorInput, ErrorReport, Frame, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
 import process from 'node:process'
 import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
@@ -183,6 +183,21 @@ function isCompileInput(input: unknown): input is CompileErrorInput {
   return compileLoc(candidate) !== undefined || typeof candidate.frame === 'string'
 }
 
+/**
+ * A marker on the error is a statement by whoever threw it, so it beats both
+ * the option (which only ever applies to the top-level input) and detection.
+ */
+function compiledMarker(input: CompileErrorInput, options: ResolvedReportOptions): CompiledMarker | undefined {
+  const marker = input.compiled
+  if (typeof marker === 'boolean') {
+    return marker
+  }
+  if (typeof marker === 'object' && marker !== null) {
+    return { sourceLoc: marker.sourceLoc }
+  }
+  return options.compiled
+}
+
 function compileLoc(input: CompileErrorInput): { file?: string, line: number, column: number } | undefined {
   const loc = input.loc
   if (typeof loc !== 'object' || loc === null) {
@@ -207,8 +222,16 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
     const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
     const file = rawFile ? resolveFile(rawFile, options.cwd) : undefined
 
-    if (options.compiled) {
-      const source = typeof options.compiled === 'object' ? options.compiled.sourceLoc : undefined
+    const marker = compiledMarker(input, options)
+    const explicit = marker === false || marker === undefined ? undefined : (typeof marker === 'object' ? marker : {})
+    let generated = explicit !== undefined
+    if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
+      const contents = await readSource(file, options)
+      generated = contents !== undefined && caretLineMatchesSource(snippet, frameLoc.line, contents) === false
+    }
+
+    if (generated) {
+      const source = explicit?.sourceLoc
       const sourceFile = source?.file ? resolveFile(source.file, options.cwd) : file
       const frame: Frame = {
         ...(sourceFile && { file: sourceFile }),
@@ -286,6 +309,50 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
   return frames
 }
 
+const LEADING_ELLIPSIS = /^\s*(?:…|\.\.\.)/
+const TRAILING_ELLIPSIS = /(?:…|\.\.\.)\s*$/
+/** Braces, brackets and separators are shared by every language; matching on them proves nothing. */
+const UNINFORMATIVE = /^[\s{}()[\];,.]*$/
+
+/**
+ * Bundlers report a position inside the module they transformed while naming
+ * the source file, so a code frame whose text is not in the file on disk at the
+ * line it claims is generated code, not source.
+ *
+ * Only the caret line is compared, because it is the one line the frame asserts
+ * describes the reported position, and unlike its neighbours it is rarely a bare
+ * brace that any file would match by chance. Indentation is ignored, and a line
+ * the bundler truncated for width is matched on the part that survived.
+ * `undefined` when there is nothing worth comparing.
+ */
+function caretLineMatchesSource(snippet: Snippet, caretLine: number, contents: string): boolean | undefined {
+  const expected = snippet.lines[caretLine - snippet.start]?.trim()
+  if (!expected || UNINFORMATIVE.test(stripEllipsis(expected))) {
+    return
+  }
+  const actual = contents.split(/\r?\n/)[caretLine - 1]?.trim()
+  if (actual === undefined) {
+    return false
+  }
+  if (expected === actual) {
+    return true
+  }
+  const head = LEADING_ELLIPSIS.test(expected)
+  const tail = TRAILING_ELLIPSIS.test(expected)
+  if (!head && !tail) {
+    return false
+  }
+  const survived = stripEllipsis(expected)
+  if (survived.length < 8) {
+    return
+  }
+  return head && tail ? actual.includes(survived) : head ? actual.endsWith(survived) : actual.startsWith(survived)
+}
+
+function stripEllipsis(line: string): string {
+  return line.replace(LEADING_ELLIPSIS, '').replace(TRAILING_ELLIPSIS, '').trim()
+}
+
 function resolveFile(file: string, cwd: string): string {
   return stripCacheQuery(toPath(isFilePath(file) || hasScheme(file) ? file : resolvePath(cwd, file)))
 }
@@ -328,7 +395,7 @@ async function mapFrame(frame: Frame, options: ResolvedReportOptions): Promise<F
   return frame
 }
 
-async function loadSnippet(file: string, line: number, options: ResolvedReportOptions) {
+async function readSource(file: string, options: ResolvedReportOptions): Promise<string | undefined> {
   for (const loader of options.loaders) {
     if (!loader.read) {
       continue
@@ -336,11 +403,16 @@ async function loadSnippet(file: string, line: number, options: ResolvedReportOp
     try {
       const contents = await loader.read(file)
       if (contents !== undefined) {
-        return withTokens(extractSnippet(contents, line, options.snippetLines, file), options)
+        return contents
       }
     }
     catch {}
   }
+}
+
+async function loadSnippet(file: string, line: number, options: ResolvedReportOptions) {
+  const contents = await readSource(file, options)
+  return contents === undefined ? undefined : withTokens(extractSnippet(contents, line, options.snippetLines, file), options)
 }
 
 /**

@@ -243,7 +243,112 @@ describe('rolldown style compile errors', () => {
   })
 })
 
+const sfc = '<script setup lang="ts">\nconst bob = ref<string>()\n</script>\n\n<template>\n  <div :class="bob !">\n    Nuxt Playground\n  </div>\n</template>\n'
+
+function memoryLoader(contents: string, file = '/proj/app/app.vue') {
+  return [{ name: 'memory', read: (path: string) => path === file ? contents : undefined }]
+}
+
 describe('compiled compile errors', () => {
+  it('detects a frame that does not match the file on disk', async () => {
+    const report = await createReport(rolldownError(), { cwd: '/proj', loaders: memoryLoader(sfc) })
+    const [frame] = report.frames
+    expect(frame).toMatchObject({ file: '/proj/app/app.vue', type: 'app' })
+    expect(frame!.line).toBeUndefined()
+    expect(frame!.snippet).toBeUndefined()
+    expect(frame!.compiled).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+    expect(frame!.compiled!.snippet!.lines[2]).toBe('      class: _normalizeClass(_ctx.bob !)')
+  })
+
+  it('detects a compile error wrapped in a runtime error', async () => {
+    const report = await createReport({
+      name: 'HTTPError',
+      message: 'Server Error',
+      statusCode: 500,
+      stack: 'HTTPError: Server Error\n    at /proj/node_modules/nitropack/dist/runtime/internal/error.mjs:20:11',
+      cause: rolldownError(),
+    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    expect(report.kind).toBe('compile')
+    const [frame] = report.frames
+    expect(frame!.line).toBeUndefined()
+    expect(frame!.snippet).toBeUndefined()
+    expect(frame!.compiled).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+    expect(frame!.compiled!.snippet!.lines[2]).toBe('      class: _normalizeClass(_ctx.bob !)')
+  })
+
+  it('keeps a frame that does match the file as source', async () => {
+    const report = await createReport({
+      message: 'Element is missing end tag.',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', line: 6, column: 3 },
+      frame: '5  |  <template>\n6  |    <div :class="bob !">\n   |    ^\n7  |      Nuxt Playground',
+    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    const [frame] = report.frames
+    expect(frame).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 3 })
+    expect(frame!.compiled).toBeUndefined()
+    expect(frame!.snippet!.lines[1]).toBe('  <div :class="bob !">')
+  })
+
+  it('ignores indentation differences', async () => {
+    const report = await createReport({
+      message: 'Element is missing end tag.',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', line: 6, column: 3 },
+      frame: '5  |  <template>\n6  |  \t<div :class="bob !">\n   |    ^\n7  |    Nuxt Playground',
+    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 3 })
+    expect(report.frames[0]!.compiled).toBeUndefined()
+  })
+
+  it('matches a truncated caret line on the part that survived', async () => {
+    const report = await createReport({
+      message: 'Element is missing end tag.',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', line: 6, column: 3 },
+      frame: '5  |  <template>\n6  |    <div :class="bob...\n   |    ^\n7  |      Nuxt Playground',
+    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 3 })
+    expect(report.frames[0]!.compiled).toBeUndefined()
+  })
+
+  it('ignores neighbouring lines that match the source by chance', async () => {
+    const source = '<script setup lang="ts">\nconst props = defineProps<{ a: string }>()\nfunction go() {\n  if (props.a) {\n    doThing()\n  }\n}\n</script>\n'
+    const report = await createReport({
+      name: 'RolldownError',
+      message: 'Parse failed',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', line: 8, column: 35 },
+      frame: '5  |    ], 64 /* STABLE_FRAGMENT */))\n6  |  }\n7  |  }\n8  |    class: _normalizeClass(_ctx.a !)\n   |                                   ^\n9  |  }, null, 2 /* CLASS */)',
+    }, { cwd: '/proj', loaders: memoryLoader(source) })
+    const [frame] = report.frames
+    expect(frame!.line).toBeUndefined()
+    expect(frame!.compiled).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 34 })
+  })
+
+  it('keeps the frame as source when the caret line proves nothing', async () => {
+    const report = await createReport({
+      name: 'RolldownError',
+      message: 'Parse failed',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', line: 7, column: 1 },
+      frame: '6  |    })\n7  |  }\n   |  ^\n8  |  </script>',
+    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 7 })
+    expect(report.frames[0]!.compiled).toBeUndefined()
+  })
+
+  it('leaves the frame alone when the source cannot be read', async () => {
+    const report = await createReport(rolldownError(), { cwd: '/proj', loaders: [] })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+    expect(report.frames[0]!.compiled).toBeUndefined()
+  })
+
+  it('can be opted out of with compiled: false', async () => {
+    const report = await createReport(rolldownError(), { cwd: '/proj', compiled: false, loaders: memoryLoader(sfc) })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+    expect(report.frames[0]!.compiled).toBeUndefined()
+  })
+
   it('puts the position and generated frame on frame.compiled', async () => {
     const report = await createReport(rolldownError(), { cwd: '/proj', kind: 'compile', compiled: true, loaders: [], snippets: false })
     const [frame] = report.frames
@@ -254,13 +359,47 @@ describe('compiled compile errors', () => {
     expect(frame!.compiled!.snippet!.lines[2]).toBe('      class: _normalizeClass(_ctx.bob !)')
   })
 
+  it('honours a compiled marker on a cause, without reading the source', async () => {
+    const report = await createReport({
+      name: 'HTTPError',
+      message: 'Server Error',
+      statusCode: 500,
+      stack: 'HTTPError: Server Error\n    at /proj/node_modules/nitropack/dist/runtime/internal/error.mjs:20:11',
+      cause: { ...rolldownError(), compiled: true },
+    }, { cwd: '/proj', loaders: [] })
+    expect(report.kind).toBe('compile')
+    const [frame] = report.frames
+    expect(frame!.line).toBeUndefined()
+    expect(frame!.snippet).toBeUndefined()
+    expect(frame!.compiled).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+  })
+
+  it('lets a marker on the input override the option', async () => {
+    const report = await createReport({ ...rolldownError(), compiled: false }, { cwd: '/proj', compiled: true, loaders: memoryLoader(sfc) })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
+    expect(report.frames[0]!.compiled).toBeUndefined()
+  })
+
+  it('never renders the marker as report data', async () => {
+    const report = await createReport({ ...rolldownError(), compiled: true }, { cwd: '/proj', loaders: [] })
+    expect(JSON.stringify(report)).not.toContain('"compiled":true')
+    expect(report.sections).toEqual([])
+  })
+
+  it('ignores a marker on an ordinary runtime error', async () => {
+    const error = Object.assign(new Error('boom'), { compiled: true })
+    const report = await createReport(error, { cwd: '/proj', loaders: [] })
+    expect(report.kind).toBe('error')
+    expect(report.frames.every(frame => frame.compiled === undefined)).toBe(true)
+    expect(JSON.stringify(report)).not.toContain('"compiled":true')
+  })
+
   it('adds a source snippet when the caller knows the mapped position', async () => {
-    const source = '<script setup lang="ts">\nconst bob = ref<string>()\n</script>\n\n<template>\n  <div :class="bob !">\n    Nuxt Playground\n  </div>\n</template>\n'
     const report = await createReport(rolldownError(), {
       cwd: '/proj',
       kind: 'compile',
       compiled: { sourceLoc: { line: 6, column: 16 } },
-      loaders: [{ name: 'memory', read: file => file === '/proj/app/app.vue' ? source : undefined }],
+      loaders: memoryLoader(sfc),
     })
     const [frame] = report.frames
     expect(frame).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 16 })
