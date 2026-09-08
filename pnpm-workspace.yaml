@@ -21,7 +21,7 @@ packages:
   - test/fixtures/*
 
 overrides:
-  my-bad: 'link:.'
+  my-bad: 'workspace:*'
 
 allowBuilds:
   esbuild: false

@@ -106,7 +106,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  my-bad: link:.
+  my-bad: workspace:*
 
 importers:
 
@@ -183,7 +183,7 @@ importers:
   playground:
     dependencies:
       my-bad:
-        specifier: link:..
+        specifier: workspace:*
         version: link:..
 
   playground/vite:
@@ -203,7 +203,7 @@ importers:
   test/fixtures/nitro-v3:
     dependencies:
       my-bad:
-        specifier: link:../../..
+        specifier: workspace:*
         version: link:../../..
       nitro:
         specifier: 3.0.260610-beta
@@ -215,7 +215,7 @@ importers:
         specifier: ^1.15.4
         version: 1.15.11
       my-bad:
-        specifier: link:../../..
+        specifier: workspace:*
         version: link:../../..
       nitropack:
         specifier: ^2.13.4
@@ -224,7 +224,7 @@ importers:
   test/fixtures/nuxt-v4:
     dependencies:
       my-bad:
-        specifier: link:../../..
+        specifier: workspace:*
         version: link:../../..
       nuxt:
         specifier: 4.5.2
@@ -236,7 +236,7 @@ importers:
   test/fixtures/nuxt-v5:
     dependencies:
       my-bad:
-        specifier: link:../../..
+        specifier: workspace:*
         version: link:../../..
       nitro:
         specifier: 3.0.260610-beta
@@ -251,7 +251,7 @@ importers:
   test/fixtures/vite-ssr:
     dependencies:
       my-bad:
-        specifier: link:../../..
+        specifier: workspace:*
         version: link:../../..
       vite:
         specifier: ^8.2.2
