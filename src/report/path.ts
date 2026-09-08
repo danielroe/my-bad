@@ -1,5 +1,5 @@
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i
-const WINDOWS_DRIVE_RE = /^\/?[a-z]:\//i
+const WINDOWS_DRIVE_RE = /^\/?[a-z]:[\\/]/i
 
 /** Convert a `file:` URL to a filesystem path. Other inputs are returned unchanged. */
 export function toPath(source: string): string {
@@ -62,8 +62,20 @@ export function relativeToCwd(file: string, cwd: string): string {
   return file
 }
 
-/** Path as shown to the user: relative to `cwd`, or the part after the last `node_modules/`. */
-export function displayPath(file: string, cwd?: string): string {
+export interface DisplayTarget {
+  file?: string
+  displayFile?: string
+}
+
+/**
+ * Path as shown to the user: the `displayFile` resolved when the report was
+ * built, else relative to `cwd`, or the part after the last `node_modules/`.
+ */
+export function displayPath(target: string | DisplayTarget, cwd?: string): string {
+  if (typeof target !== 'string') {
+    return target.displayFile ?? (target.file ? displayPath(target.file, cwd) : '')
+  }
+  const file = target
   const normalized = normalizeSlashes(file)
   const index = normalized.lastIndexOf('/node_modules/')
   if (index !== -1) {

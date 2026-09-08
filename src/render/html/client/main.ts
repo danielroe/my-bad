@@ -6,7 +6,7 @@ import { escapeHtml } from '../escape'
 import { ICONS, renderToast, renderView } from '../view'
 
 declare global {
-  interface Window { __MY_BAD__?: PageState & { styles?: string } }
+  interface Window { __MY_BAD__?: PageState }
 }
 
 const STORAGE = {
@@ -36,7 +36,7 @@ interface Mount {
   preview?: HTMLElement
 }
 
-function readState(): (PageState & { styles?: string }) | undefined {
+function readState(): PageState | undefined {
   const script = document.currentScript as HTMLScriptElement | null
   const holder = script?.previousElementSibling
   if (holder instanceof HTMLScriptElement && holder.type === 'application/json') {
@@ -86,8 +86,16 @@ function mount(): Mount | undefined {
       return
     }
     const shadow = host.attachShadow({ mode: 'open' })
+    const sheets: HTMLElement[] = []
+    if (state.stylesUrl) {
+      const link = document.createElement('link')
+      link.rel = 'stylesheet'
+      link.href = state.stylesUrl
+      sheets.push(link)
+    }
     const style = document.createElement('style')
     style.textContent = state.styles ?? ''
+    sheets.push(style)
     const overlay = document.createElement('div')
     overlay.className = 'mb-overlay'
     overlay.dataset.overlay = ''
@@ -113,7 +121,7 @@ function mount(): Mount | undefined {
     preview.hidden = true
     preview.innerHTML = `<button type="button" class="mb-preview-toggle" data-action="minimize" title="Show page behind this error" aria-label="Show page behind this error"><iframe class="mb-preview-frame" title="" aria-hidden="true" tabindex="-1" sandbox="" inert></iframe><span class="mb-preview-label">Show page</span></button><button type="button" class="mb-pip-button mb-preview-close" data-action="hide-preview" title="Hide page preview" aria-label="Hide page preview">${ICONS.close}</button>`
     overlay.append(expand, close, root, preview)
-    shadow.append(style, overlay, restore)
+    shadow.append(...sheets, overlay, restore)
     return { state, themeTarget: host, root, overlay, restore, preview }
   }
   const root = document.querySelector<HTMLElement>('[data-my-bad-root]')
@@ -389,7 +397,6 @@ function connect(m: Mount): void {
       bar.hidden = true
     }
     if (m.overlay) {
-      setMinimized(m, false)
       setHidden(m, false)
     }
   })
@@ -436,7 +443,8 @@ function connect(m: Mount): void {
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
-function setMinimized(m: Mount, value: boolean, animate = true): void {
+function setMinimized(m: Mount, value: boolean, options: { animate?: boolean, persist?: boolean } = {}): void {
+  const { animate = true, persist = true } = options
   if (!m.overlay) {
     return
   }
@@ -452,7 +460,9 @@ function setMinimized(m: Mount, value: boolean, animate = true): void {
       focusHeading(m)
     }
     m.overlay!.setAttribute('aria-modal', String(!value))
-    storage(STORAGE.minimized, value ? '1' : '0')
+    if (persist) {
+      storage(STORAGE.minimized, value ? '1' : '0')
+    }
     document.documentElement.style.overflow = value ? '' : 'hidden'
     setHostInert(m, !value && !m.overlay!.hasAttribute('data-hidden'))
     updatePreview(m)
@@ -629,7 +639,7 @@ function setupOverlay(m: Mount): void {
   overlay.setAttribute('data-dock', dock)
   m.preview?.setAttribute('data-dock', dock)
   const minimized = storage(STORAGE.minimized)
-  setMinimized(m, minimized === null ? !!m.state.startMinimized : minimized === '1', false)
+  setMinimized(m, !!m.state.startMinimized || minimized === '1', { animate: false, persist: false })
   setHidden(m, storage(STORAGE.hidden) === '1')
 
   draggable(m, overlay, () => overlay.hasAttribute('data-minimized'), () => setMinimized(m, false))

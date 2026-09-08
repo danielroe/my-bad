@@ -87,6 +87,13 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     out.push('')
     out.push(...renderSnippet(topApp.snippet, topApp.line, topApp.column, ctx, `${indent}  `))
   }
+  else {
+    const generated = report.frames.find(frame => frame.type === 'app' && frame.compiled?.snippet && frame.compiled.line !== undefined)?.compiled
+    if (generated?.snippet && generated.line !== undefined) {
+      out.push('', `${indent}  ${p.dim('generated code:')}`)
+      out.push(...renderSnippet(generated.snippet, generated.line, generated.column, ctx, `${indent}  `))
+    }
+  }
 
   if (report.frames.length) {
     out.push('')
@@ -144,15 +151,17 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
   const { p } = ctx
   const prefix = [frame.isAsync && 'async', frame.isConstructor && 'new'].filter(Boolean).join(' ')
   const fn = frame.function ?? (frame.isEval ? 'eval' : '<anonymous>')
+  const generated = frame.line === undefined && frame.compiled?.line !== undefined ? frame.compiled : undefined
   const location = frame.file
-    ? `${displayPath(frame.file, ctx.cwd)}${frame.line !== undefined ? `:${frame.line}${frame.column !== undefined ? `:${frame.column}` : ''}` : ''}`
+    ? `${displayPath(frame, ctx.cwd)}${frame.line !== undefined ? `:${frame.line}${frame.column !== undefined ? `:${frame.column}` : ''}` : ''}`
     : frame.raw?.trim().replace(/^at\s+/, '') ?? ''
   const available = ctx.width - indent.length - 4 - fn.length - (prefix ? prefix.length + 1 : 0)
   const shown = truncateMiddle(location, Math.max(20, available))
   const linked = frame.file && isFilePath(frame.file)
     ? link(frame.file, { cwd: ctx.cwd, line: frame.line, column: frame.column, enabled: ctx.hyperlinks, formatter: () => shown })
     : shown
-  const text = `${p.dim('at')} ${prefix ? `${p.dim(prefix)} ` : ''}${dim ? fn : p.bold(fn)} ${dim ? linked : p.cyan(linked)}`
+  const note = generated ? ` ${p.dim(`(generated ${generated.line}${generated.column !== undefined ? `:${generated.column}` : ''})`)}` : ''
+  const text = `${p.dim('at')} ${prefix ? `${p.dim(prefix)} ` : ''}${dim ? fn : p.bold(fn)} ${dim ? linked : p.cyan(linked)}${note}`
   return `${indent}${dim ? p.dim(text) : text}`
 }
 

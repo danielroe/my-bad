@@ -59,7 +59,23 @@ import { injectOverlay } from 'my-bad'
 html = injectOverlay(html, report, { channel: '/__my-bad', startMinimized: status < 500 })
 ```
 
+`startMinimized: true` always mounts minimised, even if the user last expanded an overlay in this origin. Errors arriving over the channel leave the current minimised state alone.
+
 Use `injectOverlay` rather than `html.replace('</body>', ...)`: the inlined client contains `$` sequences that a string replacement would interpret.
+
+### Serving the client separately
+
+`renderPage` and `renderOverlay` inline the client script and stylesheet, which makes the output self-contained at the cost of ~60kB per response. Serve `clientAssets` yourself and pass the URLs to keep them out of the HTML and let the browser cache them:
+
+```ts
+import { clientAssets, renderPage } from 'my-bad'
+
+// GET /__my-bad/client.js  -> clientAssets.script (text/javascript)
+// GET /__my-bad/client.css -> clientAssets.styles (text/css)
+renderPage(report, { assets: { script: '/__my-bad/client.js', styles: '/__my-bad/client.css' } })
+```
+
+Theme overrides stay inline, so a shared stylesheet still themes per response.
 
 ### Theming
 
@@ -97,6 +113,24 @@ Frames are mapped by loaders, tried in order:
 
 A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice.
 
+Compile errors from a bundler often point into the module it transformed while naming the source file (rolldown failing to parse a compiled render function, say). Their position and code frame then move to `frame.compiled`, so the generated code is labelled as such rather than shown as the source of your file.
+
+That is detected by comparing the frame's **caret line**, the one line the frame asserts describes the reported position, against the file on disk at the line number the frame gives it. Indentation is ignored, and a line Vite truncated for width is matched on the part that survived. If it matches, the frame is source; if it does not, the frame is generated. Neighbouring lines are not compared, because a bare `}` or `})` matches almost any file by chance. Nothing changes when the file cannot be read, or the caret line is only punctuation, or there is no caret at all.
+
+A thrower that already knows better can say so, and is believed without any comparison. This is honoured wherever the error sits in the chain, including as a `cause` at any depth, which is how a compile error wrapped in an `HTTPError` gets it right:
+
+```ts
+throw Object.assign(error, { compiled: true })
+```
+
+The same thing is available as an option for the top-level input, where `compiled: { sourceLoc }` also supplies a position you have mapped back to source yourself, to get a source snippet alongside the generated one:
+
+```ts
+await createReport(error, { kind: 'compile', compiled: { sourceLoc: { line: 6, column: 16 } } })
+```
+
+A marker on the error wins over the option, and both win over detection in either direction (`false` opts out entirely, and the file is not read).
+
 ### Terminal
 
 ```ts
@@ -124,6 +158,12 @@ import { fileSink } from 'my-bad/sinks'
 
 const channel = createChannel({ open: true, sink: fileSink('.nuxt/my-bad.jsonl') })
 // `open: true` launches `LAUNCH_EDITOR` / `VISUAL` / `EDITOR` at the frame's line, falling back to the OS default app
+// `open` requests are confined to `root` (default `process.cwd()`; the Vite plugin uses `server.fs.allow`)
+// and must be `application/json`; pass `root: false` to allow any path
+
+// The channel refuses requests a page on another origin made (`Sec-Fetch-Site`, else `Origin` must match the
+// host addressed), and browser requests addressed to a host other than loopback or `allowedHosts` (the Vite
+// plugin passes `server.allowedHosts`). Requests with neither header (`curl`, editor integrations) are allowed.
 
 // Node: mount at the channel base path
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))
@@ -145,6 +185,8 @@ export default defineConfig({ plugins: [myBad()] })
 ```
 
 The plugin maps frames through Vite's module graph, forwards compile errors from the HMR channel as `kind: 'compile'` reports, mounts the channel at `/__my-bad`, injects a tiny client into `index.html` so a running app shows the overlay, and clears it when the next update succeeds. Use `useMyBad(server)` from your own SSR middleware to build reports and pages with the same configuration.
+
+The client script and stylesheet are served from `/__my-bad/client.js` and `/__my-bad/client.css` with content-hashed URLs, rather than inlined into every error page. Pass `inlineClient: true` for self-contained output.
 
 ## Presets
 

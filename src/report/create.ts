@@ -1,9 +1,10 @@
-import type { CompileErrorInput, ErrorReport, Frame, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
+import type { CompiledMarker, CompileErrorInput, ErrorReport, Frame, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
 import process from 'node:process'
 import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
 import { fsLoader } from '../loaders/fs'
 import { classifyFrame } from './classify'
+import { externalPackage } from './package'
 import { hasScheme, isFilePath, resolvePath, stripCacheQuery, toPath } from './path'
 import { extractSnippet, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
@@ -24,6 +25,7 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
     snippets: options.snippets ?? true,
     context: options.context ?? {},
     tokenizer: options.tokenizer,
+    compiled: options.compiled,
   }
 }
 
@@ -122,7 +124,7 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
 
   if (depth < options.maxCauses) {
     if (error.cause !== undefined && !(typeof error.cause === 'object' && error.cause !== null && seen.has(error.cause))) {
-      report.causes.push(await buildReport(error.cause, { ...options, kind: undefined }, depth + 1, seen))
+      report.causes.push(await buildReport(error.cause, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen))
     }
     if (Array.isArray(error.errors)) {
       report.errors = []
@@ -130,7 +132,7 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
         if (typeof nested === 'object' && nested !== null && seen.has(nested)) {
           continue
         }
-        report.errors.push(await buildReport(nested, { ...options, kind: undefined }, depth + 1, seen))
+        report.errors.push(await buildReport(nested, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen))
       }
     }
   }
@@ -181,6 +183,21 @@ function isCompileInput(input: unknown): input is CompileErrorInput {
   return compileLoc(candidate) !== undefined || typeof candidate.frame === 'string'
 }
 
+/**
+ * A marker on the error is a statement by whoever threw it, so it beats both
+ * the option (which only ever applies to the top-level input) and detection.
+ */
+function compiledMarker(input: CompileErrorInput, options: ResolvedReportOptions): CompiledMarker | undefined {
+  const marker = input.compiled
+  if (typeof marker === 'boolean') {
+    return marker
+  }
+  if (typeof marker === 'object' && marker !== null) {
+    return { sourceLoc: marker.sourceLoc }
+  }
+  return options.compiled
+}
+
 function compileLoc(input: CompileErrorInput): { file?: string, line: number, column: number } | undefined {
   const loc = input.loc
   if (typeof loc !== 'object' || loc === null) {
@@ -194,16 +211,65 @@ function compileLoc(input: CompileErrorInput): { file?: string, line: number, co
   }
 }
 
+/**
+ * The caret line of a parsed frame is the position that lines up with the snippet
+ * we display, so it takes precedence over a declared loc that points elsewhere.
+ * On the line the caret is already on, the declared column wins: bundlers count
+ * columns from zero when rendering a frame but compilers report them from one,
+ * so the caret is a character to the right of the position the compiler named.
+ */
+function mergeFrameLoc(declared: { file?: string, line: number, column: number } | undefined, frameLoc: { line: number, column: number }): { file?: string, line: number, column: number } {
+  if (declared && declared.line === frameLoc.line && typeof declared.column === 'number') {
+    return declared
+  }
+  return { ...declared, ...frameLoc }
+}
+
 async function buildFrames(input: unknown, error: NormalizedError, options: ResolvedReportOptions, kind: ReportKind): Promise<Frame[]> {
   if (kind === 'compile' && isCompileInput(input)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
-    const loc = compileLoc(input) ?? (typeof input.frame === 'string' ? locFromCodeFrame(input.frame) : undefined) ?? labelled
-    const file = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
+    const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
+    const frameLoc = typeof input.frame === 'string' ? locFromCodeFrame(input.frame) : undefined
+    const declared = compileLoc(input)
+    const loc = snippet && frameLoc ? mergeFrameLoc(declared, frameLoc) : declared ?? frameLoc ?? labelled
+    const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
+    const file = rawFile ? resolveFile(rawFile, options.cwd) : undefined
+
+    const marker = compiledMarker(input, options)
+    const explicit = marker === false || marker === undefined ? undefined : (typeof marker === 'object' ? marker : {})
+    let generated = explicit !== undefined
+    if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
+      const contents = await readSource(file, options)
+      generated = contents !== undefined && caretLineMatchesSource(snippet, frameLoc.line, contents) === false
+    }
+
+    if (generated) {
+      const source = explicit?.sourceLoc
+      const sourceFile = source?.file ? resolveFile(source.file, options.cwd) : file
+      const frame: Frame = {
+        ...(sourceFile && { file: sourceFile }),
+        ...(source && { line: source.line, ...(source.column !== undefined && { column: source.column }) }),
+        type: 'app',
+        ...(file && {
+          compiled: {
+            file,
+            ...(loc && { line: loc.line, column: loc.column }),
+            ...(snippet && { snippet: withTokens(snippet, options) }),
+          },
+        }),
+      }
+      if (frame.file && frame.line !== undefined && options.snippets) {
+        frame.snippet = await loadSnippet(frame.file, frame.line, options)
+      }
+      addDisplayPaths(frame, options.cwd)
+      return [frame]
+    }
+
     const frame: Frame = {
-      ...(file && { file: stripCacheQuery(toPath(isFilePath(file) || hasScheme(file) ? file : resolvePath(options.cwd, file))) }),
+      ...(file && { file }),
       ...(loc && { line: loc.line, column: loc.column }),
       type: 'app',
-      ...(input.frame && { snippet: parseCodeFrame(input.frame) }),
+      ...(snippet && { snippet }),
     }
     if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
       frame.snippet = await loadSnippet(frame.file, frame.line, options)
@@ -211,6 +277,7 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
     else if (frame.snippet) {
       frame.snippet = withTokens(frame.snippet, options)
     }
+    addDisplayPaths(frame, options.cwd)
     return [frame]
   }
 
@@ -232,13 +299,13 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
       ...(trace.isEval && { isEval: true }),
       ...('raw' in trace && typeof trace.raw === 'string' && { raw: trace.raw }),
     }
-    frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal)
+    frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
 
     if (frame.type !== 'native') {
       const mapped = await mapFrame(frame, options)
       const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
       frame = mapped
-      frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal)
+      frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
       if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
         frame.snippet = await loadSnippet(frame.file, frame.line, options)
         if (frame.compiled?.line !== undefined) {
@@ -249,9 +316,77 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
         }
       }
     }
+    addDisplayPaths(frame, options.cwd)
     frames.push(frame)
   }
   return frames
+}
+
+const LEADING_ELLIPSIS = /^\s*(?:…|\.\.\.)/
+const TRAILING_ELLIPSIS = /(?:…|\.\.\.)\s*$/
+/** Braces, brackets and separators are shared by every language; matching on them proves nothing. */
+const UNINFORMATIVE = /^[\s{}()[\];,.]*$/
+
+/**
+ * Bundlers report a position inside the module they transformed while naming
+ * the source file, so a code frame whose text is not in the file on disk at the
+ * line it claims is generated code, not source.
+ *
+ * Only the caret line is compared, because it is the one line the frame asserts
+ * describes the reported position, and unlike its neighbours it is rarely a bare
+ * brace that any file would match by chance. Indentation is ignored, and a line
+ * the bundler truncated for width is matched on the part that survived.
+ * `undefined` when there is nothing worth comparing.
+ */
+function caretLineMatchesSource(snippet: Snippet, caretLine: number, contents: string): boolean | undefined {
+  const expected = snippet.lines[caretLine - snippet.start]?.trim()
+  if (!expected || UNINFORMATIVE.test(stripEllipsis(expected))) {
+    return
+  }
+  const actual = contents.split(/\r?\n/)[caretLine - 1]?.trim()
+  if (actual === undefined) {
+    return false
+  }
+  if (expected === actual) {
+    return true
+  }
+  const head = LEADING_ELLIPSIS.test(expected)
+  const tail = TRAILING_ELLIPSIS.test(expected)
+  if (!head && !tail) {
+    return false
+  }
+  const survived = stripEllipsis(expected)
+  if (survived.length < 8) {
+    return
+  }
+  return head && tail ? actual.includes(survived) : head ? actual.endsWith(survived) : actual.startsWith(survived)
+}
+
+function stripEllipsis(line: string): string {
+  return line.replace(LEADING_ELLIPSIS, '').replace(TRAILING_ELLIPSIS, '').trim()
+}
+
+function resolveFile(file: string, cwd: string): string {
+  return stripCacheQuery(toPath(isFilePath(file) || hasScheme(file) ? file : resolvePath(cwd, file)))
+}
+
+function packageName(file: string | undefined, cwd: string): string | undefined {
+  return file ? externalPackage(file, cwd)?.name : undefined
+}
+
+/**
+ * Resolve display paths while the filesystem is available: renderers, including
+ * the browser client, only ever see the resulting strings.
+ */
+function addDisplayPaths(frame: Frame, cwd: string): void {
+  const own = frame.file ? externalPackage(frame.file, cwd)?.displayFile : undefined
+  if (own) {
+    frame.displayFile = own
+  }
+  const compiled = frame.compiled ? externalPackage(frame.compiled.file, cwd)?.displayFile : undefined
+  if (compiled) {
+    frame.compiled = { ...frame.compiled!, displayFile: compiled }
+  }
 }
 
 async function mapFrame(frame: Frame, options: ResolvedReportOptions): Promise<Frame> {
@@ -273,7 +408,7 @@ async function mapFrame(frame: Frame, options: ResolvedReportOptions): Promise<F
   return frame
 }
 
-async function loadSnippet(file: string, line: number, options: ResolvedReportOptions) {
+async function readSource(file: string, options: ResolvedReportOptions): Promise<string | undefined> {
   for (const loader of options.loaders) {
     if (!loader.read) {
       continue
@@ -281,11 +416,16 @@ async function loadSnippet(file: string, line: number, options: ResolvedReportOp
     try {
       const contents = await loader.read(file)
       if (contents !== undefined) {
-        return withTokens(extractSnippet(contents, line, options.snippetLines, file), options)
+        return contents
       }
     }
     catch {}
   }
+}
+
+async function loadSnippet(file: string, line: number, options: ResolvedReportOptions) {
+  const contents = await readSource(file, options)
+  return contents === undefined ? undefined : withTokens(extractSnippet(contents, line, options.snippetLines, file), options)
 }
 
 /**

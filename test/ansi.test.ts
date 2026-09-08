@@ -123,3 +123,19 @@ describe('renderAnsi icon option', () => {
     expect(renderAnsi(report, { colors: false, icon: false }).startsWith('Error: plain')).toBe(true)
   })
 })
+
+describe('compiled-only compile errors', () => {
+  it('labels the generated snippet instead of presenting it as source', async () => {
+    const report = await createReport({
+      name: 'RolldownError',
+      message: 'Parse failed with 1 error:\nExpected `,` or `)` but found `!`',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', line: 8, column: 39 },
+      frame: '7  |      _createElementVNode("div", {\n8  |        class: _normalizeClass(_ctx.bob !)\n   |                                        ^',
+    }, { cwd: '/proj', kind: 'compile', compiled: true, loaders: [], snippets: false })
+    const output = stripAnsi(renderAnsi(report, { cwd: '/proj', colors: false, width: 100 }))
+    expect(output).toContain('generated code:')
+    expect(output).toContain('_normalizeClass(_ctx.bob !)')
+    expect(output).toContain('app/app.vue (generated 8:39)')
+  })
+})

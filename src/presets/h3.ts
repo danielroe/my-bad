@@ -106,7 +106,7 @@ export function nitroPreset(options: RequestPresetOptions = {}): ReportPreset {
   const base = requestPreset(options)
   return {
     ...base,
-    internal: [/\/node_modules\/(?:nitro|nitropack|h3|nitro-server|@nitro)\//, /\/\.output\/server\/(?:chunks\/(?:nitro|_)|index\.mjs)/, /\/\.nitro\//],
+    internal: [/\/node_modules\/(?:nitro|nitropack|h3|nitro-server|@nitro)\//, /^(?:nitro|nitropack|h3|nitro-server|@nitro\/[^/]+)$/, /\/\.output\/server\/(?:chunks\/(?:nitro|_)|index\.mjs)/, /\/\.nitro\//],
   }
 }
 

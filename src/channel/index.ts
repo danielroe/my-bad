@@ -1,9 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ErrorReport, HistoryEntry } from '../types'
 import type { BuildProgress, ChannelEvent, LogEntry } from './protocol'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
+import process from 'node:process'
 import { json } from 'node:stream/consumers'
 import { version } from '../../package.json'
 import { openInEditor } from './open'
+import { isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
 import { toHistoryEntry } from './protocol'
 
 export { openInEditor } from './open'
@@ -28,6 +31,18 @@ export interface ChannelOptions {
    * a function receives the location. Omit to disable the action.
    */
   open?: boolean | ((request: OpenRequest) => void | Promise<void>)
+  /**
+   * Directories that `open` requests are confined to. Defaults to
+   * `process.cwd()`; pass `false` to accept any path, for example to open a
+   * file in a dependency linked from outside the project.
+   */
+  root?: string | string[] | false
+  /**
+   * Hosts a browser may address the channel through, besides `localhost`,
+   * `*.localhost`, `127.0.0.1` and `::1`. Entries starting with `.` also match
+   * subdomains; `true` accepts any host. Guards against DNS rebinding.
+   */
+  allowedHosts?: string[] | true
   /** Receives every event for logging, files, or agent integrations. */
   sink?: Sink
   /** Keepalive interval in ms. Default 15000. */
@@ -111,6 +126,20 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     return { type: 'hello', payload: { version, actions, current, history: history() } }
   }
 
+  const roots = options.root === false
+    ? undefined
+    : (Array.isArray(options.root) ? options.root : [options.root ?? process.cwd()]).map(root => resolve(root))
+
+  function contained(target: string): boolean {
+    if (!roots) {
+      return true
+    }
+    return roots.some((root) => {
+      const path = relative(root, target)
+      return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
+    })
+  }
+
   async function open(request: OpenRequest): Promise<boolean> {
     if (typeof options.open === 'function') {
       await options.open(request)
@@ -154,10 +183,22 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
   }
 
-  async function openStatus(body: unknown): Promise<number> {
+  async function openStatus(contentType: string | null | undefined, body: unknown): Promise<number> {
+    if (!/^application\/json\b/i.test(contentType ?? '')) {
+      return 415
+    }
     const request = parseOpen(body)
-    return request && await open(request).catch(() => false) ? 204 : 400
+    if (!request) {
+      return 400
+    }
+    request.file = resolve(request.file)
+    if (!contained(request.file)) {
+      return 403
+    }
+    return await open(request).catch(() => false) ? 204 : 400
   }
+
+  const trust = { allowedHosts: options.allowedHosts }
 
   function historyResponse(id: string): { status: number, body: string } {
     const report = reports.get(id)
@@ -172,6 +213,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       const matched = route(pathname)
       if (!matched) {
         return false
+      }
+      if (!isTrustedNodeRequest(req, trust)) {
+        res.writeHead(403).end()
+        return true
       }
       if (matched === 'events') {
         res.writeHead(200, SSE_HEADERS)
@@ -191,7 +236,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           return true
         }
         const body = await json(req).catch(() => undefined)
-        res.writeHead(await openStatus(body)).end()
+        res.writeHead(await openStatus(req.headers['content-type'], body)).end()
         return true
       }
       const { status, body } = historyResponse(matched.history)
@@ -204,6 +249,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       const matched = route(new URL(request.url).pathname)
       if (!matched) {
         return
+      }
+      if (!isTrustedFetchRequest(request, trust)) {
+        return new Response(null, { status: 403 })
       }
       if (matched === 'events') {
         const encoder = new TextEncoder()
@@ -234,7 +282,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         if (request.method !== 'POST') {
           return new Response(null, { status: 405 })
         }
-        return new Response(null, { status: await openStatus(await request.json().catch(() => undefined)) })
+        return new Response(null, { status: await openStatus(request.headers.get('content-type'), await request.json().catch(() => undefined)) })
       }
       const { status, body } = historyResponse(matched.history)
       return new Response(body, { status, headers: JSON_HEADERS })

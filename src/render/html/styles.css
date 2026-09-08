@@ -145,12 +145,12 @@
 .mb-menu-list button { display: block; width: 100%; padding: 8px 10px; border-radius: 6px; }
 .mb-menu-list button:hover { background: var(--mb-accent-soft); color: var(--mb-accent-ink); }
 
-/* Build progress, pinned to the bottom edge */
-.mb-progress { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; height: 2px; }
+/* Build progress, pinned to the header's bottom edge */
+.mb-progress { position: absolute; left: 0; right: 0; bottom: 0; z-index: 20; height: 2px; }
 .mb-progress-bar { height: 100%; width: var(--mb-progress, 4%); background: var(--mb-accent-ink); transition: width 0.3s ease; }
 .mb-progress[data-indeterminate] .mb-progress-bar { width: 30%; animation: mb-slide 1.4s ease-in-out infinite; }
 .mb-progress-label {
-  position: absolute; right: var(--mb-gutter); bottom: 10px;
+  position: absolute; right: var(--mb-gutter); top: calc(100% + 6px);
   font: 500 12px/1 var(--mb-font-mono); letter-spacing: 0.12em; color: var(--mb-accent-ink);
 }
 @keyframes mb-slide { 0% { translate: -100% 0; } 100% { translate: 340% 0; } }
@@ -399,7 +399,7 @@ button.mb-loc:hover .mb-base, button.mb-loc:focus-visible .mb-base { color: var(
 }
 .mb-overlay > .mb-root { overflow: auto; min-height: 0; grid-template-rows: auto 1fr auto; }
 .mb-overlay .mb-header { position: sticky; }
-.mb-overlay .mb-progress, .mb-overlay .mb-logs, .mb-overlay .mb-toasts { position: absolute; }
+.mb-overlay .mb-logs, .mb-overlay .mb-toasts { position: absolute; }
 .mb-overlay[data-minimized] {
   inset: auto 16px 16px auto;
   width: min(360px, calc(100vw - 32px)); height: auto;
