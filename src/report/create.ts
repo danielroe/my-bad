@@ -211,14 +211,27 @@ function compileLoc(input: CompileErrorInput): { file?: string, line: number, co
   }
 }
 
+/**
+ * The caret line of a parsed frame is the position that lines up with the snippet
+ * we display, so it takes precedence over a declared loc that points elsewhere.
+ * On the line the caret is already on, the declared column wins: bundlers count
+ * columns from zero when rendering a frame but compilers report them from one,
+ * so the caret is a character to the right of the position the compiler named.
+ */
+function mergeFrameLoc(declared: { file?: string, line: number, column: number } | undefined, frameLoc: { line: number, column: number }): { file?: string, line: number, column: number } {
+  if (declared && declared.line === frameLoc.line && typeof declared.column === 'number') {
+    return declared
+  }
+  return { ...declared, ...frameLoc }
+}
+
 async function buildFrames(input: unknown, error: NormalizedError, options: ResolvedReportOptions, kind: ReportKind): Promise<Frame[]> {
   if (kind === 'compile' && isCompileInput(input)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
     const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
     const frameLoc = typeof input.frame === 'string' ? locFromCodeFrame(input.frame) : undefined
     const declared = compileLoc(input)
-    // when the snippet *is* the parsed frame, the frame's own caret is the position that matches it
-    const loc = snippet && frameLoc ? { ...declared, ...frameLoc } : declared ?? frameLoc ?? labelled
+    const loc = snippet && frameLoc ? mergeFrameLoc(declared, frameLoc) : declared ?? frameLoc ?? labelled
     const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
     const file = rawFile ? resolveFile(rawFile, options.cwd) : undefined
 

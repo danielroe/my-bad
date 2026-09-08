@@ -289,6 +289,21 @@ describe('compiled compile errors', () => {
     expect(frame!.snippet!.lines[1]).toBe('  <div :class="bob !">')
   })
 
+  it('reports the column the compiler declared, not the caret a bundler shifted', async () => {
+    const broken = '<template>\n  <div\n    does not close\n  </div>\n</template>\n'
+    const report = await createReport({
+      message: 'Illegal \'/\' in tags.',
+      plugin: 'vite:vue',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', start: { line: 4, column: 4, offset: 40 }, end: { line: 4, column: 4, offset: 40 } },
+      frame: '2  |    <div\n3  |      does not close\n4  |    </div>\n   |     ^\n5  |  </template>\n6  |  ',
+    }, { cwd: '/proj', loaders: memoryLoader(broken) })
+    const [frame] = report.frames
+    expect(frame).toMatchObject({ file: '/proj/app/app.vue', line: 4, column: 4, type: 'app' })
+    expect(frame!.compiled).toBeUndefined()
+    expect(frame!.snippet).toMatchObject({ start: 2 })
+  })
+
   it('ignores indentation differences', async () => {
     const report = await createReport({
       message: 'Element is missing end tag.',
@@ -317,7 +332,7 @@ describe('compiled compile errors', () => {
       name: 'RolldownError',
       message: 'Parse failed',
       id: '/proj/app/app.vue',
-      loc: { file: '/proj/app/app.vue', line: 8, column: 35 },
+      loc: { file: '/proj/app/app.vue', line: 8, column: 34 },
       frame: '5  |    ], 64 /* STABLE_FRAGMENT */))\n6  |  }\n7  |  }\n8  |    class: _normalizeClass(_ctx.a !)\n   |                                   ^\n9  |  }, null, 2 /* CLASS */)',
     }, { cwd: '/proj', loaders: memoryLoader(source) })
     const [frame] = report.frames
