@@ -28,6 +28,8 @@
     "playground"
   ],
   "exclude": [
+    "playground/out",
+    "playground/prototypes/nuxt-app",
     "test/fixtures/nuxt-app",
     "test/fixtures/nuxt-v4",
     "test/fixtures/nuxt-v5"

@@ -18,3 +18,10 @@ test/fixtures/nuxt-v4/*
 !test/fixtures/nuxt-v4/package.json
 test/fixtures/nuxt-v5/*
 !test/fixtures/nuxt-v5/package.json
+
+# Local deployment metadata and generated design-review artifacts
+.vercel
+/playground/prototypes/public/review/*
+!/playground/prototypes/public/review/index.html
+!/playground/prototypes/public/review/review.css
+!/playground/prototypes/public/review/review.js

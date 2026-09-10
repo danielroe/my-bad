@@ -210,7 +210,11 @@ pnpm assets
 # experiment in the playground
 pnpm play
 pnpm play:vite
+# compare three Nuxt error screen designs
+pnpm play:prototypes
 ```
+
+See the [error screen prototype guide](./playground/prototypes/README.md) for the Focus, Workbench, and Trace explorations.
 
 ## Credits
 
