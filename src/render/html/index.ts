@@ -21,6 +21,8 @@ export interface ClientAssets {
 }
 
 export interface RenderHtmlOptions {
+  /** Where the error occurred, when known by the integration. */
+  environment?: 'Server' | 'Client'
   cwd?: string
   /**
    * Load the client script and stylesheet from these URLs instead of inlining
@@ -85,6 +87,7 @@ function stateScript(state: PageState, assets: ClientAssets | undefined): string
 function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageState['mode']): PageState {
   return {
     mode,
+    environment: options.environment,
     report,
     cwd: options.cwd,
     channel: options.channel,

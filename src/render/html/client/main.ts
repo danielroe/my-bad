@@ -3,7 +3,7 @@ import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml } from '../escape'
-import { ICONS, renderToast, renderView } from '../view'
+import { ICONS, renderToast, renderView, reportEntries } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -25,6 +25,7 @@ const actions = new Set<string>()
 
 interface Mount {
   state: PageState
+  selected?: string
   /** Element that receives `data-theme`. */
   themeTarget: Element
   /** Element containing the rendered view. */
@@ -168,11 +169,13 @@ function setLive(m: Mount, value: boolean): void {
 }
 
 function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void {
+  m.selected = undefined
   m.state.report = report
   if (history) {
     m.state.history = history
   }
   const logs = m.root.querySelector('[data-log-list]')?.innerHTML
+  const logFilter = m.root.querySelector<HTMLSelectElement>('[data-log-filter]')?.value ?? ''
   const logsOpen = !m.root.querySelector('[data-logs]')?.hasAttribute('hidden')
   const toasts = m.root.querySelector('[data-toasts]')?.innerHTML
   m.root.innerHTML = renderView(m.state)
@@ -181,10 +184,15 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
     if (list) {
       list.innerHTML = logs
     }
-    if (logsOpen) {
-      m.root.querySelector('[data-logs]')?.removeAttribute('hidden')
-    }
   }
+  const filter = m.root.querySelector<HTMLSelectElement>('[data-log-filter]')
+  if (filter)
+    filter.value = logFilter
+  if (logsOpen) {
+    m.root.querySelector('[data-logs]')?.removeAttribute('hidden')
+    m.root.querySelector('[data-action="logs"]')?.setAttribute('aria-pressed', 'true')
+  }
+  markScrollableLogs(m)
   if (toasts) {
     const container = m.root.querySelector('[data-toasts]')
     if (container) {
@@ -200,9 +208,9 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
 }
 
 async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> {
-  const { report } = m.state
-  const text = what === 'markdown'
-    ? toMarkdown(report, { cwd: m.state.cwd })
+  const report = reportEntries(m.state.report).find(entry => entry.path === m.selected)?.report ?? m.state.report
+  const text = what === 'markdown' || what === 'prompt'
+    ? `${what === 'prompt' ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behavior.\n\n' : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
     : what === 'stack'
       ? report.rawStack ?? `${report.name}: ${report.message}`
       : what === 'json'
@@ -210,11 +218,11 @@ async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> 
         : report.message
   try {
     await navigator.clipboard.writeText(text)
-    const original = button.textContent
+    const original = button.innerHTML
     button.textContent = 'Copied'
     button.dataset.copied = ''
     setTimeout(() => {
-      button.textContent = original
+      button.innerHTML = original
       delete button.dataset.copied
     }, 1200)
   }
@@ -671,7 +679,13 @@ function currentDock(m: Mount): Dock {
 
 /** The log drawer is a tab stop only when it actually scrolls. */
 function markScrollableLogs(m: Mount): void {
-  const scroller = m.root.querySelector<HTMLElement>('[data-log-list]')?.parentElement
+  const list = m.root.querySelector<HTMLElement>('[data-log-list]')
+  const empty = m.root.querySelector<HTMLElement>('[data-log-empty]')
+  if (empty) {
+    empty.hidden = !!list?.querySelector('[data-log]:not([hidden])')
+    empty.textContent = list?.childElementCount ? 'No logs match this level.' : 'No logs received yet.'
+  }
+  const scroller = list?.parentElement
   if (!scroller) {
     return
   }
@@ -696,6 +710,13 @@ function markOverflowingSnippets(m: Mount): void {
 }
 
 function closeMenus(m: Mount, options: { except?: Element, focusFrom?: Element } = {}): void {
+  for (const menu of m.root.querySelectorAll<HTMLDetailsElement>('.mb-cause-picker[open], .mb-history[open]')) {
+    if (options.except && menu.contains(options.except))
+      continue
+    menu.open = false
+    if (options.focusFrom && menu.contains(options.focusFrom))
+      menu.querySelector('summary')?.focus()
+  }
   for (const list of m.root.querySelectorAll<HTMLElement>('[data-menu-list]')) {
     if (list === options.except || list.hidden) {
       continue
@@ -723,15 +744,8 @@ function bind(m: Mount): void {
       (event.target as HTMLDialogElement).close()
       return
     }
-    let target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]')
-    if (!target) {
-      const head = (event.target as HTMLElement).closest<HTMLElement>('.mb-frame-head')
-      target = head?.querySelector<HTMLElement>('[data-frame-toggle]') ?? null
-      if (!target || (window.getSelection()?.toString() ?? '')) {
-        return
-      }
-    }
-    if (!container.contains(target)) {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]')
+    if (!target || !container.contains(target)) {
       return
     }
     const action = target.dataset.action
@@ -753,32 +767,51 @@ function bind(m: Mount): void {
       }
       case 'open':
         return void open(m, target.dataset.file!, target.dataset.line, target.dataset.column)
-      case 'toggle-frame': {
-        const body = target.closest('[data-frame]')?.querySelector<HTMLDetailsElement>('[data-frame-body]')
-        if (body) {
-          body.open = !body.open
-          target.setAttribute('aria-expanded', String(body.open))
-        }
+      case 'cause': {
+        const selected = reportEntries(m.state.report).find(entry => entry.path === target.dataset.path)
+        if (!selected)
+          return
+        m.selected = selected.path
+        const view = document.createElement('div')
+        view.innerHTML = renderView(m.state, m.selected)
+        m.root.querySelector('.mb-report')?.replaceWith(view.querySelector('.mb-report')!)
+        markOverflowingSnippets(m)
+        focusHeading(m)
+        return
+      }
+      case 'context': {
+        const frame = target.closest<HTMLElement>('[data-frame]')!
+        const expanded = frame.toggleAttribute('data-expanded')
+        target.setAttribute('aria-expanded', String(expanded))
+        const label = expanded ? 'Less context' : 'More context'
+        target.setAttribute('aria-label', label)
+        target.title = label
+        markOverflowingSnippets(m)
+        return
+      }
+      case 'stack': {
+        const list = target.closest('[data-stack]')!.querySelector<HTMLElement>('.mb-frames')!
+        list.hidden = !list.hidden
+        target.setAttribute('aria-expanded', String(!list.hidden))
+        markOverflowingSnippets(m)
+        return
+      }
+      case 'framework': {
+        const shown = target.closest('[data-stack]')!.toggleAttribute('data-framework')
+        target.setAttribute('aria-checked', String(shown))
+        markOverflowingSnippets(m)
         return
       }
       case 'toggle-compiled': {
-        const frame = target.closest<HTMLElement>('[data-frame]') ?? target.closest<HTMLElement>('.mb-frame')
+        const frame = target.closest<HTMLElement>('[data-frame]')!
         const on = target.dataset.switch === 'compiled'
-        frame?.toggleAttribute('data-compiled', on)
-        const source = frame?.querySelector<HTMLElement>('[data-snippet-source]')
-        const compiled = frame?.querySelector<HTMLElement>('[data-snippet-compiled]')
-        if (source && compiled) {
-          source.hidden = on
-          compiled.hidden = !on
-        }
-        const body = frame?.querySelector<HTMLDetailsElement>('[data-frame-body]')
-        if (body && !body.open) {
-          body.open = true
-          frame?.querySelector('[data-frame-toggle]')?.setAttribute('aria-expanded', 'true')
-        }
-        for (const button of target.parentElement?.querySelectorAll<HTMLElement>('[data-switch]') ?? []) {
+        frame.toggleAttribute('data-compiled', on)
+        frame.querySelector<HTMLElement>('[data-snippet-source]')!.hidden = on
+        frame.querySelector<HTMLElement>('[data-snippet-compiled]')!.hidden = !on
+        for (const button of frame.querySelectorAll<HTMLElement>('[data-switch]')) {
           button.setAttribute('aria-pressed', String((button.dataset.switch === 'compiled') === on))
         }
+        markOverflowingSnippets(m)
         return
       }
       case 'info':
@@ -792,6 +825,9 @@ function bind(m: Mount): void {
         if (list) {
           list.innerHTML = ''
         }
+        logCount = 0
+        updateBadges(m)
+        markScrollableLogs(m)
         return
       }
       case 'history':
@@ -831,16 +867,18 @@ function bind(m: Mount): void {
     }
   })
   container.addEventListener('click', (event) => {
-    if (!(event.target as HTMLElement).closest('[data-menu]')) {
+    if (!(event.target as HTMLElement).closest('[data-menu], .mb-cause-picker, .mb-history')) {
       closeMenus(m)
     }
   })
+  container.addEventListener('toggle', () => markOverflowingSnippets(m), true)
   container.addEventListener('change', (event) => {
     const select = event.target as HTMLSelectElement
     if (select.matches('[data-log-filter]')) {
       for (const item of m.root.querySelectorAll<HTMLElement>('[data-log]')) {
         item.hidden = !passesFilter(item.dataset.level ?? '', select.value)
       }
+      markScrollableLogs(m)
     }
   })
   container.addEventListener('keydown', (event) => {

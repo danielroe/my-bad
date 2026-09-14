@@ -14,8 +14,9 @@ describe('openInEditor', () => {
     await writeFile(bin, `#!/bin/sh\necho "$@" > ${log}\n`, { mode: 0o755 })
     vi.stubEnv('LAUNCH_EDITOR', bin)
     expect(await openInEditor({ file: '/proj/a.ts', line: 3, column: 9 })).toBe(true)
-    await new Promise(resolve => setTimeout(resolve, 200))
-    expect((await readFile(log, 'utf8')).trim()).toBe('-g /proj/a.ts:3:9')
+    await vi.waitFor(async () => {
+      expect((await readFile(log, 'utf8')).trim()).toBe('-g /proj/a.ts:3:9')
+    }, { timeout: 5000 })
   })
 
   it('resolves false when the editor cannot be spawned', async () => {
