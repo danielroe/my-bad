@@ -7,7 +7,7 @@ export interface Theme {
   logo?: string
   /** Link for the brand lockup, e.g. the framework homepage. */
   url?: string
-  /** Accent colour, any CSS colour. Drives links, the active line, the progress bar and focus rings. */
+  /** Accent colour, any CSS colour. Drives links, selected controls, the progress bar and focus rings. */
   accent?: string
   /** Force a colour scheme instead of following the user's preference. */
   scheme?: 'light' | 'dark'
@@ -21,6 +21,7 @@ export interface Theme {
 }
 
 export interface PageState {
+  environment?: 'Server' | 'Client'
   mode: 'page' | 'overlay'
   report: ErrorReport
   cwd?: string
