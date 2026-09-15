@@ -212,6 +212,21 @@ describe('source-first presentation', () => {
     expect(toMarkdown(r)).toContain('Independent failure')
   })
 
+  it('renders the source of every cause and related error without the client script', async () => {
+    const r = await report()
+    const cause = { ...r, id: 'cause', message: 'Inner failure', causes: [], errors: undefined, frames: [{ ...r.frames[0]!, file: '/proj/src/cause.ts' }] }
+    r.causes.push(cause)
+    r.errors = [{ ...cause, id: 'related', message: 'Independent failure' }]
+    const html = markup(renderPage(r))
+    const fallback = html.slice(html.indexOf('data-fallback'), html.indexOf('class="mb-secondary"'))
+    expect(fallback).toContain('Inner failure')
+    expect(fallback).toContain('Independent failure')
+    expect(fallback.match(/data-file="\/proj\/src\/cause\.ts"/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(fallback).not.toContain('data-action="cause"')
+    expect(fallback).not.toContain('id="mb-copy-menu"')
+    expect(fallback.match(/<h1/g)).toBe(null)
+  })
+
   it('keeps request context in one place and groups missing framework code in stack order', async () => {
     const r = await report()
     r.frames.push({ type: 'app', function: 'caller', file: '/proj/caller.ts', line: 1, snippet: { start: 1, lines: ['handler()'] } }, { type: 'internal', function: 'runtime', file: 'node:runtime' })

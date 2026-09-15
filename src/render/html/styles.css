@@ -232,6 +232,9 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-disclosure { border-top: 1px solid var(--mb-line); }
 .mb-disclosure > summary { cursor: pointer; list-style: none; }
 .mb-disclosure > summary::-webkit-details-marker { display: none; }
+.mb-fallback-entry + .mb-fallback-entry { margin-top: 24px; border-top: 1px solid var(--mb-line); padding-top: 16px; }
+.mb-fallback-label { margin: 0 0 8px; font: 500 12px/1 var(--mb-font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mb-fg-muted); }
+.mb-fallback .mb-message { font-size: 18px; }
 .mb-secondary { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--mb-line); padding-top: 12px; }
 .mb-secondary .mb-tool { padding: 4px 8px; }
 .mb-single-cause { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: -8px 0 20px; font-size: 12px; color: var(--mb-fg-muted); }

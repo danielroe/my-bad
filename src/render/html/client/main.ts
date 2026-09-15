@@ -179,6 +179,7 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
   const logsOpen = !m.root.querySelector('[data-logs]')?.hasAttribute('hidden')
   const toasts = m.root.querySelector('[data-toasts]')?.innerHTML
   m.root.innerHTML = renderView(m.state)
+  m.root.querySelector('[data-fallback]')?.remove()
   if (logs) {
     const list = m.root.querySelector('[data-log-list]')
     if (list) {
@@ -900,6 +901,7 @@ function bind(m: Mount): void {
 
 const m = mount()
 if (m) {
+  m.root.querySelector('[data-fallback]')?.remove()
   applyTheme(m)
   bind(m)
   if (m.overlay) {

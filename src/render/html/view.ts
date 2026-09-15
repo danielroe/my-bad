@@ -52,6 +52,7 @@ export function renderView(state: PageState, selected = 'r'): string {
 <div class="mb-sr-only" role="status" aria-live="polite" data-announce></div>
 <main class="mb-main" data-report-id="${escapeHtml(report.id)}" tabindex="-1">
   ${renderReport(reportEntries(report).find(entry => entry.path === selected)?.report ?? report, state, selected)}
+  ${renderFallback(state, selected)}
   <div class="mb-secondary">${report.sections.length ? `<button class="mb-tool" type="button" data-action="info">${ICONS.info}Request &amp; environment</button>` : ''}${live ? `<button class="mb-tool mb-tool-logs" type="button" data-action="logs" aria-pressed="false" aria-controls="mb-logs" title="Server logs" aria-label="Server logs">${ICONS.logs}Logs<span class="mb-badge" data-log-count hidden></span></button>` : ''}${state.history?.length ? `<details class="mb-history"><summary>${ICONS.history}History</summary><ol>${state.history.map((entry, index) => `<li><button type="button" data-action="history" data-dir="${index - Math.max(0, state.history!.findIndex(item => item.id === report.id))}">${escapeHtml(entry.message)}</button></li>`).join('')}</ol></details>` : ''}</div>
 </main>
 ${live ? renderLogDrawer() : ''}
@@ -89,23 +90,40 @@ function renderCauseNavigation(state: PageState, selected: string): string {
   return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, `1 ${chain[0]!.label}`)}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1 ? `${current + 1} ${chain[current]!.label}` : related ? `${chain.length - 1} related errors` : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${index + 1} ${item.label}: ${item.report.message}`)}</li>`).join('')}</ol></details>${related ? '' : `${ICONS.chevron}${entry(chain.length - 1, `${chain.length} Reported error`)}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r' ? `<span>Reported as: ${escapeHtml(state.report.message)}</span>` : ''}</p></nav>`
 }
 
-function renderReport(report: ErrorReport, state: PageState, path: string): string {
+/**
+ * Causes and related errors are reachable through the picker, which needs the
+ * client script. Without it they are still readable here, so the client drops
+ * this block once it takes over.
+ */
+function renderFallback(state: PageState, selected: string): string {
+  const rest = reportEntries(state.report).filter(entry => entry.path !== selected)
+  if (!rest.length) {
+    return ''
+  }
+  return `<details class="mb-disclosure mb-fallback" data-fallback><summary>${ICONS.chevron}${rest.length === 1 ? 'Cause' : 'Causes and related errors'} <span class="mb-count">${rest.length}</span></summary>${rest.map(entry => `<section class="mb-fallback-entry"><p class="mb-fallback-label">${escapeHtml(entry.label)}</p>${renderReport(entry.report, state, entry.path, false)}</section>`).join('')}</details>`
+}
+
+/** `chrome` renders the copy controls and the cause picker, which only the selected report carries. */
+function renderReport(report: ErrorReport, state: PageState, path: string, chrome = true): string {
   const id = `mb-${path}-${report.id}`
+  const tag = chrome ? 'h1' : 'h2'
   const code = report.code
     ? `<span class="mb-code" data-code>${report.docsUrl ? `<a href="${escapeHtml(report.docsUrl)}" target="_blank" rel="noreferrer" title="Documentation for ${escapeHtml(report.code)}">${escapeHtml(report.code)}${ICONS.open}<span class="mb-sr-only"> documentation (opens in a new tab)</span></a>` : escapeHtml(report.code)}</span>`
     : ''
   return `<article class="mb-report" data-kind="${report.kind}" aria-labelledby="${id}-name ${id}-message">
-  <div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span><span data-kind-label class="mb-sr-only">${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${report.status}</span>` : ''}</p>      <div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy error</button>
+  <div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span><span data-kind-label class="mb-sr-only">${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${report.status}</span>` : ''}</p>${chrome
+    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy error</button>
         <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
         <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
           <li><button type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy as Markdown</button></li>
           <li><button type="button" data-action="copy" data-copy="prompt">${ICONS.logs}Copy prompt for an agent</button></li>
           <li><button type="button" data-action="copy" data-copy="json">${ICONS.file}Copy structured JSON</button></li>
         </ul>
-      </div></div>
-  <h1 class="mb-message" id="${id}-message" data-message>${escapeHtml(report.message || report.name)}</h1>
+      </div>`
+    : ''}</div>
+  <${tag} class="mb-message" id="${id}-message" data-message>${escapeHtml(report.message || report.name)}</${tag}>
   ${report.hint ? `<p class="mb-hint" data-hint>${escapeHtml(report.hint)}${report.docsUrl ? ` <a href="${escapeHtml(report.docsUrl)}" target="_blank" rel="noreferrer">Learn more</a>` : ''}</p>` : ''}
-  ${renderCauseNavigation(state, path)}
+  ${chrome ? renderCauseNavigation(state, path) : ''}
   ${renderFrames(report.frames, state, id)}
   ${report.trace?.length ? `<details class="mb-disclosure"><summary>${ICONS.chevron}Component trace <span class="mb-count">${report.trace.length}</span></summary>${renderTrace(report, state)}</details>` : ''}
 </article>`
