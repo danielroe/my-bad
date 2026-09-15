@@ -328,7 +328,7 @@ describe('source-first inspection', () => {
       expect(focus).toEqual({ visible: true, contained: true })
       await page.keyboard.press('Enter')
       const caller = stack.locator('[data-frame-type="app"]').first()
-      expect(await caller.locator('[data-frame-body]').isVisible()).toBe(true)
+      expect(await caller.locator('[data-snippet-source]').isVisible()).toBe(true)
       const callerRequests = openRequests.length
       await caller.locator('[data-loc]').focus()
       await page.keyboard.press('Enter')
@@ -342,7 +342,7 @@ describe('source-first inspection', () => {
       expect(await stack.locator('[data-frame-type="vendor"]').first().isVisible()).toBe(true)
       expect(await stack.locator('.mb-framework-hidden').isVisible()).toBe(false)
       await stack.locator('[data-action="stack"]').click()
-      expect(await caller.locator('[data-frame-body]').isVisible()).toBe(false)
+      expect(await caller.locator('[data-snippet-source]').isVisible()).toBe(false)
       expect(await source.boundingBox()).toEqual(before)
       await root.locator('[data-action="cause"][data-path="rc0"]').click()
       expect(await root.getByRole('heading', { name: 'Missing name', exact: true }).isVisible()).toBe(true)

@@ -31,7 +31,7 @@ function headerCount(report: ErrorReport): string {
   if (report.kind !== 'error') {
     return KIND_LABEL[report.kind]
   }
-  const count = reportEntries(report).filter(entry => entry.label === 'Related error').length + 1
+  const count = reportEntries(report).filter(entry => entry.related).length + 1
   return `${count} error${count === 1 ? '' : 's'}`
 }
 
@@ -79,15 +79,15 @@ function renderPager(report: ErrorReport, history?: HistoryEntry[]): string {
   </span></li>`
 }
 
-export function reportEntries(report: ErrorReport, path = 'r', related = false): Array<{ report: ErrorReport, path: string, label: string }> {
-  return [{ report, path, label: path === 'r' ? 'Reported error' : related ? 'Related error' : report.causes.length ? 'Wrapped error' : 'Root cause' }, ...report.causes.flatMap((cause, index) => reportEntries(cause, `${path}c${index}`, related)), ...(report.errors ?? []).flatMap((error, index) => reportEntries(error, `${path}e${index}`, true))]
+export function reportEntries(report: ErrorReport, path = 'r', related = false): Array<{ report: ErrorReport, path: string, label: string, related: boolean }> {
+  return [{ report, path, related, label: path === 'r' ? 'Reported error' : related ? 'Related error' : report.causes.length ? 'Wrapped error' : 'Root cause' }, ...report.causes.flatMap((cause, index) => reportEntries(cause, `${path}c${index}`, related)), ...(report.errors ?? []).flatMap((error, index) => reportEntries(error, `${path}e${index}`, true))]
 }
 
 function renderCauseNavigation(state: PageState, selected: string): string {
   const entries = reportEntries(state.report)
   if (entries.length < 2)
     return ''
-  const related = entries.some(entry => entry.label === 'Related error')
+  const related = entries.some(entry => entry.related)
   const chain = related ? entries : entries.reverse()
   const current = chain.findIndex(entry => entry.path === selected)
   const entry = (index: number, text = chain[index]!.label) => `<button type="button" data-action="cause" data-path="${chain[index]!.path}" aria-current="${index === current}" title="${escapeHtml(chain[index]!.report.message)}">${escapeHtml(text)}</button>`
@@ -97,7 +97,7 @@ function renderCauseNavigation(state: PageState, selected: string): string {
   return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, `1 ${chain[0]!.label}`)}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1 ? `${current + 1} ${chain[current]!.label}` : related ? `${chain.length - 1} related errors` : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${index + 1} ${item.label}: ${item.report.message}`)}</li>`).join('')}</ol></details>${related ? '' : `${ICONS.chevron}${entry(chain.length - 1, `${chain.length} Reported error`)}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r' ? `<span>Reported as: ${escapeHtml(state.report.message)}</span>` : ''}</p></nav>`
 }
 
-/** Causes and related errors in full, for when the client script (and so the picker) is unavailable. */
+/** Causes and related errors in full, for when the picker's client script is unavailable. */
 function renderFallback(state: PageState, selected: string): string {
   const rest = reportEntries(state.report).filter(entry => entry.path !== selected)
   if (!rest.length) {
@@ -178,7 +178,7 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
   }
   if (supporting && !source && !generated)
     return `<div class="mb-empty-frame"><span class="mb-function">${escapeHtml(frame.function ?? '<anonymous>')}</span>${location(frame)}</div>`
-  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)} aria-label="${supporting ? 'Stack frame' : 'Error source'}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function ? `<span class="mb-function"${attr('title', frame.function)}>${escapeHtml(frame.function)}</span>` : ''}<span data-location-source>${location(frame)}</span>${generated ? `<span data-location-compiled>${location(frame.compiled!)}</span>` : ''}</div><div class="mb-source-actions">${source && generated ? '<span class="mb-switch" role="group" aria-label="Code view"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>' : ''}<button type="button" class="mb-tool" data-action="context" aria-label="More context" title="More context" aria-expanded="false">${ICONS.context}</button>${frame.file ? `<button type="button" class="mb-tool" data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)} title="Open original source in your editor" aria-label="Open original source in your editor">${ICONS.open}</button>` : ''}</div></div>${generated ? `<p class="mb-compiled-note">Compiled JavaScript${frame.compiled!.file === frame.file ? ' (in memory)' : ''} · Editor opens the original source location.</p>` : ''}<div data-frame-body><div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>${generated ? `<div data-snippet-compiled${attr('hidden', source)}>${snippet(true)}</div>` : ''}</div></section>`
+  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)} aria-label="${supporting ? 'Stack frame' : 'Error source'}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function ? `<span class="mb-function"${attr('title', frame.function)}>${escapeHtml(frame.function)}</span>` : ''}<span data-location-source>${location(frame)}</span>${generated ? `<span data-location-compiled>${location(frame.compiled!)}</span>` : ''}</div><div class="mb-source-actions">${source && generated ? '<span class="mb-switch" role="group" aria-label="Code view"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>' : ''}<button type="button" class="mb-tool" data-action="context" aria-label="More context" title="More context" aria-expanded="false">${ICONS.context}</button>${frame.file ? `<button type="button" class="mb-tool" data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)} title="Open original source in your editor" aria-label="Open original source in your editor">${ICONS.open}</button>` : ''}</div></div>${generated ? `<p class="mb-compiled-note">Compiled JavaScript${frame.compiled!.file === frame.file ? ' (in memory)' : ''} · Editor opens the original source location.</p>` : ''}<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>${generated ? `<div data-snippet-compiled${attr('hidden', source)}>${snippet(true)}</div>` : ''}</section>`
 }
 
 function renderLocation(target: DisplayTarget, line: number | undefined, column: number | undefined, state: PageState): string {

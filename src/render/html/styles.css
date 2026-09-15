@@ -353,7 +353,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-overlay[data-minimized][data-dock='top-left'] { inset: 16px auto auto 16px; }
 .mb-overlay[data-dragging] { transition: none; }
 .mb-overlay[data-minimized] > .mb-root { display: block; overflow: hidden; pointer-events: none; }
-.mb-overlay[data-minimized] .mb-ordered-stack, .mb-overlay[data-minimized] .mb-source, .mb-overlay[data-minimized] .mb-stack, .mb-overlay[data-minimized] .mb-secondary, .mb-overlay[data-minimized] .mb-causes, .mb-overlay[data-minimized] .mb-single-cause, .mb-overlay[data-minimized] .mb-copy, .mb-overlay[data-minimized] .mb-disclosure, .mb-overlay[data-minimized] .mb-unavailable, .mb-overlay[data-minimized] .mb-header, .mb-overlay[data-minimized] .mb-frames, .mb-overlay[data-minimized] .mb-hint, .mb-overlay[data-minimized] .mb-trace, .mb-overlay[data-minimized] .mb-logs, .mb-overlay[data-minimized] .mb-toasts, .mb-overlay[data-minimized] .mb-progress { display: none; }
+.mb-overlay[data-minimized] .mb-ordered-stack, .mb-overlay[data-minimized] .mb-secondary, .mb-overlay[data-minimized] .mb-causes, .mb-overlay[data-minimized] .mb-single-cause, .mb-overlay[data-minimized] .mb-copy, .mb-overlay[data-minimized] .mb-disclosure, .mb-overlay[data-minimized] .mb-unavailable, .mb-overlay[data-minimized] .mb-header, .mb-overlay[data-minimized] .mb-hint, .mb-overlay[data-minimized] .mb-logs, .mb-overlay[data-minimized] .mb-toasts, .mb-overlay[data-minimized] .mb-progress { display: none; }
 .mb-overlay[data-minimized] .mb-main { padding: 14px 44px 14px 16px; max-width: none; }
 .mb-overlay[data-minimized] .mb-kicker { margin-bottom: 6px; }
 .mb-overlay[data-minimized] .mb-name { font-size: 15px; }

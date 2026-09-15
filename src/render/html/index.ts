@@ -21,7 +21,7 @@ export interface ClientAssets {
 }
 
 export interface RenderHtmlOptions {
-  /** Where the error occurred, when the integration knows: for example `Server` or `Client`. */
+  /** Where the error occurred, e.g. `Server` or `Client`. */
   environment?: string
   cwd?: string
   /**
