@@ -6,15 +6,15 @@
   --mb-accent: #7dd3fc;
   --mb-bg: #151a21;
   --mb-fg: #e5eaf1;
-  --mb-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mb-font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mb-font-display: 'Avenir Next', var(--mb-font-sans);
-  --mb-font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --mb-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
   --mb-radius: 8px;
   --mb-gutter: clamp(16px, 3vw, 26px);
 
   /* the accent as ink: deepened where it carries text on a light surface */
   --mb-accent-ink: var(--mb-accent);
-  --mb-fg-muted: #95a1b1;
+  --mb-fg-muted: color-mix(in oklab, var(--mb-fg) 65%, var(--mb-bg));
   --mb-fg-dim: var(--mb-fg-muted);
   --mb-line: color-mix(in oklab, var(--mb-fg) 9%, transparent);
   --mb-line-strong: color-mix(in oklab, var(--mb-fg) 16%, transparent);
@@ -44,7 +44,7 @@
   --mb-bg: #ffffff;
   --mb-fg: #202732;
   --mb-accent-ink: color-mix(in oklab, var(--mb-accent) 56%, #020420);
-  --mb-fg-muted: #647080;
+  --mb-fg-muted: color-mix(in oklab, var(--mb-fg) 68%, var(--mb-bg));
   --mb-fg-dim: var(--mb-fg-muted);
   --mb-line: color-mix(in oklab, var(--mb-fg) 10%, transparent);
   --mb-line-strong: color-mix(in oklab, var(--mb-fg) 18%, transparent);
@@ -119,7 +119,7 @@
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 10;
   width: max-content; max-width: calc(100vw - 32px); margin: 0; padding: 4px; list-style: none;
   background: var(--mb-bg); border: 1px solid var(--mb-line-strong); border-radius: 8px;
-  box-shadow: 0 8px 24px #0002;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.13);
   font: 13px/1.3 var(--mb-font-sans); letter-spacing: 0; color: var(--mb-fg);
 }
 .mb-menu-list button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 7px 10px; border-radius: 4px; text-align: left; }
@@ -148,6 +148,7 @@
 .mb-copy > button { border-color: var(--mb-line-strong); border-radius: 6px 0 0 6px; color: var(--mb-fg); }
 .mb-copy > button[aria-expanded='true'] { background: var(--mb-surface-2); }
 .mb-copy > button + button { padding: 0; border-left: 0; border-radius: 0 6px 6px 0; }
+.mb-message:has(+ .mb-single-cause), .mb-message:has(+ .mb-causes) { margin-bottom: 12px; }
 .mb-message { margin: 0 0 20px; font: 600 28px/1.3 var(--mb-font-display); letter-spacing: -.6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mb-hint { margin: 12px 0 20px; color: var(--mb-fg-muted); font-size: 13px; line-height: 1.7; }
 .mb-hint a { text-decoration: underline; }
@@ -237,7 +238,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-fallback .mb-message { font-size: 18px; }
 .mb-secondary { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--mb-line); padding-top: 12px; }
 .mb-secondary .mb-tool { padding: 4px 8px; }
-.mb-single-cause { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: -8px 0 20px; font-size: 12px; color: var(--mb-fg-muted); }
+.mb-single-cause { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; font-size: 12px; color: var(--mb-fg-muted); }
 .mb-single-cause button { min-height: 28px; text-decoration: underline; text-underline-offset: 3px; text-align: left; }
 .mb-causes { margin-bottom: 20px; font-size: 12px; }
 .mb-cause-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
