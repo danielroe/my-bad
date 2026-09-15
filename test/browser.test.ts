@@ -297,6 +297,7 @@ describe('source-first inspection', () => {
       const source = root.locator('.mb-source').first()
       const stack = root.locator('[data-stack]').first()
       expect(await root.locator('h1').textContent()).toBe(current.message)
+      expect(await root.locator('[data-fallback]').count()).toBe(0)
       expect(await source.locator('.mb-line:not(.mb-line-caret):visible').count()).toBe(7)
       await source.getByRole('button', { name: 'More context', exact: true }).click()
       expect(await source.locator('.mb-line:not(.mb-line-caret):visible').count()).toBe(11)

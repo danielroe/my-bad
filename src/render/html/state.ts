@@ -21,7 +21,7 @@ export interface Theme {
 }
 
 export interface PageState {
-  environment?: 'Server' | 'Client'
+  environment?: string
   mode: 'page' | 'overlay'
   report: ErrorReport
   cwd?: string

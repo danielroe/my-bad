@@ -212,6 +212,20 @@ describe('source-first presentation', () => {
     expect(toMarkdown(r)).toContain('Independent failure')
   })
 
+  it('counts related errors in the header and marks warnings visibly', async () => {
+    const r = await report()
+    expect(markup(renderPage(r))).toContain('<span class="mb-header-count">1 error</span>')
+    r.errors = [{ ...r, id: 'a', causes: [], errors: undefined }, { ...r, id: 'b', causes: [], errors: undefined }]
+    expect(markup(renderPage(r))).toContain('<span class="mb-header-count">3 errors</span>')
+
+    const warning = await report()
+    warning.kind = 'warning'
+    const html = markup(renderPage(warning))
+    expect(html).toContain('<span class="mb-header-count">Warning</span>')
+    expect(html).toContain('</svg>Warning</span>')
+    expect(html).not.toContain('data-kind-label class="mb-sr-only"')
+  })
+
   it('renders the source of every cause and related error without the client script', async () => {
     const r = await report()
     const cause = { ...r, id: 'cause', message: 'Inner failure', causes: [], errors: undefined, frames: [{ ...r.frames[0]!, file: '/proj/src/cause.ts' }] }

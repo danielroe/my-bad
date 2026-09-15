@@ -210,13 +210,9 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
 
 async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> {
   const report = reportEntries(m.state.report).find(entry => entry.path === m.selected)?.report ?? m.state.report
-  const text = what === 'markdown' || what === 'prompt'
-    ? `${what === 'prompt' ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behavior.\n\n' : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
-    : what === 'stack'
-      ? report.rawStack ?? `${report.name}: ${report.message}`
-      : what === 'json'
-        ? JSON.stringify(report, null, 2)
-        : report.message
+  const text = what === 'json'
+    ? JSON.stringify(report, null, 2)
+    : `${what === 'prompt' ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behaviour.\n\n' : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
   try {
     await navigator.clipboard.writeText(text)
     const original = button.innerHTML
@@ -754,7 +750,10 @@ function bind(m: Mount): void {
       case 'theme':
         return toggleTheme(m)
       case 'copy-menu': {
-        const list = target.nextElementSibling as HTMLElement
+        const list = target.nextElementSibling
+        if (!(list instanceof HTMLElement)) {
+          return
+        }
         const show = list.hidden
         closeMenus(m, { except: list })
         list.hidden = !show
@@ -762,7 +761,7 @@ function bind(m: Mount): void {
         return
       }
       case 'copy': {
-        void copy(m, target.dataset.copy ?? 'message', target)
+        void copy(m, target.dataset.copy ?? 'markdown', target)
         setTimeout(closeMenus, 1200, m)
         return
       }
@@ -775,13 +774,21 @@ function bind(m: Mount): void {
         m.selected = selected.path
         const view = document.createElement('div')
         view.innerHTML = renderView(m.state, m.selected)
-        m.root.querySelector('.mb-report')?.replaceWith(view.querySelector('.mb-report')!)
+        const article = view.querySelector('.mb-report')
+        if (!article) {
+          return
+        }
+        m.root.querySelector('.mb-report')?.replaceWith(article)
         markOverflowingSnippets(m)
+        announce(m, `${selected.label}: ${selected.report.name}: ${selected.report.message}`)
         focusHeading(m)
         return
       }
       case 'context': {
-        const frame = target.closest<HTMLElement>('[data-frame]')!
+        const frame = target.closest<HTMLElement>('[data-frame]')
+        if (!frame) {
+          return
+        }
         const expanded = frame.toggleAttribute('data-expanded')
         target.setAttribute('aria-expanded', String(expanded))
         const label = expanded ? 'Less context' : 'More context'
@@ -791,24 +798,35 @@ function bind(m: Mount): void {
         return
       }
       case 'stack': {
-        const list = target.closest('[data-stack]')!.querySelector<HTMLElement>('.mb-frames')!
+        const list = target.closest('[data-stack]')?.querySelector<HTMLElement>('.mb-frames')
+        if (!list) {
+          return
+        }
         list.hidden = !list.hidden
         target.setAttribute('aria-expanded', String(!list.hidden))
         markOverflowingSnippets(m)
         return
       }
       case 'framework': {
-        const shown = target.closest('[data-stack]')!.toggleAttribute('data-framework')
-        target.setAttribute('aria-checked', String(shown))
+        const stack = target.closest('[data-stack]')
+        if (!stack) {
+          return
+        }
+        target.setAttribute('aria-checked', String(stack.toggleAttribute('data-framework')))
         markOverflowingSnippets(m)
         return
       }
       case 'toggle-compiled': {
-        const frame = target.closest<HTMLElement>('[data-frame]')!
+        const frame = target.closest<HTMLElement>('[data-frame]')
+        const source = frame?.querySelector<HTMLElement>('[data-snippet-source]')
+        const compiled = frame?.querySelector<HTMLElement>('[data-snippet-compiled]')
+        if (!frame || !source || !compiled) {
+          return
+        }
         const on = target.dataset.switch === 'compiled'
         frame.toggleAttribute('data-compiled', on)
-        frame.querySelector<HTMLElement>('[data-snippet-source]')!.hidden = on
-        frame.querySelector<HTMLElement>('[data-snippet-compiled]')!.hidden = !on
+        source.hidden = on
+        compiled.hidden = !on
         for (const button of frame.querySelectorAll<HTMLElement>('[data-switch]')) {
           button.setAttribute('aria-pressed', String((button.dataset.switch === 'compiled') === on))
         }

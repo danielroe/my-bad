@@ -143,6 +143,10 @@
 .mb-report-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .mb-kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--mb-fg-muted); font: 12px var(--mb-font-mono); }
 .mb-name { font: inherit; }
+.mb-kicker [data-kind-label] { display: inline-flex; align-items: center; gap: 5px; }
+.mb-kicker svg { width: 13px; height: 13px; }
+.mb-report[data-kind='warning'] { --mb-error: var(--mb-warning); --mb-error-bg: color-mix(in srgb, var(--mb-warning) 10%, var(--mb-code-bg)); }
+.mb-report[data-kind='warning'] [data-kind-label] { color: var(--mb-warning); }
 .mb-code a { display: inline-flex; align-items: center; gap: 4px; }
 .mb-copy { display: flex; flex: none; }
 .mb-copy > button { border-color: var(--mb-line-strong); border-radius: 6px 0 0 6px; color: var(--mb-fg); }

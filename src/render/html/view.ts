@@ -23,10 +23,17 @@ export const ICONS = {
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   minimize: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
-  move: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>',
 }
 
 const KIND_LABEL = { error: 'Error', warning: 'Warning', compile: 'Compile error' }
+
+function headerCount(report: ErrorReport): string {
+  if (report.kind !== 'error') {
+    return KIND_LABEL[report.kind]
+  }
+  const count = reportEntries(report).filter(entry => entry.label === 'Related error').length + 1
+  return `${count} error${count === 1 ? '' : 's'}`
+}
 
 export function renderView(state: PageState, selected = 'r'): string {
   const { report } = state
@@ -37,7 +44,7 @@ export function renderView(state: PageState, selected = 'r'): string {
     ? `<a class="mb-brand" href="${escapeHtml(state.theme.url)}" target="_blank" rel="noreferrer">${lockup}<span class="mb-sr-only"> (opens in a new tab)</span></a>`
     : `<p class="mb-brand">${lockup}</p>`
   return `<header class="mb-header mb-corners">
-  <div class="mb-brand-group">${brand}<span class="mb-header-count">${report.kind === 'warning' ? 'Warning' : '1 error'}</span></div>
+  <div class="mb-brand-group">${brand}<span class="mb-header-count">${headerCount(report)}</span></div>
   <nav class="mb-tools" aria-label="Error page tools">
     <ul>
       ${renderPager(report, state.history)}
@@ -90,11 +97,7 @@ function renderCauseNavigation(state: PageState, selected: string): string {
   return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, `1 ${chain[0]!.label}`)}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1 ? `${current + 1} ${chain[current]!.label}` : related ? `${chain.length - 1} related errors` : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${index + 1} ${item.label}: ${item.report.message}`)}</li>`).join('')}</ol></details>${related ? '' : `${ICONS.chevron}${entry(chain.length - 1, `${chain.length} Reported error`)}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r' ? `<span>Reported as: ${escapeHtml(state.report.message)}</span>` : ''}</p></nav>`
 }
 
-/**
- * Causes and related errors are reachable through the picker, which needs the
- * client script. Without it they are still readable here, so the client drops
- * this block once it takes over.
- */
+/** Causes and related errors in full, for when the client script (and so the picker) is unavailable. */
 function renderFallback(state: PageState, selected: string): string {
   const rest = reportEntries(state.report).filter(entry => entry.path !== selected)
   if (!rest.length) {
@@ -103,7 +106,6 @@ function renderFallback(state: PageState, selected: string): string {
   return `<details class="mb-disclosure mb-fallback" data-fallback><summary>${ICONS.chevron}${rest.length === 1 ? 'Cause' : 'Causes and related errors'} <span class="mb-count">${rest.length}</span></summary>${rest.map(entry => `<section class="mb-fallback-entry"><p class="mb-fallback-label">${escapeHtml(entry.label)}</p>${renderReport(entry.report, state, entry.path, false)}</section>`).join('')}</details>`
 }
 
-/** `chrome` renders the copy controls and the cause picker, which only the selected report carries. */
 function renderReport(report: ErrorReport, state: PageState, path: string, chrome = true): string {
   const id = `mb-${path}-${report.id}`
   const tag = chrome ? 'h1' : 'h2'
@@ -111,7 +113,7 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
     ? `<span class="mb-code" data-code>${report.docsUrl ? `<a href="${escapeHtml(report.docsUrl)}" target="_blank" rel="noreferrer" title="Documentation for ${escapeHtml(report.code)}">${escapeHtml(report.code)}${ICONS.open}<span class="mb-sr-only"> documentation (opens in a new tab)</span></a>` : escapeHtml(report.code)}</span>`
     : ''
   return `<article class="mb-report" data-kind="${report.kind}" aria-labelledby="${id}-name ${id}-message">
-  <div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span><span data-kind-label class="mb-sr-only">${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${report.status}</span>` : ''}</p>${chrome
+  <div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span><span data-kind-label${report.kind === 'error' ? ' class="mb-sr-only"' : ''}>${report.kind === 'error' ? '' : ICONS.warning}${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${report.status}</span>` : ''}</p>${chrome
     ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy error</button>
         <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
         <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
@@ -180,11 +182,7 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
 }
 
 function renderLocation(target: DisplayTarget, line: number | undefined, column: number | undefined, state: PageState): string {
-  const short = shortPath(target, state)
-  const slash = short.lastIndexOf('/')
-  const dir = slash === -1 ? '' : short.slice(0, slash + 1)
-  const base = slash === -1 ? short : short.slice(slash + 1)
-  return `<span class="mb-dir">${escapeHtml(dir)}</span><span class="mb-base">${escapeHtml(base)}</span>${line !== undefined ? `<span class="mb-pos">:${line}${column !== undefined ? `:${column}` : ''}</span>` : ''}`
+  return `${escapeHtml(shortPath(target, state))}${line !== undefined ? `<span class="mb-pos">:${line}${column !== undefined ? `:${column}` : ''}</span>` : ''}`
 }
 
 function shortPath(target: string | DisplayTarget, state: PageState): string {

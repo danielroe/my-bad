@@ -21,8 +21,8 @@ export interface ClientAssets {
 }
 
 export interface RenderHtmlOptions {
-  /** Where the error occurred, when known by the integration. */
-  environment?: 'Server' | 'Client'
+  /** Where the error occurred, when the integration knows: for example `Server` or `Client`. */
+  environment?: string
   cwd?: string
   /**
    * Load the client script and stylesheet from these URLs instead of inlining
