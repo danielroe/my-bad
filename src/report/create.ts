@@ -6,7 +6,7 @@ import { fsLoader } from '../loaders/fs'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
 import { hasScheme, isFilePath, resolvePath, stripCacheQuery, toPath } from './path'
-import { extractSnippet, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
+import { extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeLine } from './tokenize'
 
@@ -379,7 +379,7 @@ function caretLineMatchesSource(snippet: Snippet, caretLine: number, contents: s
   if (!expected || UNINFORMATIVE.test(stripEllipsis(expected))) {
     return
   }
-  const actual = contents.split(/\r?\n/)[caretLine - 1]?.trim()
+  const actual = lineAt(contents, caretLine)?.trim()
   if (actual === undefined) {
     return false
   }

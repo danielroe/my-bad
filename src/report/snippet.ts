@@ -17,6 +17,11 @@ export function extractSnippet(contents: string, line: number, context: number, 
   }
 }
 
+/** A single 1-based line, or `undefined` past the end of the file. */
+export function lineAt(contents: string, line: number): string | undefined {
+  return line < 1 ? undefined : linesBetween(contents, line, line)[0]
+}
+
 /** Lines `from` to `to` (1-based, inclusive) without splitting the whole file. */
 function linesBetween(contents: string, from: number, to: number): string[] {
   const lines: string[] = []
