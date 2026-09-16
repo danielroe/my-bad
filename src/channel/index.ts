@@ -92,6 +92,8 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const keepalive = setInterval(send, options.keepalive ?? 15_000, ': ping\n\n')
   keepalive.unref?.()
 
+  let helloFrame: string | undefined
+
   function history(): HistoryEntry[] {
     return [...reports.values()].map(toHistoryEntry)
   }
@@ -102,6 +104,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     while (reports.size > max) {
       reports.delete(reports.keys().next().value!)
     }
+    helloFrame = undefined
   }
 
   function send(chunk: string): void {
@@ -122,8 +125,8 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
   }
 
-  function hello(): ChannelEvent {
-    return { type: 'hello', payload: { version, actions, current, history: history() } }
+  function hello(): string {
+    return helloFrame ??= encode({ type: 'hello', payload: { version, actions, current, history: history() } })
   }
 
   const roots = options.root === false
@@ -226,7 +229,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           close: () => res.end(),
         }
         clients.add(client)
-        client.send(encode(hello()))
+        client.send(hello())
         req.on('close', () => clients.delete(client))
         return true
       }
@@ -263,7 +266,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
               close: () => controller.close(),
             }
             clients.add(client)
-            client.send(encode(hello()))
+            client.send(hello())
           },
           cancel() {
             if (client) {
@@ -298,6 +301,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         return
       }
       current = undefined
+      helloFrame = undefined
       broadcast({ type: 'error:clear', payload: { id } })
     },
     warn(report) {
