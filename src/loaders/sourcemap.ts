@@ -81,25 +81,27 @@ interface Loaded {
   base: string
 }
 
+/** Decoded maps by raw map object, shared by every loader instance since integrations commonly create loaders per request. */
+const parsed = new WeakMap<RawSourceMap, SourceMap | null>()
+
+function parseMap(raw: RawSourceMap): SourceMap | undefined {
+  const existing = parsed.get(raw)
+  if (existing !== undefined) {
+    return existing ?? undefined
+  }
+  try {
+    const map = new SourceMap(raw as ConstructorParameters<typeof SourceMap>[0])
+    parsed.set(raw, map)
+    return map
+  }
+  catch {
+    parsed.set(raw, null)
+  }
+}
+
 /** Maps frames with sourcemaps supplied by the caller, and reads original sources from disk. */
 export function sourceMapLoader(options: SourceMapLoaderOptions): SourceLoader {
   const cache = new Map<string, { version: string | undefined, value: Promise<Loaded | undefined> }>()
-  const parsed = new WeakMap<RawSourceMap, SourceMap | null>()
-
-  function parseMap(raw: RawSourceMap): SourceMap | undefined {
-    const existing = parsed.get(raw)
-    if (existing !== undefined) {
-      return existing ?? undefined
-    }
-    try {
-      const map = new SourceMap(raw as ConstructorParameters<typeof SourceMap>[0])
-      parsed.set(raw, map)
-      return map
-    }
-    catch {
-      parsed.set(raw, null)
-    }
-  }
 
   async function load(file: string): Promise<Loaded | undefined> {
     const raw = await options.getSourceMap(file)
