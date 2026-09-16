@@ -1,4 +1,9 @@
 import { Buffer } from 'node:buffer'
+import { mkdtempSync } from 'node:fs'
+import { rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { setTimeout } from 'node:timers/promises'
 import { describe, expect, it } from 'vitest'
 import { createReport, sourceMapLoader } from '../src'
 
@@ -31,6 +36,15 @@ describe('sourceMapLoader', () => {
 
   it('does not map lines the map has no segment for', async () => {
     expect(await loader.map!({ file: generated, line: 6, column: 1, type: 'app' })).toBeUndefined()
+  })
+
+  it('maps through the current map when the caller supplies a new one', async () => {
+    let current = { ...map, mappings: 'AAAA' }
+    const live = sourceMapLoader({ getSourceMap: () => current, fs: false })
+    expect(await live.map!({ file: generated, line: 1, column: 1, type: 'app' })).toMatchObject({ line: 1 })
+
+    current = { ...map, mappings: 'AAIA' }
+    expect(await live.map!({ file: generated, line: 1, column: 1, type: 'app' })).toMatchObject({ line: 5 })
   })
 
   it('is used by createReport as a loader', async () => {
@@ -76,5 +90,45 @@ describe('parseInlineSourceMap', () => {
     expect(parseInlineSourceMap('function explode() {}\n')).toBeUndefined()
     expect(parseInlineSourceMap('//# sourceMappingURL=./lib.mjs.map\n')).toBeUndefined()
     expect(parseInlineSourceMap('//# sourceMappingURL=data:application/json;base64,notjson\n')).toBeUndefined()
+  })
+})
+
+describe('fsLoader cache invalidation', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'my-bad-fs-'))
+  const file = join(dir, 'lib.mjs')
+  const sidecar = `${file}.map`
+
+  const mapFor = (mappings: string) => JSON.stringify({ version: 3, file: 'lib.mjs', sources: ['src/lib.ts'], names: [], mappings })
+
+  async function lineOf(): Promise<number | undefined> {
+    const error = new Error('boom')
+    error.stack = `Error: boom\n    at explode (${file}:1:1)`
+    const report = await createReport(error, { snippets: false })
+    return report.frames[0]?.line
+  }
+
+  async function write(path: string, contents: string) {
+    await writeFile(path, contents, 'utf8')
+    await setTimeout(10)
+  }
+
+  it('maps through the map on disk after a rebuild', async () => {
+    await write(file, 'export function explode() {}\n')
+    await write(sidecar, mapFor('AAAA'))
+    expect(await lineOf()).toBe(1)
+
+    await write(sidecar, mapFor('AAIA'))
+    expect(await lineOf()).toBe(5)
+  })
+
+  it('falls back to an inline map once the sidecar is removed', async () => {
+    const inline = Buffer.from(mapFor('AAMA')).toString('base64')
+    await write(file, `export function explode() {}\n//# sourceMappingURL=data:application/json;base64,${inline}\n`)
+    await rm(sidecar)
+    await setTimeout(10)
+    expect(await lineOf()).toBe(7)
+
+    await write(sidecar, mapFor('AAAA'))
+    expect(await lineOf()).toBe(1)
   })
 })
