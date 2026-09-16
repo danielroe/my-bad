@@ -6,23 +6,43 @@ const root = fileURLToPath(new URL('../src/render/html/', import.meta.url))
 
 const VIRTUAL_ID = 'virtual:my-bad-client'
 
+export interface ClientPluginOptions {
+  /**
+   * Write the client bundle and stylesheet as `client.js` / `client.css` next to
+   * the output and read them on first use, instead of embedding them as string
+   * literals that every importer must parse. Default `false`.
+   */
+  emit?: boolean
+}
+
 /**
  * Bundles `src/render/html/client/main.ts` into a self-contained IIFE and exposes
- * it (and the stylesheet) as string exports of `virtual:my-bad-client`, so the
- * renderers can inline them without reading from disk at runtime.
+ * it (and the stylesheet) through `getClientScript` / `getClientStyles` exports
+ * of `virtual:my-bad-client`.
  */
-export function clientPlugin() {
+export function clientPlugin(options: ClientPluginOptions = {}) {
   return {
     name: 'my-bad:client',
     resolveId(id: string) {
       return id === VIRTUAL_ID ? `\0${VIRTUAL_ID}` : undefined
     },
-    async load(id: string) {
+    async load(this: { emitFile: (file: { type: 'asset', fileName: string, source: string }) => unknown }, id: string) {
       if (id !== `\0${VIRTUAL_ID}`) {
         return
       }
       const [script, styles] = await Promise.all([bundleClient(), bundleStyles()])
-      return `export const clientScript = ${JSON.stringify(script)}\nexport const clientStyles = ${JSON.stringify(styles)}\n`
+      if (!options.emit) {
+        return `export const getClientScript = () => ${JSON.stringify(script)}\nexport const getClientStyles = () => ${JSON.stringify(styles)}\n`
+      }
+      this.emitFile({ type: 'asset', fileName: 'client.js', source: script })
+      this.emitFile({ type: 'asset', fileName: 'client.css', source: styles })
+      return [
+        `import { readFileSync } from 'node:fs'`,
+        `let script, styles`,
+        `export const getClientScript = () => script ??= readFileSync(new URL('./client.js', import.meta.url), 'utf8')`,
+        `export const getClientStyles = () => styles ??= readFileSync(new URL('./client.css', import.meta.url), 'utf8')`,
+        '',
+      ].join('\n')
     },
   }
 }
