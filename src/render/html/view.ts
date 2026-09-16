@@ -197,17 +197,24 @@ function shortPath(target: string | DisplayTarget, state: PageState): string {
 export function renderSnippet(snippet: Snippet, line: number, column?: number, label?: string): string {
   const more = line >= snippet.start && line < snippet.start + snippet.lines.length && (snippet.start < line - 3 || snippet.start + snippet.lines.length - 1 > line + 3)
   const gutter = String(snippet.start + snippet.lines.length - 1).length
-  const rows = snippet.lines.map((text, index) => {
+  let rows = ''
+  for (const [index, text] of snippet.lines.entries()) {
     const n = snippet.start + index
     const active = n === line
-    const firstToken = text.search(/\S/)
-    const caret = active && column !== undefined && Number.isInteger(column) && column > (firstToken < 0 ? text.length : firstToken) && column <= text.length + 1
-      ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}^</span>`
-      : ''
-    return `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${attr('data-context', more && Math.abs(n - line) > 3)}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${caret}</span></span>`
-  })
+    rows += `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${more && Math.abs(n - line) > 3 ? ' data-context="true"' : ''}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${active ? renderCaret(text, column) : ''}</span></span>`
+  }
   const description = `Source${label ? ` of ${label}` : ''}, line ${line} highlighted`
-  return `<pre class="mb-snippet"${attr('data-more-context', more)} data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows.join('')}</code></pre>`
+  return `<pre class="mb-snippet"${attr('data-more-context', more)} data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows}</code></pre>`
+}
+
+function renderCaret(text: string, column: number | undefined): string {
+  if (column === undefined || !Number.isInteger(column)) {
+    return ''
+  }
+  const firstToken = text.search(/\S/)
+  return column > (firstToken < 0 ? text.length : firstToken) && column <= text.length + 1
+    ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}^</span>`
+    : ''
 }
 
 function renderLogDrawer(): string {
