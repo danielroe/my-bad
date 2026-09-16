@@ -241,9 +241,9 @@ describe('host validation', () => {
 
 describe('escapeCmdArg', () => {
   it('quotes and escapes cmd.exe metacharacters', () => {
-    expect(escapeCmdArg('C:\\proj\\a.ts:3')).toBe('^"C:\\proj\\a.ts:3^"')
-    expect(escapeCmdArg('a & calc')).toBe('^"a^ ^&^ calc^"')
-    expect(escapeCmdArg('say "hi"')).toBe('^"say^ \\^"hi\\^"^"')
-    expect(escapeCmdArg('dir\\')).toBe('^"dir\\\\^"')
+    expect(escapeCmdArg('C:\\proj\\a.ts:3')).toBe('^^^"C:\\proj\\a.ts:3^^^"')
+    expect(escapeCmdArg('a & calc')).toBe('^^^"a^^^ ^^^&^^^ calc^^^"')
+    expect(escapeCmdArg('say "hi"')).toBe('^^^"say^^^ \\^^^"hi\\^^^"^^^"')
+    expect(escapeCmdArg('dir\\')).toBe('^^^"dir\\\\^^^"')
   })
 })

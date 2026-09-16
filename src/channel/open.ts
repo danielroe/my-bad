@@ -58,6 +58,10 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
 /**
  * Quote an argument for `cmd.exe`, which `spawn` does not do itself when `shell`
  * is set: it only joins the arguments with spaces.
+ *
+ * Metacharacters are caret-escaped twice because the only arguments that reach
+ * here are destined for a `.cmd` / `.bat` shim, and `cmd.exe` parses the line
+ * once for itself and once for the batch file, consuming one caret each time.
  */
 export function escapeCmdArg(arg: string): string {
   let body = ''
@@ -71,7 +75,7 @@ export function escapeCmdArg(arg: string): string {
     slashes = 0
   }
   body += '\\'.repeat(slashes * 2)
-  return `"${body}"`.replace(/[()\][%!^"`<>&|;, *?]/g, '^$&')
+  return `"${body}"`.replace(/[()\][%!^"`<>&|;, *?]/g, '^^^$&')
 }
 
 function run(bin: string, args: string[], shell = false): Promise<boolean> {
