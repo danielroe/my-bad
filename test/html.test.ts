@@ -31,12 +31,29 @@ describe('renderPage', () => {
     expect(html).toContain('data-action="open" data-file="/proj/src/handler.ts" data-line="3" data-column="9"')
     expect(html).toContain('<span class="tk-keyword">throw</span>')
     expect(html).toContain(':root{--mb-accent:#00dc82;--mb-bg:#020420}')
-    expect(html).toContain('2 dependency frames')
+    expect(html).toContain('Show framework frames <span class="mb-count">(2)</span>')
     expect(html).toMatch(/<script type="application\/json">\{"mode":"page"/)
     expect(html).toContain('data-action="logs"')
     expect(html).toContain('Request')
     expect(html).toContain('https://example.com/e1001')
     expect(html).not.toContain('</script><script>alert')
+  })
+
+  it('uses my-bad by default and lets an integration layer its brand onto the same layout', async () => {
+    const r = await report()
+    const original = markup(renderPage(r))
+    expect(original).toContain('<span class="mb-brand-name">my-bad</span>')
+    expect(original).not.toContain('nuxt.com')
+    const logo = '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>'
+    const branded = markup(renderPage(r, { theme: { name: 'Acme', logo, url: 'https://example.com', accent: '#00dc82', vars: { '--mb-font-display': 'serif' } } }))
+    expect(branded).toContain(`${logo}<span class="mb-brand-name mb-sr-only">Acme</span>`)
+    expect(branded).toContain('href="https://example.com"')
+    expect(branded).toContain('--mb-accent:#00dc82;--mb-font-display:serif')
+    for (const html of [original, branded]) {
+      expect(html).toContain('aria-label="Error source"')
+      expect(html).toContain('data-action="stack"')
+      expect(html).toContain('Copy error')
+    }
   })
 
   it('keeps embedded state parseable and free of script-breaking sequences', async () => {
@@ -152,7 +169,7 @@ describe('determinism', () => {
     r.frames[0]!.line = 1
     r.frames[0]!.column = 9
     const html = renderPage(r)
-    expect(html).toContain('<span class="mb-src">\t\t      ^</span>')
+    expect(html).toContain('<span class="mb-caret" aria-hidden="true">\t\t      ^</span>')
   })
 })
 
@@ -176,5 +193,108 @@ describe('dependency paths', () => {
     expect(html).toContain('…/@vue/runtime-core/dist/')
     expect(html).not.toContain('.pnpm/@vue+runtime-core@3.5.42_typescript@5.9.2/node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:2')
     expect(html).toContain('title="/proj/node_modules/.pnpm/@vue+runtime-core@3.5.42_typescript@5.9.2/node_modules/@vue/runtime-core/dist/runtime-core.cjs.js"')
+  })
+})
+
+describe('source-first presentation', () => {
+  it('keeps the message as the heading and preserves every cause and related error', async () => {
+    const r = await report()
+    r.causes.push({ ...r, id: 'cause', message: 'Inner failure', causes: [], errors: undefined })
+    r.errors = [{ ...r.causes[0]!, id: 'related', message: 'Independent failure' }]
+    const html = markup(renderPage(r))
+    expect(html).toMatch(/<h1[^>]*data-message>Something &lt;broke&gt;<\/h1>/)
+    expect(html).toContain('data-action="cause" data-path="rc0"')
+    expect(html).toContain('Inner failure')
+    expect(html).toContain('data-action="cause" data-path="re0"')
+    expect(html).toContain('Independent failure')
+    expect(html).toContain('data-action="stack"')
+    expect(html).toContain('Component trace')
+    expect(toMarkdown(r)).toContain('Independent failure')
+  })
+
+  it('counts related errors in the header and marks warnings visibly', async () => {
+    const r = await report()
+    expect(markup(renderPage(r))).toContain('<span class="mb-header-count">1 error</span>')
+    r.errors = [{ ...r, id: 'a', causes: [], errors: undefined }, { ...r, id: 'b', causes: [], errors: undefined }]
+    expect(markup(renderPage(r))).toContain('<span class="mb-header-count">3 errors</span>')
+
+    const warning = await report()
+    warning.kind = 'warning'
+    const html = markup(renderPage(warning))
+    expect(html).toContain('<span class="mb-header-count">Warning</span>')
+    expect(html).toContain('</svg>Warning</span>')
+    expect(html).not.toContain('data-kind-label class="mb-sr-only"')
+  })
+
+  it('renders the source of every cause and related error without the client script', async () => {
+    const r = await report()
+    const cause = { ...r, id: 'cause', message: 'Inner failure', causes: [], errors: undefined, frames: [{ ...r.frames[0]!, file: '/proj/src/cause.ts' }] }
+    r.causes.push(cause)
+    r.errors = [{ ...cause, id: 'related', message: 'Independent failure' }]
+    const html = markup(renderPage(r))
+    const fallback = html.slice(html.indexOf('data-fallback'), html.indexOf('class="mb-secondary"'))
+    expect(fallback).toContain('Inner failure')
+    expect(fallback).toContain('Independent failure')
+    expect(fallback.match(/data-file="\/proj\/src\/cause\.ts"/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(fallback).not.toContain('data-action="cause"')
+    expect(fallback).not.toContain('id="mb-copy-menu"')
+    expect(fallback.match(/<h1/g)).toBe(null)
+  })
+
+  it('keeps request context in one place and groups missing framework code in stack order', async () => {
+    const r = await report()
+    r.frames.push({ type: 'app', function: 'caller', file: '/proj/caller.ts', line: 1, snippet: { start: 1, lines: ['handler()'] } }, { type: 'internal', function: 'runtime', file: 'node:runtime' })
+    r.frames[1]!.snippet = undefined
+    const html = markup(renderPage(r))
+    expect(html.match(/data-action="info"/g)).toHaveLength(1)
+    expect(html.slice(0, html.indexOf('</header>'))).not.toContain('data-action="info"')
+    expect(html.match(/class="mb-framework-group"/g)).toHaveLength(2)
+    expect(html).toContain('<span>2 – 3</span>')
+    expect(html).toContain('Code not captured')
+    expect(html.indexOf('<span>2 – 3</span>')).toBeLessThan(html.indexOf('title="caller"'))
+    expect(html.indexOf('title="caller"')).toBeLessThan(html.indexOf('<span>5</span>'))
+    expect(html).not.toContain('data-frame-toggle')
+  })
+
+  it('does not invent source when no stack was captured', async () => {
+    const r = await createReport(new Error('No source'), { loaders: [], snippets: false })
+    r.frames = []
+    const html = markup(renderPage(r))
+    expect(html).toContain('No stack trace was provided.')
+    expect(html).not.toContain('data-frame ')
+    expect(html).not.toContain('data-stack')
+  })
+
+  it.each(['app', 'vendor', 'internal'] as const)('does not offer an empty call stack for a single %s frame', async (type) => {
+    const r = await report()
+    r.frames = [{ ...r.frames[0]!, type }]
+    const html = markup(renderPage(r))
+    expect(html).toContain('data-frame ')
+    expect(html).not.toContain('data-action="stack"')
+    expect(html).not.toContain('data-action="framework"')
+  })
+
+  it('renders a compiled-only excerpt at its generated location', async () => {
+    const r = await report()
+    r.frames = [{ type: 'app', file: '/proj/app.vue', compiled: { file: '/proj/app.vue', line: 8, column: 3, snippet: { start: 8, lines: ['  invalid()'] } } }]
+    const html = markup(renderPage(r, { cwd: '/proj' }))
+    expect(html).toContain('data-compiled="true"')
+    expect(html).toContain('data-snippet-compiled')
+    expect(html).toContain('Source of app.vue, line 8 highlighted')
+    expect(html).not.toContain('data-switch=')
+    expect(html).not.toContain('data-action="open" data-file="/proj/app.vue" data-line="8"')
+  })
+})
+
+describe('escaping', () => {
+  it('keeps safe documentation links and drops the rest', async () => {
+    const r = await report()
+    r.docsUrl = 'javascript:alert(1)'
+    const html = markup(renderPage(r, { theme: { name: 'Acme', url: 'java\tscript:alert(2)' } }))
+    expect(html).not.toContain('javascript')
+    expect(html).not.toContain('script:alert')
+    expect(html).not.toContain('Learn more')
+    expect(html).toContain('<p class="mb-brand">')
+    expect(markup(renderPage({ ...r, docsUrl: 'https://example.com/docs' }))).toContain('href="https://example.com/docs"')
   })
 })

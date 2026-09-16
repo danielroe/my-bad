@@ -21,6 +21,8 @@ export interface ClientAssets {
 }
 
 export interface RenderHtmlOptions {
+  /** Where the error occurred, e.g. `Server` or `Client`. */
+  environment?: string
   cwd?: string
   /**
    * Load the client script and stylesheet from these URLs instead of inlining
@@ -85,6 +87,7 @@ function stateScript(state: PageState, assets: ClientAssets | undefined): string
 function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageState['mode']): PageState {
   return {
     mode,
+    environment: options.environment,
     report,
     cwd: options.cwd,
     channel: options.channel,
@@ -101,7 +104,7 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
   const title = options.title ?? `${report.name}: ${report.message.split('\n')[0]}`
   const scheme = options.theme?.scheme
   return `<!DOCTYPE html>
-<html lang="en"${scheme ? ` data-theme="${scheme}"` : ''}>
+<html lang="en"${scheme ? ` data-theme="${escapeHtml(scheme)}"` : ''}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

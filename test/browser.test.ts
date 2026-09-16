@@ -116,7 +116,7 @@ describe('browser client', () => {
     await page.click('[data-action="theme"]')
     expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
 
-    await page.click('[data-action="logs"]')
+    await page.getByRole('button', { name: 'Close server logs', exact: true }).click()
     channel.log({ level: 'info', text: 'unread' })
     await waitFor(() => page.locator('[data-log-count]').textContent(), '1')
     channel.setError(await report('third'))
@@ -279,6 +279,151 @@ describe('browser client', () => {
   }, 30_000)
 })
 
+describe('source-first inspection', () => {
+  it('keeps source in place, scopes context and compiled views, and reveals supporting evidence', async () => {
+    const current = await report('Cannot save this widget')
+    current.frames[0]!.line = 6
+    current.frames[0]!.snippet = { start: 1, lines: Array.from({ length: 11 }, (_, i) => `const line${i + 1} = ${i + 1}`) }
+    current.frames[0]!.compiled = { file: '/proj/dist/handler.js', line: 20, column: 9, snippet: { start: 20, lines: ['throw Error()'] } }
+    current.frames.splice(1, 0, { type: 'app', file: '/proj/caller.ts', function: 'caller', line: 2, snippet: { start: 1, lines: ['start()', 'handler()', 'finish()'] } })
+    current.causes = [{ ...current, id: 'inner', message: 'Missing name', frames: [], causes: [] }]
+    current.trace = [{ label: '<Widget>' }]
+    channel.setError(current)
+    for (const path of ['/', '/overlay']) {
+      const page = await browser.newPage()
+      await page.goto(`${origin}${path}`)
+      const root = page.locator('[data-my-bad-root]')
+      await waitFor(() => root.locator('[data-live][data-connected]').count(), 1)
+      const source = root.locator('.mb-source').first()
+      const stack = root.locator('[data-stack]').first()
+      expect(await root.locator('h1').textContent()).toBe(current.message)
+      expect(await root.locator('[data-fallback]').count()).toBe(0)
+      expect(await source.locator('.mb-line:not(.mb-line-caret):visible').count()).toBe(7)
+      await source.getByRole('button', { name: 'More context', exact: true }).click()
+      expect(await source.locator('.mb-line:not(.mb-line-caret):visible').count()).toBe(11)
+      await source.getByRole('button', { name: 'Less context', exact: true }).click()
+      await source.locator('[data-switch="compiled"]').click()
+      expect(await source.locator('[data-snippet-compiled]').isVisible()).toBe(true)
+      const requests = openRequests.length
+      await source.locator('[data-location-compiled] [data-loc]').click()
+      await waitFor(() => openRequests.length, requests + 1)
+      expect(openRequests.at(-1)).toEqual({ file: '/proj/src/handler.ts', line: 6, column: 3 })
+      await source.locator('[data-switch="source"]').click()
+      expect(await source.locator('.mb-line:not(.mb-line-caret):visible').count()).toBe(7)
+      const before = await source.boundingBox()
+      await stack.locator('[data-action="stack"]').focus()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Shift+Tab')
+      const focus = await stack.locator('[data-action="stack"]').evaluate((button) => {
+        const style = getComputedStyle(button)
+        const rect = button.getBoundingClientRect()
+        const card = button.closest('.mb-ordered-stack')!.getBoundingClientRect()
+        const reach = Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset)
+        return {
+          visible: button.matches(':focus-visible') && style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) >= 2,
+          contained: rect.top - reach >= card.top && rect.bottom + reach <= card.bottom
+            && rect.left - reach >= card.left && rect.right + reach <= card.right,
+        }
+      })
+      expect(focus).toEqual({ visible: true, contained: true })
+      await page.keyboard.press('Enter')
+      const caller = stack.locator('[data-frame-type="app"]').first()
+      expect(await caller.locator('[data-snippet-source]').isVisible()).toBe(true)
+      const callerRequests = openRequests.length
+      await caller.locator('[data-loc]').focus()
+      await page.keyboard.press('Enter')
+      await waitFor(() => openRequests.length, callerRequests + 1)
+      expect(openRequests.at(-1)).toEqual({ file: '/proj/caller.ts', line: 2 })
+      expect(await source.boundingBox()).toEqual(before)
+      expect(await root.getByRole('region', { name: 'Error source', exact: true }).count()).toBe(1)
+      expect(await stack.locator('.mb-framework-hidden').isVisible()).toBe(true)
+      expect(await stack.locator('[data-frame-type="vendor"]').isVisible()).toBe(false)
+      await stack.getByRole('switch').click()
+      expect(await stack.locator('[data-frame-type="vendor"]').first().isVisible()).toBe(true)
+      expect(await stack.locator('.mb-framework-hidden').isVisible()).toBe(false)
+      await stack.locator('[data-action="stack"]').click()
+      expect(await caller.locator('[data-snippet-source]').isVisible()).toBe(false)
+      expect(await source.boundingBox()).toEqual(before)
+      await root.locator('[data-action="cause"][data-path="rc0"]').click()
+      expect(await root.getByRole('heading', { name: 'Missing name', exact: true }).isVisible()).toBe(true)
+      await root.locator('[data-action="cause"][data-path="r"]').click()
+      expect(await root.locator('h1').textContent()).toBe(current.message)
+      await root.locator('.mb-disclosure > summary').filter({ hasText: 'Component trace' }).click()
+      expect(await root.locator('[data-trace]').isVisible()).toBe(true)
+      await page.close()
+    }
+  }, 30_000)
+})
+
+describe('server logs', () => {
+  it('distinguishes connection status, unread logs, empty logs and filtered results', async () => {
+    channel.setError(await report('Log states'))
+    for (const path of ['/', '/overlay']) {
+      const page = await browser.newPage()
+      await page.goto(`${origin}${path}`)
+      const root = page.locator('[data-my-bad-root]')
+      await waitFor(() => root.locator('[data-live][data-connected]').count(), 1)
+      const trigger = root.getByRole('button', { name: 'Server logs', exact: true })
+      expect(await trigger.locator('[data-live]').count()).toBe(0)
+      expect(await trigger.locator('[data-log-count]').isVisible()).toBe(false)
+      await trigger.click()
+      expect(await root.locator('[data-live-text]').textContent()).toBe('Dev server: connected')
+      expect(await root.locator('[data-log-empty]').textContent()).toBe('No logs received yet.')
+      expect(await root.locator('[data-log-empty]').isVisible()).toBe(true)
+      channel.setError(await report('Still waiting for logs'))
+      await waitFor(() => root.locator('h1').textContent(), 'Still waiting for logs')
+      expect(await root.locator('[data-logs]').isVisible()).toBe(true)
+      channel.log({ level: 'info', text: 'Server ready' })
+      await waitFor(() => root.locator('[data-log]').count(), 1)
+      expect(await root.locator('[data-log-empty]').isVisible()).toBe(false)
+      await root.locator('[data-log-filter]').selectOption('error')
+      expect(await root.locator('[data-log-empty]').textContent()).toBe('No logs match this level.')
+      expect(await root.locator('[data-log-empty]').isVisible()).toBe(true)
+      channel.setError(await report('Keep the filter'))
+      await waitFor(() => root.locator('h1').textContent(), 'Keep the filter')
+      expect(await root.locator('[data-log-filter]').inputValue()).toBe('error')
+      expect(await root.locator('[data-log-empty]').isVisible()).toBe(true)
+      await root.getByRole('button', { name: 'Close server logs' }).click()
+      channel.log({ level: 'error', text: 'An actual unread error' })
+      await waitFor(() => trigger.locator('[data-log-count]').textContent(), '1')
+      expect(await trigger.locator('[data-log-count]').isVisible()).toBe(true)
+      await trigger.click()
+      expect(await root.locator('[data-log-empty]').isVisible()).toBe(false)
+      expect(await trigger.locator('[data-log-count]').isVisible()).toBe(false)
+      await root.getByRole('button', { name: 'Clear logs', exact: true }).click()
+      expect(await root.locator('[data-log-empty]').textContent()).toBe('No logs received yet.')
+      expect(await root.locator('[data-log-empty]').isVisible()).toBe(true)
+      await page.close()
+    }
+  })
+})
+
+describe('copy formats', () => {
+  it('copies the report directly and offers the proposal formats with a useful agent prompt', async () => {
+    channel.setError(await report('Copy this failure'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.assign(window, { testClipboard: '' })
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => Object.assign(window, { testClipboard: text }) } })
+    })
+    await page.goto(origin)
+    const copied = () => page.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
+    await page.getByRole('button', { name: 'Copy error', exact: true }).click()
+    await waitFor(async () => (await copied()).includes('Copy this failure'), true)
+    const markdown = await copied()
+    await page.getByRole('button', { name: 'More copy formats' }).click()
+    expect(await page.locator('[data-menu-list] button').allTextContents()).toEqual(['Copy as Markdown', 'Copy prompt for an agent', 'Copy structured JSON'])
+    await page.getByRole('button', { name: 'Copy prompt for an agent' }).click()
+    await waitFor(async () => (await copied()).startsWith('Help diagnose this error.'), true)
+    expect(await copied()).toContain(markdown)
+    await page.getByRole('button', { name: 'Copy structured JSON' }).click()
+    await waitFor(async () => (await copied()).startsWith('{'), true)
+    expect(JSON.parse(await copied()).message).toBe('Copy this failure')
+    expect(await page.locator('[data-action="info"]').count()).toBe(0)
+    await page.close()
+  })
+})
+
 describe('accessibility', () => {
   it('has labelled controls, landmarks and keyboard navigation', async () => {
     channel.setError(await report('a11y'))
@@ -296,14 +441,10 @@ describe('accessibility', () => {
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('MAIN')
 
     await waitFor(() => page.locator('[data-live][data-connected]').count(), 1)
-    const closedFrame = page.locator('[data-frame][data-has-snippet]').filter({ has: page.locator('[data-frame-body]:not([open])') }).first()
-    if (await closedFrame.count()) {
-      await closedFrame.locator('[data-switch="compiled"], [data-switch="source"]').first().click()
-      expect(await closedFrame.locator('[data-frame-body]').evaluate(el => (el as HTMLDetailsElement).open)).toBe(true)
-    }
-    await page.locator('.mb-loc').first().click()
-    await waitFor(() => openRequests.length, 1)
-    expect(openRequests[0]).toEqual({ file: '/proj/src/handler.ts', line: 2, column: 3 })
+    const requests = openRequests.length
+    await page.getByRole('button', { name: 'Open original source in your editor', exact: true }).first().click()
+    await waitFor(() => openRequests.length, requests + 1)
+    expect(openRequests.at(-1)).toEqual({ file: '/proj/src/handler.ts', line: 2, column: 3 })
     await page.close()
   }, 30_000)
 })

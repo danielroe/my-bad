@@ -3,15 +3,19 @@ import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../t
 import type { PageState } from './state'
 import { displayPath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
-import { groupFrames, groupSummary } from '../frames'
-import { attr, escapeHtml } from './escape'
+import { groupFrames } from '../frames'
+import { attr, escapeHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
 
 export const ICONS = {
+  file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6v20h12V6zM14 2v6h4M9 13h6m-6 4h6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+  context: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8 4-4 4 4M12 4v6m-4 6 4 4 4-4m-4 4v-6M4 12h16"/></svg>',
+  history: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M6 7v10m12-10v3a4 4 0 0 1-4 4H6"/></svg>',
   warning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg>',
   copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
-  theme: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/></svg>',
+  theme: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>',
   logs: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>',
   open: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
@@ -19,36 +23,34 @@ export const ICONS = {
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   minimize: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
-  move: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>',
 }
 
 const KIND_LABEL = { error: 'Error', warning: 'Warning', compile: 'Compile error' }
 
-export function renderView(state: PageState): string {
+function headerCount(report: ErrorReport): string {
+  if (report.kind !== 'error') {
+    return KIND_LABEL[report.kind]
+  }
+  const count = reportEntries(report).filter(entry => entry.related).length + 1
+  return `${count} error${count === 1 ? '' : 's'}`
+}
+
+export function renderView(state: PageState, selected = 'r'): string {
   const { report } = state
   const live = !!state.channel
   const name = escapeHtml(state.theme?.name ?? 'my-bad')
   const lockup = `${state.theme?.logo ?? ''}<span class="mb-brand-name${state.theme?.logo ? ' mb-sr-only' : ''}">${name}</span>`
-  const brand = state.theme?.url
-    ? `<a class="mb-brand" href="${escapeHtml(state.theme.url)}" target="_blank" rel="noreferrer">${lockup}<span class="mb-sr-only"> (opens in a new tab)</span></a>`
+  const home = safeUrl(state.theme?.url)
+  const brand = home
+    ? `<a class="mb-brand" href="${escapeHtml(home)}" target="_blank" rel="noreferrer">${lockup}<span class="mb-sr-only"> (opens in a new tab)</span></a>`
     : `<p class="mb-brand">${lockup}</p>`
   return `<header class="mb-header mb-corners">
-  ${brand}
+  <div class="mb-brand-group">${brand}<span class="mb-header-count">${headerCount(report)}</span></div>
   <nav class="mb-tools" aria-label="Error page tools">
     <ul>
       ${renderPager(report, state.history)}
       <li><span class="mb-warning-count" data-warning-count hidden></span></li>
-      ${live ? `<li><button class="mb-tool mb-tool-logs" type="button" data-action="logs" aria-pressed="false" aria-controls="mb-logs" title="Server logs" aria-label="Server logs">${ICONS.logs}<span class="mb-badge" data-log-count hidden></span><span class="mb-live" data-live role="status"><span class="mb-sr-only" data-live-text>Dev server: connecting</span></span></button></li>` : ''}
-      ${report.sections.length ? `<li><button class="mb-tool" type="button" data-action="info" title="Request and environment info" aria-label="Request and environment info">${ICONS.info}</button></li>` : ''}
-      <li class="mb-menu" data-menu>
-        <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="Copy" aria-label="Copy">${ICONS.copy}</button>
-        <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
-          <li><button type="button" data-action="copy" data-copy="markdown">Copy for issue / AI</button></li>
-          <li><button type="button" data-action="copy" data-copy="message">Copy message</button></li>
-          <li><button type="button" data-action="copy" data-copy="stack">Copy raw stack</button></li>
-          <li><button type="button" data-action="copy" data-copy="json">Copy JSON</button></li>
-        </ul>
-      </li>
+
       <li><button class="mb-tool" type="button" data-action="theme" title="Toggle colour scheme" aria-label="Toggle colour scheme">${ICONS.theme}</button></li>
       ${state.mode === 'overlay' ? `<li><button class="mb-tool" type="button" data-action="minimize" title="Minimise (show the page behind)" aria-label="Minimise overlay and show the page behind">${ICONS.minimize}</button></li>` : ''}
     </ul>
@@ -57,7 +59,9 @@ export function renderView(state: PageState): string {
 </header>
 <div class="mb-sr-only" role="status" aria-live="polite" data-announce></div>
 <main class="mb-main" data-report-id="${escapeHtml(report.id)}" tabindex="-1">
-  ${renderReport(report, state, 0)}
+  ${renderReport(reportEntries(report).find(entry => entry.path === selected)?.report ?? report, state, selected)}
+  ${renderFallback(state, selected)}
+  <div class="mb-secondary">${report.sections.length ? `<button class="mb-tool" type="button" data-action="info">${ICONS.info}Request &amp; environment</button>` : ''}${live ? `<button class="mb-tool mb-tool-logs" type="button" data-action="logs" aria-pressed="false" aria-controls="mb-logs" title="Server logs" aria-label="Server logs">${ICONS.logs}Logs<span class="mb-badge" data-log-count hidden></span></button>` : ''}${state.history?.length ? `<details class="mb-history"><summary>${ICONS.history}History</summary><ol>${state.history.map((entry, index) => `<li><button type="button" data-action="history" data-dir="${index - Math.max(0, state.history!.findIndex(item => item.id === report.id))}">${escapeHtml(entry.message)}</button></li>`).join('')}</ol></details>` : ''}</div>
 </main>
 ${live ? renderLogDrawer() : ''}
 ${report.sections.length ? renderInfoDialog(report.sections) : ''}
@@ -76,27 +80,56 @@ function renderPager(report: ErrorReport, history?: HistoryEntry[]): string {
   </span></li>`
 }
 
-/**
- * Ids are derived from the report id and the position in the tree, so the same
- * report always renders the same markup.
- */
-export function renderReport(report: ErrorReport, state: PageState, depth: number, path = 'r'): string {
-  const level = Math.min(6, depth + 1)
-  const tag = `h${level}`
-  const id = `mb-${path}-${report.id}`
+export function reportEntries(report: ErrorReport, path = 'r', related = false): Array<{ report: ErrorReport, path: string, label: string, related: boolean }> {
+  return [{ report, path, related, label: path === 'r' ? 'Reported error' : related ? 'Related error' : report.causes.length ? 'Wrapped error' : 'Root cause' }, ...report.causes.flatMap((cause, index) => reportEntries(cause, `${path}c${index}`, related)), ...(report.errors ?? []).flatMap((error, index) => reportEntries(error, `${path}e${index}`, true))]
+}
+
+function renderCauseNavigation(state: PageState, selected: string): string {
+  const entries = reportEntries(state.report)
+  if (entries.length < 2)
+    return ''
+  const related = entries.some(entry => entry.related)
+  const chain = related ? entries : entries.reverse()
+  const current = chain.findIndex(entry => entry.path === selected)
+  const entry = (index: number, text = chain[index]!.label) => `<button type="button" data-action="cause" data-path="${chain[index]!.path}" aria-current="${index === current}" title="${escapeHtml(chain[index]!.report.message)}">${escapeHtml(text)}</button>`
+  if (chain.length === 2 && !related) {
+    return `<nav class="mb-single-cause" aria-label="Error cause">${selected === 'r' ? `Caused by ${entry(0, chain[0]!.report.message)}` : entry(1, `Back to: ${state.report.message}`)}</nav>`
+  }
+  return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, `1 ${chain[0]!.label}`)}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1 ? `${current + 1} ${chain[current]!.label}` : related ? `${chain.length - 1} related errors` : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${index + 1} ${item.label}: ${item.report.message}`)}</li>`).join('')}</ol></details>${related ? '' : `${ICONS.chevron}${entry(chain.length - 1, `${chain.length} Reported error`)}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r' ? `<span>Reported as: ${escapeHtml(state.report.message)}</span>` : ''}</p></nav>`
+}
+
+/** Causes and related errors in full, for when the picker's client script is unavailable. */
+function renderFallback(state: PageState, selected: string): string {
+  const rest = reportEntries(state.report).filter(entry => entry.path !== selected)
+  if (!rest.length) {
+    return ''
+  }
+  return `<details class="mb-disclosure mb-fallback" data-fallback><summary>${ICONS.chevron}${rest.length === 1 ? 'Cause' : 'Causes and related errors'} <span class="mb-count">${rest.length}</span></summary>${rest.map(entry => `<section class="mb-fallback-entry"><p class="mb-fallback-label">${escapeHtml(entry.label)}</p>${renderReport(entry.report, state, entry.path, false)}</section>`).join('')}</details>`
+}
+
+function renderReport(report: ErrorReport, state: PageState, path: string, chrome = true): string {
+  const id = escapeHtml(`mb-${path}-${report.id}`)
+  const tag = chrome ? 'h1' : 'h2'
+  const docs = safeUrl(report.docsUrl)
   const code = report.code
-    ? `<span class="mb-code" data-code>${report.docsUrl ? `<a href="${escapeHtml(report.docsUrl)}" target="_blank" rel="noreferrer" title="Documentation for ${escapeHtml(report.code)}">${escapeHtml(report.code)}${ICONS.open}<span class="mb-sr-only"> documentation (opens in a new tab)</span></a>` : escapeHtml(report.code)}</span>`
+    ? `<span class="mb-code" data-code>${docs ? `<a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer" title="Documentation for ${escapeHtml(report.code)}">${escapeHtml(report.code)}${ICONS.open}<span class="mb-sr-only"> documentation (opens in a new tab)</span></a>` : escapeHtml(report.code)}</span>`
     : ''
-  return `<article class="mb-report" data-kind="${report.kind}" data-depth="${depth}" aria-labelledby="${id}-name ${id}-message">
-  <p class="mb-kicker"><span data-kind-label>${depth > 0 ? 'Caused by' : KIND_LABEL[report.kind]}</span>${code}</p>
-  ${report.status && depth === 0 ? `<span class="mb-status" data-status><span class="mb-sr-only">HTTP status </span>${report.status}</span>` : ''}
-  <${tag} class="mb-name" id="${id}-name" data-name tabindex="-1">${escapeHtml(report.name)}${report.status && depth > 0 ? ` <span class="mb-sr-only">HTTP status ${report.status}</span>` : ''}</${tag}>
-  <p class="mb-message" id="${id}-message" data-message>${escapeHtml(report.message)}</p>
-  ${report.hint ? `<p class="mb-hint" data-hint>${ICONS.info}<span>${escapeHtml(report.hint)}${report.docsUrl ? ` <a href="${escapeHtml(report.docsUrl)}" target="_blank" rel="noreferrer">Learn more<span class="mb-sr-only"> (opens documentation in a new tab)</span></a>` : ''}</span></p>` : ''}
-  ${report.trace?.length ? renderTrace(report, state) : ''}
+  return `<article class="mb-report" data-kind="${escapeHtml(report.kind)}" aria-labelledby="${id}-name ${id}-message">
+  <div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span><span data-kind-label${report.kind === 'error' ? ' class="mb-sr-only"' : ''}>${report.kind === 'error' ? '' : ICONS.warning}${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${escapeHtml(report.status)}</span>` : ''}</p>${chrome
+    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy error</button>
+        <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
+        <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
+          <li><button type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy as Markdown</button></li>
+          <li><button type="button" data-action="copy" data-copy="prompt">${ICONS.logs}Copy prompt for an agent</button></li>
+          <li><button type="button" data-action="copy" data-copy="json">${ICONS.file}Copy structured JSON</button></li>
+        </ul>
+      </div>`
+    : ''}</div>
+  <${tag} class="mb-message" id="${id}-message" data-message>${escapeHtml(report.message || report.name)}</${tag}>
+  ${report.hint ? `<p class="mb-hint" data-hint>${escapeHtml(report.hint)}${docs ? ` <a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer">Learn more</a>` : ''}</p>` : ''}
+  ${chrome ? renderCauseNavigation(state, path) : ''}
   ${renderFrames(report.frames, state, id)}
-  ${report.causes.map((cause, index) => renderReport(cause, state, depth + 1, `${path}c${index}`)).join('')}
-  ${report.errors?.length ? `<section class="mb-aggregate" data-aggregate><h${Math.min(6, level + 1)}>${report.errors.length} errors</h${Math.min(6, level + 1)}>${report.errors.map((nested, index) => renderReport(nested, state, depth + 2, `${path}e${index}`)).join('')}</section>` : ''}
+  ${report.trace?.length ? `<details class="mb-disclosure"><summary>${ICONS.chevron}Component trace <span class="mb-count">${report.trace.length}</span></summary>${renderTrace(report, state)}</details>` : ''}
 </article>`
 }
 
@@ -111,54 +144,47 @@ function renderTrace(report: ErrorReport, state: PageState): string {
 }
 
 function renderFrames(frames: Frame[], state: PageState, parent: string): string {
-  if (!frames.length) {
-    return ''
-  }
-  const out: string[] = []
-  let firstApp = true
-  for (const entry of groupFrames(frames)) {
-    if ('app' in entry) {
-      out.push(renderFrame(entry.app, state, firstApp, `${parent}-f${entry.index}`))
-      firstApp = false
-    }
-    else {
-      const summary = groupSummary(entry.group.map(({ frame }) => frame))
-      const items = entry.group.map(({ frame, index }) => renderFrame(frame, state, false, `${parent}-f${index}`)).join('')
-      out.push(`<li><details class="mb-group" data-group><summary>${ICONS.chevron}${summary}</summary><ol>${items}</ol></details></li>`)
-    }
-  }
-  return `<ol class="mb-frames" data-frames aria-label="Stack trace">${out.join('')}</ol>`
+  if (!frames.length)
+    return '<p class="mb-unavailable">No stack trace was provided. The error message and request context are still available to copy.</p>'
+  const origin = Math.max(0, frames.findIndex(frame => frame.type === 'app' && (frame.snippet || frame.compiled?.snippet)))
+  const framework = frames.filter(frame => frame.type !== 'app').length
+  const frameRow = (frame: Frame, index: number) => index === origin
+    ? index === 0 ? '' : `<li class="mb-frame-reference">${escapeHtml(frame.function ?? '<anonymous>')} · Shown above</li>`
+    : `<li data-frame-type="${escapeHtml(frame.type)}">${renderSource(frame, state, true)}</li>`
+  const rows = groupFrames(frames).map((entry) => {
+    if ('app' in entry)
+      return frameRow(entry.app, entry.index)
+    const group = entry.group.filter(({ index }) => index !== origin)
+    if (!group.length)
+      return ''
+    const first = group[0]!.index + 1
+    const last = group.at(-1)!.index + 1
+    const missing = group.every(({ frame }) => !frame.snippet && !frame.compiled?.snippet)
+    return `<li class="mb-framework-group"><div class="mb-group-caption"><span>${first === last ? first : `${first} – ${last}`}</span><span>${group.length} framework frame${group.length === 1 ? '' : 's'}<span class="mb-framework-hidden"> hidden</span></span>${missing ? '<span class="mb-missing">Code not captured</span>' : ''}</div><ol class="mb-framework-frames">${group.map(({ frame, index }) => frameRow(frame, index)).join('')}</ol></li>`
+  }).join('')
+  return `<div class="mb-ordered-stack">${renderSource(frames[origin]!, state)}${rows ? `<section class="mb-stack" data-stack><div class="mb-stack-heading"><button type="button" data-action="stack" class="mb-stack-toggle" aria-expanded="false" aria-controls="${parent}-stack">${ICONS.chevron}Call stack <span class="mb-count">${frames.length}</span></button>${framework ? `<button type="button" class="mb-framework" role="switch" data-action="framework" aria-checked="false"><span class="mb-switch-track" aria-hidden="true"></span>Show framework frames <span class="mb-count">(${framework})</span></button>` : ''}</div><ol class="mb-frames" id="${parent}-stack" hidden>${rows}</ol></section>` : ''}</div>`
 }
 
-function renderFrame(frame: Frame, state: PageState, open: boolean, id: string): string {
-  const fn = frame.function || frame.isAsync || frame.isConstructor || frame.isEval || !frame.snippet
-    ? [frame.isAsync && '<i>async</i>', frame.isConstructor && '<i>new</i>', escapeHtml(frame.function ?? (frame.isEval ? 'eval' : '<anonymous>'))].filter(Boolean).join('')
-    : ''
-  const location = frame.file
-    ? `<button type="button" class="mb-loc" data-loc data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)}${attr('title', frame.file)}>${renderLocation(frame, frame.line, frame.column, state)}</button>`
-    : `<span class="mb-loc" data-loc data-loc-raw>${escapeHtml(frame.raw?.trim().replace(/^at\s+/, '') ?? '')}</span>`
-  const inMemory = frame.compiled && frame.compiled.file === frame.file
-  const compiled = frame.compiled
-    ? `<button type="button" class="mb-loc mb-loc-compiled" data-loc data-loc-compiled data-action="open"${attr('data-file', frame.compiled.file)}${attr('data-line', frame.compiled.line)}${attr('data-column', frame.compiled.column)}${attr('title', inMemory ? 'Transformed module code held by the dev server; the file on disk is the source' : undefined)}>${renderLocation(frame.compiled, frame.compiled.line, frame.compiled.column, state)}${inMemory ? '<span class="mb-loc-note">in memory</span>' : ''}</button>${frame.snippet ? '<span class="mb-switch" role="group" aria-label="Location"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>' : ''}`
-    : ''
-  const generated = !frame.snippet && frame.compiled?.snippet && frame.compiled.line !== undefined ? frame.compiled : undefined
-  const body = generated?.snippet
-    ? `<details class="mb-frame-body" data-frame-body id="${id}"${attr('open', open)}><summary class="mb-sr-only">Generated code</summary><div data-snippet-compiled>${renderSnippet(generated.snippet, generated.line!, generated.column, shortPath(generated, state))}</div></details>`
-    : frame.snippet && frame.line !== undefined
-      ? `<details class="mb-frame-body" data-frame-body id="${id}"${attr('open', open)}><summary class="mb-sr-only">Source</summary><div data-snippet-source>${renderSnippet(frame.snippet, frame.line, frame.column, frame.file ? shortPath(frame, state) : undefined)}</div>${frame.compiled?.snippet && frame.compiled.line !== undefined ? `<div data-snippet-compiled hidden>${renderSnippet(frame.compiled.snippet, frame.compiled.line, frame.compiled.column, shortPath(frame.compiled, state))}</div>` : ''}</details>`
-      : ''
-  return `<li class="mb-frame" data-frame data-frame-type="${frame.type}"${attr('data-has-snippet', !!body)}>
-  <div class="mb-frame-head">${body ? `<button type="button" class="mb-frame-toggle" data-frame-toggle data-action="toggle-frame" aria-expanded="${open}" aria-controls="${id}" title="Toggle source" aria-label="Toggle source">${ICONS.chevron}</button>` : '<span class="mb-frame-toggle" aria-hidden="true"></span>'}<span class="mb-fn" data-fn>${fn}</span><span>${location}${compiled}</span></div>
-  ${body}
-</li>`
+function renderSource(frame: Frame, state: PageState, supporting = false): string {
+  const source = !!frame.snippet && frame.line !== undefined
+  const generated = !!frame.compiled?.snippet && frame.compiled.line !== undefined
+  const location = (target: Pick<Frame, 'file' | 'displayFile' | 'line' | 'column'>) => {
+    if (!target.file)
+      return `<span class="mb-loc">${escapeHtml(frame.raw ?? 'Source location unavailable')}</span>`
+    const original = frame.file ? frame : target
+    return `<button type="button" class="mb-loc" data-loc data-action="open"${attr('data-file', original.file)}${attr('data-line', original.line)}${attr('data-column', original.column)}${attr('title', target.file)}>${renderLocation(target, target.line, target.column, state)}</button>`
+  }
+  const snippet = (compiled: boolean) => {
+    const target = compiled ? frame.compiled! : frame
+    return target.snippet && target.line !== undefined ? renderSnippet(target.snippet, target.line, target.column, shortPath(target, state)) : '<p class="mb-unavailable">Source is unavailable at this stack location.</p>'
+  }
+  if (supporting && !source && !generated)
+    return `<div class="mb-empty-frame"><span class="mb-function">${escapeHtml(frame.function ?? '<anonymous>')}</span>${location(frame)}</div>`
+  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)} aria-label="${supporting ? 'Stack frame' : 'Error source'}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function ? `<span class="mb-function"${attr('title', frame.function)}>${escapeHtml(frame.function)}</span>` : ''}<span data-location-source>${location(frame)}</span>${generated ? `<span data-location-compiled>${location(frame.compiled!)}</span>` : ''}</div><div class="mb-source-actions">${source && generated ? '<span class="mb-switch" role="group" aria-label="Code view"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>' : ''}<button type="button" class="mb-tool" data-action="context" aria-label="More context" title="More context" aria-expanded="false">${ICONS.context}</button>${frame.file ? `<button type="button" class="mb-tool" data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)} title="Open original source in your editor" aria-label="Open original source in your editor">${ICONS.open}</button>` : ''}</div></div>${generated ? `<p class="mb-compiled-note">Compiled JavaScript${frame.compiled!.file === frame.file ? ' (in memory)' : ''} · Editor opens the original source location.</p>` : ''}<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>${generated ? `<div data-snippet-compiled${attr('hidden', source)}>${snippet(true)}</div>` : ''}</section>`
 }
 
 function renderLocation(target: DisplayTarget, line: number | undefined, column: number | undefined, state: PageState): string {
-  const short = shortPath(target, state)
-  const slash = short.lastIndexOf('/')
-  const dir = slash === -1 ? '' : short.slice(0, slash + 1)
-  const base = slash === -1 ? short : short.slice(slash + 1)
-  return `<span class="mb-dir">${escapeHtml(dir)}</span><span class="mb-base">${escapeHtml(base)}</span>${line !== undefined ? `<span class="mb-pos">:${line}${column !== undefined ? `:${column}` : ''}</span>` : ''}`
+  return `${escapeHtml(shortPath(target, state))}${line !== undefined ? `<span class="mb-pos">:${escapeHtml(line)}${column !== undefined ? `:${escapeHtml(column)}` : ''}</span>` : ''}`
 }
 
 function shortPath(target: string | DisplayTarget, state: PageState): string {
@@ -166,28 +192,30 @@ function shortPath(target: string | DisplayTarget, state: PageState): string {
 }
 
 export function renderSnippet(snippet: Snippet, line: number, column?: number, label?: string): string {
+  const more = line >= snippet.start && line < snippet.start + snippet.lines.length && (snippet.start < line - 3 || snippet.start + snippet.lines.length - 1 > line + 3)
   const gutter = String(snippet.start + snippet.lines.length - 1).length
   const rows = snippet.lines.map((text, index) => {
     const n = snippet.start + index
     const active = n === line
-    const caret = active && column !== undefined && column > 0
-      ? `<span class="mb-line mb-line-caret" aria-hidden="true"><span class="mb-ln"></span><span class="mb-src">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}^</span></span>`
+    const firstToken = text.search(/\S/)
+    const caret = active && column !== undefined && Number.isInteger(column) && column > (firstToken < 0 ? text.length : firstToken) && column <= text.length + 1
+      ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}^</span>`
       : ''
-    return `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}><span class="mb-ln" aria-hidden="true">${String(n).padStart(gutter)}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}</span></span>${caret}`
+    return `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${attr('data-context', more && Math.abs(n - line) > 3)}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${caret}</span></span>`
   })
   const description = `Source${label ? ` of ${label}` : ''}, line ${line} highlighted`
-  return `<pre class="mb-snippet" data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows.join('')}</code></pre>`
+  return `<pre class="mb-snippet"${attr('data-more-context', more)} data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows.join('')}</code></pre>`
 }
 
 function renderLogDrawer(): string {
   return `<section class="mb-logs" id="mb-logs" data-logs hidden aria-labelledby="mb-logs-title">
   <div class="mb-logs-head">
-    <h2 id="mb-logs-title">Server logs</h2>
+    <h2 id="mb-logs-title">Server logs</h2><span class="mb-live" data-live role="status"><span data-live-text>Dev server: connecting</span></span>
     <label class="mb-filter">Level <select data-log-filter><option value="">all</option><option value="warn">warn+</option><option value="error">error</option></select></label>
-    <button class="mb-tool" type="button" data-action="clear-logs" title="Clear logs">clear</button>
+    <button class="mb-tool" type="button" data-action="clear-logs" title="Clear logs" aria-label="Clear logs">clear</button>
     <button class="mb-tool" type="button" data-action="logs" title="Close server logs" aria-label="Close server logs">${ICONS.close}</button>
   </div>
-  <div class="mb-log-scroll" role="log" aria-live="off"><ol class="mb-log-list" data-log-list></ol></div>
+  <div class="mb-log-scroll" role="log" aria-live="off"><ol class="mb-log-list" data-log-list></ol><p class="mb-log-empty" data-log-empty>No logs received yet.</p></div>
 </section>`
 }
 
@@ -206,7 +234,7 @@ export function renderSection(section: Section): string {
 }
 
 export function renderToast(report: ErrorReport): string {
-  return `<article class="mb-toast" data-toast data-kind="${report.kind}" data-toast-id="${escapeHtml(report.id)}">
+  return `<article class="mb-toast" data-toast data-kind="${escapeHtml(report.kind)}" data-toast-id="${escapeHtml(report.id)}">
   ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${escapeHtml(report.message)}</span></button>
   <button type="button" class="mb-tool" data-action="dismiss-toast" title="Dismiss warning" aria-label="Dismiss warning">${ICONS.close}</button>
 </article>`

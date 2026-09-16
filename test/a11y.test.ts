@@ -68,8 +68,12 @@ async function open(html: string, scheme: 'light' | 'dark', options: { reducedMo
   await page.route('**/__my-bad/**', route => route.abort())
   await page.setContent(html, { waitUntil: 'load' })
   await page.evaluate(() => {
-    for (const details of document.querySelectorAll('details')) {
+    const root = document.querySelector('my-bad-overlay')?.shadowRoot ?? document
+    for (const details of root.querySelectorAll('details')) {
       details.open = true
+    }
+    for (const selector of ['[data-action="stack"]', '[data-action="framework"]']) {
+      root.querySelector<HTMLButtonElement>(selector)?.click()
     }
   })
   return page
@@ -327,7 +331,13 @@ describe('motion and structure', () => {
     for (let i = 1; i < levels.length; i++) {
       expect(levels[i]! - levels[i - 1]!, JSON.stringify(levels)).toBeLessThanOrEqual(1)
     }
-    expect(levels.length).toBeGreaterThan(3)
+    for (const [path, message] of [['rc0', 'nested'], ['re0', 'one'], ['re1', 'two'], ['r', 'several']]) {
+      if (!await page.locator('.mb-cause-picker').evaluate(el => (el as HTMLDetailsElement).open))
+        await page.locator('.mb-cause-picker > summary').click()
+      await page.locator(`.mb-cause-picker [data-path="${path}"]`).click()
+      expect(await page.locator('h1').count()).toBe(1)
+      expect(await page.locator('h1').textContent()).toBe(message)
+    }
     await page.context().close()
     const page2 = await open(pageHtml(themes[0]!), 'light')
     expect(await page2.title()).toContain('Widget needs a name')

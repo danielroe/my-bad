@@ -49,6 +49,8 @@ else {
 }
 ```
 
+`environment` labels where the error happened (`'Server'`, `'Client'`, or whatever your integration calls it) next to the error name.
+
 ### Overlay
 
 Inject the error UI into an existing page (for example a framework's rendered error page). It renders in a shadow root, so host styles cannot leak in, and can be minimised to a picture-in-picture thumbnail so the user can see the page behind it.
