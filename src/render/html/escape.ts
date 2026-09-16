@@ -6,8 +6,12 @@ const ESCAPES: Record<string, string> = {
   '\'': '&#39;',
 }
 
+const UNSAFE_RE = /[&<>"']/
+const UNSAFE_GLOBAL_RE = /[&<>"']/g
+
 export function escapeHtml(value: unknown): string {
-  return String(value).replace(/[&<>"']/g, char => ESCAPES[char]!)
+  const text = String(value)
+  return UNSAFE_RE.test(text) ? text.replace(UNSAFE_GLOBAL_RE, char => ESCAPES[char]!) : text
 }
 
 /**

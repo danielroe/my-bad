@@ -19,7 +19,11 @@ export const defaultTokenizer: Tokenizer = (line, lang) => {
       tokens.push({ type: 'text', text: line.slice(last, match.index) })
     }
     const text = match[0]
-    let type = GROUPS[match.slice(1).findIndex(value => value !== undefined)]!
+    let group = 1
+    while (match[group] === undefined) {
+      group++
+    }
+    let type = GROUPS[group - 1]!
     if (type === 'tag') {
       inTag = !text.endsWith('>')
     }
@@ -33,7 +37,7 @@ export const defaultTokenizer: Tokenizer = (line, lang) => {
       else if (KEYWORDS.has(text)) {
         type = 'keyword'
       }
-      else if (/^[A-Z]/.test(text)) {
+      else if (isUpper(text.charCodeAt(0))) {
         type = 'type'
       }
       else if (line[match.index + text.length] === '(') {
@@ -50,6 +54,10 @@ export const defaultTokenizer: Tokenizer = (line, lang) => {
     tokens.push({ type: 'text', text: line.slice(last) })
   }
   return tokens
+}
+
+function isUpper(code: number): boolean {
+  return code >= 65 && code <= 90
 }
 
 export function tokenizeLine(line: string, lang: string | undefined, tokenizer?: Tokenizer): Token[] {
