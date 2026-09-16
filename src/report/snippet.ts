@@ -2,17 +2,37 @@ import type { Snippet } from '../types'
 import { langFromFile } from './path'
 
 export function extractSnippet(contents: string, line: number, context: number, file?: string): Snippet | undefined {
-  const lines = contents.split(/\r?\n/)
-  if (line < 1 || line > lines.length) {
+  if (line < 1) {
     return
   }
   const start = Math.max(1, line - context)
-  const end = Math.min(lines.length, line + context)
+  const lines = linesBetween(contents, start, line + context)
+  if (lines.length <= line - start) {
+    return
+  }
   return {
     start,
-    lines: lines.slice(start - 1, end),
+    lines,
     lang: file ? langFromFile(file) : undefined,
   }
+}
+
+/** Lines `from` to `to` (1-based, inclusive) without splitting the whole file. */
+function linesBetween(contents: string, from: number, to: number): string[] {
+  const lines: string[] = []
+  let offset = 0
+  for (let n = 1; n <= to; n++) {
+    const newline = contents.indexOf('\n', offset)
+    const end = newline === -1 ? contents.length : newline
+    if (n >= from) {
+      lines.push(newline !== -1 && contents.charCodeAt(end - 1) === 13 ? contents.slice(offset, end - 1) : contents.slice(offset, end))
+    }
+    if (newline === -1) {
+      break
+    }
+    offset = newline + 1
+  }
+  return lines
 }
 
 const FRAME_LINE_RE = /^(\s*(\d+)\s*\|\s{0,2})(.*)$/
