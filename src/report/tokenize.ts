@@ -2,7 +2,12 @@ import type { Snippet, Token, Tokenizer, TokenType } from '../types'
 
 const KEYWORDS = new Set('abstract as async await break case catch class const continue debugger default delete do else enum export extends false finally for from function if implements import in instanceof interface let new null of package private protected public return satisfies static super switch this throw true try type typeof undefined var void while with yield'.split(' '))
 
-const TOKEN_RE = /(\/\/.*$|\/\*[\s\S]*?(?:\*\/|$)|<!--[\s\S]*?(?:--!?>|$))|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\]|\\.)*`?)|(\b\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?n?\b|\b0x[\da-f]+\b)|(<\/?[a-z][\w.-]*|\/?>)|([a-z_$][\w$-]*)|([{}()[\]])|([=!<>+\-*/%&|^~?:.,;]+)/gimu
+/**
+ * Comments end at a line terminator (`\n`, `\r`, U+2028, U+2029) or, for block
+ * comments, at their closer; spelling that out as character classes instead of
+ * `.*$` and lazy `[\s\S]*?` keeps the match linear for any input.
+ */
+export const TOKEN_RE = /(\/\/[^\n\r\u2028\u2029]*|\/\*(?:(?!\*\/)[^\n\r\u2028\u2029])*(?:\*\/)?|<!--(?:(?!--!?>)[^\n\r\u2028\u2029])*(?:--!?>)?)|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\]|\\.)*`?)|(\b\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?n?\b|\b0x[\da-f]+\b)|(<\/?[a-z][\w.-]*|\/?>)|([a-z_$][\w$-]*)|([{}()[\]])|([=!<>+\-*/%&|^~?:.,;]+)/giu
 
 const GROUPS: TokenType[] = ['comment', 'string', 'number', 'tag', 'variable', 'punctuation', 'operator']
 
@@ -14,12 +19,17 @@ export const defaultTokenizer: Tokenizer = (line, lang) => {
   const tokens: Token[] = []
   let last = 0
   let inTag = false
-  for (const match of line.matchAll(TOKEN_RE)) {
+  TOKEN_RE.lastIndex = 0
+  for (let match = TOKEN_RE.exec(line); match; match = TOKEN_RE.exec(line)) {
     if (match.index > last) {
       tokens.push({ type: 'text', text: line.slice(last, match.index) })
     }
     const text = match[0]
-    let type = GROUPS[match.slice(1).findIndex(value => value !== undefined)]!
+    let group = 1
+    while (match[group] === undefined) {
+      group++
+    }
+    let type = GROUPS[group - 1]!
     if (type === 'tag') {
       inTag = !text.endsWith('>')
     }
@@ -33,7 +43,7 @@ export const defaultTokenizer: Tokenizer = (line, lang) => {
       else if (KEYWORDS.has(text)) {
         type = 'keyword'
       }
-      else if (/^[A-Z]/.test(text)) {
+      else if (isUpper(text.charCodeAt(0))) {
         type = 'type'
       }
       else if (line[match.index + text.length] === '(') {
@@ -50,6 +60,10 @@ export const defaultTokenizer: Tokenizer = (line, lang) => {
     tokens.push({ type: 'text', text: line.slice(last) })
   }
   return tokens
+}
+
+function isUpper(code: number): boolean {
+  return code >= 65 && code <= 90
 }
 
 export function tokenizeLine(line: string, lang: string | undefined, tokenizer?: Tokenizer): Token[] {

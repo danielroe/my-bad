@@ -1,6 +1,5 @@
 import type { ReportPreset } from '../types'
 import process from 'node:process'
-import { version } from '../../package.json'
 
 declare const Bun: unknown
 declare const Deno: unknown
@@ -20,7 +19,7 @@ export function envPreset(options: EnvPresetOptions = {}): ReportPreset {
           return
         }
         const runtime = typeof Bun !== 'undefined' ? `bun ${(Bun as { version: string }).version}` : typeof Deno !== 'undefined' ? `deno ${(Deno as { version: { deno: string } }).version.deno}` : `node ${process.versions?.node ?? 'unknown'}`
-        const content: Record<string, string> = { 'runtime': runtime, 'my-bad': version }
+        const content: Record<string, string> = { 'runtime': runtime, 'my-bad': __MY_BAD_VERSION__ }
         for (const [name, value] of Object.entries(options.versions ?? {})) {
           if (value) {
             content[name] = value

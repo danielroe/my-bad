@@ -1,7 +1,6 @@
 import type { ErrorReport, HistoryEntry } from '../../types'
 import type { PageState, Theme } from './state'
-import { clientScript, clientStyles } from 'virtual:my-bad-client'
-import { version } from '../../../package.json'
+import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
 import { escapeHtml, escapeScript } from './escape'
 import { renderView } from './view'
 
@@ -11,7 +10,14 @@ export type { PageState, Theme } from './state'
  * The client script and stylesheet that `renderPage` and `renderOverlay` inline
  * by default, for serving them yourself and passing the URLs as `assets`.
  */
-export const clientAssets: { script: string, styles: string } = { script: clientScript, styles: clientStyles }
+export const clientAssets: { script: string, styles: string } = {
+  get script() {
+    return getClientScript()
+  },
+  get styles() {
+    return getClientStyles()
+  },
+}
 
 export interface ClientAssets {
   /** URL serving `clientAssets.script`. */
@@ -78,7 +84,7 @@ function themeStyles(theme: Theme | undefined, selector: string): string {
 
 /** The built-in stylesheet, inlined unless it is served separately. */
 function sheet(assets: ClientAssets | undefined): string {
-  return assets?.styles ? '' : clientStyles
+  return assets?.styles ? '' : getClientStyles()
 }
 
 function cssValue(value: string): string {
@@ -86,7 +92,7 @@ function cssValue(value: string): string {
 }
 
 function stateScript(state: PageState, options: RenderHtmlOptions): string {
-  const script = options.assets?.script ? `<script src="${escapeHtml(options.assets.script)}"></script>` : `<script>${clientScript}</script>`
+  const script = options.assets?.script ? `<script src="${escapeHtml(options.assets.script)}"></script>` : `<script>${getClientScript()}</script>`
   const json = JSON.stringify(state, options.rawStack ? undefined : (key, value) => key === 'rawStack' ? undefined : value)
   return `<script type="application/json">${escapeScript(json)}</script>\n${script}`
 }
@@ -101,7 +107,7 @@ function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageSt
     history: options.history,
     theme: options.theme,
     editor: options.editor,
-    version,
+    version: __MY_BAD_VERSION__,
   }
 }
 

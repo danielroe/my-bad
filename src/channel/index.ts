@@ -4,7 +4,6 @@ import type { BuildProgress, ChannelEvent, LogEntry } from './protocol'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { json } from 'node:stream/consumers'
-import { version } from '../../package.json'
 import { openInEditor } from './open'
 import { isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
 import { toHistoryEntry } from './protocol'
@@ -126,7 +125,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   }
 
   function hello(): string {
-    return helloFrame ??= encode({ type: 'hello', payload: { version, actions, current, history: history() } })
+    return helloFrame ??= encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current, history: history() } })
   }
 
   const roots = options.root === false
