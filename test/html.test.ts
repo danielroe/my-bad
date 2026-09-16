@@ -18,6 +18,11 @@ async function report() {
   return r
 }
 
+function stateJson(html: string): string {
+  const start = html.indexOf('<script type="application/json">') + '<script type="application/json">'.length
+  return html.slice(start, html.indexOf('</script>', start))
+}
+
 /** Server-rendered markup only, without the embedded state and client script. */
 function markup(html: string): string {
   return html.slice(0, html.indexOf('<script type="application/json">'))
@@ -60,10 +65,19 @@ describe('renderPage', () => {
     const r = await report()
     r.message = '</script><script>alert(1)</script> <!-- comment --> \u2028'
     const html = renderPage(r)
-    const stateStart = html.indexOf('<script type="application/json">') + '<script type="application/json">'.length
-    const state = html.slice(stateStart, html.indexOf('</script>', stateStart))
+    const state = stateJson(html)
     expect(state).not.toMatch(/<(?:\/script|!--)/i)
     expect(JSON.parse(state).report.message).toBe(r.message)
+  })
+
+  it('omits rawStack from the embedded state unless asked for', async () => {
+    const r = await report()
+    r.causes.push({ ...r, causes: [] })
+    expect(r.rawStack).toBeTruthy()
+    expect(stateJson(renderPage(r))).not.toContain('rawStack')
+    expect(stateJson(renderOverlay(r))).not.toContain('rawStack')
+    expect(JSON.parse(stateJson(renderPage(r, { rawStack: true }))).report.rawStack).toBe(r.rawStack)
+    expect(r.causes[0]!.rawStack).toBeTruthy()
   })
 
   it('omits live-only UI without a channel', async () => {
