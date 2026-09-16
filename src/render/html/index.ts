@@ -104,7 +104,7 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
   const title = options.title ?? `${report.name}: ${report.message.split('\n')[0]}`
   const scheme = options.theme?.scheme
   return `<!DOCTYPE html>
-<html lang="en"${scheme ? ` data-theme="${scheme}"` : ''}>
+<html lang="en"${scheme ? ` data-theme="${escapeHtml(scheme)}"` : ''}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

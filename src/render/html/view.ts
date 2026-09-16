@@ -4,7 +4,7 @@ import type { PageState } from './state'
 import { displayPath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
-import { attr, escapeHtml } from './escape'
+import { attr, escapeHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
 
 export const ICONS = {
@@ -40,8 +40,9 @@ export function renderView(state: PageState, selected = 'r'): string {
   const live = !!state.channel
   const name = escapeHtml(state.theme?.name ?? 'my-bad')
   const lockup = `${state.theme?.logo ?? ''}<span class="mb-brand-name${state.theme?.logo ? ' mb-sr-only' : ''}">${name}</span>`
-  const brand = state.theme?.url
-    ? `<a class="mb-brand" href="${escapeHtml(state.theme.url)}" target="_blank" rel="noreferrer">${lockup}<span class="mb-sr-only"> (opens in a new tab)</span></a>`
+  const home = safeUrl(state.theme?.url)
+  const brand = home
+    ? `<a class="mb-brand" href="${escapeHtml(home)}" target="_blank" rel="noreferrer">${lockup}<span class="mb-sr-only"> (opens in a new tab)</span></a>`
     : `<p class="mb-brand">${lockup}</p>`
   return `<header class="mb-header mb-corners">
   <div class="mb-brand-group">${brand}<span class="mb-header-count">${headerCount(report)}</span></div>
@@ -107,13 +108,14 @@ function renderFallback(state: PageState, selected: string): string {
 }
 
 function renderReport(report: ErrorReport, state: PageState, path: string, chrome = true): string {
-  const id = `mb-${path}-${report.id}`
+  const id = escapeHtml(`mb-${path}-${report.id}`)
   const tag = chrome ? 'h1' : 'h2'
+  const docs = safeUrl(report.docsUrl)
   const code = report.code
-    ? `<span class="mb-code" data-code>${report.docsUrl ? `<a href="${escapeHtml(report.docsUrl)}" target="_blank" rel="noreferrer" title="Documentation for ${escapeHtml(report.code)}">${escapeHtml(report.code)}${ICONS.open}<span class="mb-sr-only"> documentation (opens in a new tab)</span></a>` : escapeHtml(report.code)}</span>`
+    ? `<span class="mb-code" data-code>${docs ? `<a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer" title="Documentation for ${escapeHtml(report.code)}">${escapeHtml(report.code)}${ICONS.open}<span class="mb-sr-only"> documentation (opens in a new tab)</span></a>` : escapeHtml(report.code)}</span>`
     : ''
-  return `<article class="mb-report" data-kind="${report.kind}" aria-labelledby="${id}-name ${id}-message">
-  <div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span><span data-kind-label${report.kind === 'error' ? ' class="mb-sr-only"' : ''}>${report.kind === 'error' ? '' : ICONS.warning}${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${report.status}</span>` : ''}</p>${chrome
+  return `<article class="mb-report" data-kind="${escapeHtml(report.kind)}" aria-labelledby="${id}-name ${id}-message">
+  <div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span><span data-kind-label${report.kind === 'error' ? ' class="mb-sr-only"' : ''}>${report.kind === 'error' ? '' : ICONS.warning}${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${escapeHtml(report.status)}</span>` : ''}</p>${chrome
     ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy error</button>
         <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
         <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
@@ -124,7 +126,7 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
       </div>`
     : ''}</div>
   <${tag} class="mb-message" id="${id}-message" data-message>${escapeHtml(report.message || report.name)}</${tag}>
-  ${report.hint ? `<p class="mb-hint" data-hint>${escapeHtml(report.hint)}${report.docsUrl ? ` <a href="${escapeHtml(report.docsUrl)}" target="_blank" rel="noreferrer">Learn more</a>` : ''}</p>` : ''}
+  ${report.hint ? `<p class="mb-hint" data-hint>${escapeHtml(report.hint)}${docs ? ` <a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer">Learn more</a>` : ''}</p>` : ''}
   ${chrome ? renderCauseNavigation(state, path) : ''}
   ${renderFrames(report.frames, state, id)}
   ${report.trace?.length ? `<details class="mb-disclosure"><summary>${ICONS.chevron}Component trace <span class="mb-count">${report.trace.length}</span></summary>${renderTrace(report, state)}</details>` : ''}
@@ -148,7 +150,7 @@ function renderFrames(frames: Frame[], state: PageState, parent: string): string
   const framework = frames.filter(frame => frame.type !== 'app').length
   const frameRow = (frame: Frame, index: number) => index === origin
     ? index === 0 ? '' : `<li class="mb-frame-reference">${escapeHtml(frame.function ?? '<anonymous>')} · Shown above</li>`
-    : `<li data-frame-type="${frame.type}">${renderSource(frame, state, true)}</li>`
+    : `<li data-frame-type="${escapeHtml(frame.type)}">${renderSource(frame, state, true)}</li>`
   const rows = groupFrames(frames).map((entry) => {
     if ('app' in entry)
       return frameRow(entry.app, entry.index)
@@ -182,7 +184,7 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
 }
 
 function renderLocation(target: DisplayTarget, line: number | undefined, column: number | undefined, state: PageState): string {
-  return `${escapeHtml(shortPath(target, state))}${line !== undefined ? `<span class="mb-pos">:${line}${column !== undefined ? `:${column}` : ''}</span>` : ''}`
+  return `${escapeHtml(shortPath(target, state))}${line !== undefined ? `<span class="mb-pos">:${escapeHtml(line)}${column !== undefined ? `:${escapeHtml(column)}` : ''}</span>` : ''}`
 }
 
 function shortPath(target: string | DisplayTarget, state: PageState): string {
@@ -199,7 +201,7 @@ export function renderSnippet(snippet: Snippet, line: number, column?: number, l
     const caret = active && column !== undefined && Number.isInteger(column) && column > (firstToken < 0 ? text.length : firstToken) && column <= text.length + 1
       ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}^</span>`
       : ''
-    return `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${attr('data-context', more && Math.abs(n - line) > 3)}><span class="mb-ln" aria-hidden="true">${String(n).padStart(gutter)}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${caret}</span></span>`
+    return `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${attr('data-context', more && Math.abs(n - line) > 3)}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${caret}</span></span>`
   })
   const description = `Source${label ? ` of ${label}` : ''}, line ${line} highlighted`
   return `<pre class="mb-snippet"${attr('data-more-context', more)} data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows.join('')}</code></pre>`
@@ -232,7 +234,7 @@ export function renderSection(section: Section): string {
 }
 
 export function renderToast(report: ErrorReport): string {
-  return `<article class="mb-toast" data-toast data-kind="${report.kind}" data-toast-id="${escapeHtml(report.id)}">
+  return `<article class="mb-toast" data-toast data-kind="${escapeHtml(report.kind)}" data-toast-id="${escapeHtml(report.id)}">
   ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${escapeHtml(report.message)}</span></button>
   <button type="button" class="mb-tool" data-action="dismiss-toast" title="Dismiss warning" aria-label="Dismiss warning">${ICONS.close}</button>
 </article>`
