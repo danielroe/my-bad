@@ -6,7 +6,7 @@ import { fsLoader } from '../loaders/fs'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
 import { hasScheme, isFilePath, resolvePath, stripCacheQuery, toPath } from './path'
-import { extractSnippet, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
+import { extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeLine } from './tokenize'
 
@@ -37,7 +37,8 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
 /** Build a serialisable report from an error, warning, or Vite-style compile error. */
 export async function createReport(input: unknown, options: ReportOptions = {}): Promise<ErrorReport> {
   const resolved = resolveOptions(options)
-  const report = hoistCompileError(collapseDuplicateCauses(await buildReport(input, resolved, 0, new WeakSet(), { frames: resolved.maxMappedFrames })))
+  const ctx: BuildContext = { options: resolved, seen: new WeakSet(), sources: new Map(), compiled: new Map(), budget: { frames: resolved.maxMappedFrames } }
+  const report = hoistCompileError(collapseDuplicateCauses(await buildReport(input, ctx, 0)))
   for (const plugin of resolved.plugins) {
     await plugin.transform(report, { input, options: resolved })
   }
@@ -106,7 +107,17 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}… [truncated, ${text.length - max} more characters]`
 }
 
-async function buildReport(input: unknown, options: ResolvedReportOptions, depth: number, seen: WeakSet<object>, budget: Budget): Promise<ErrorReport> {
+/** State shared by every node of one report: cycle detection, the frame budget and file reads, which repeat across frames and causes. */
+interface BuildContext {
+  options: ResolvedReportOptions
+  seen: WeakSet<object>
+  sources: Map<string, Promise<string | undefined>>
+  compiled: Map<string, Promise<string | undefined>>
+  budget: Budget
+}
+
+async function buildReport(input: unknown, ctx: BuildContext, depth: number): Promise<ErrorReport> {
+  const { options, seen } = ctx
   const error = normalizeInput(input)
   const isObject = typeof input === 'object' && input !== null
   if (isObject) {
@@ -114,7 +125,7 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
   }
 
   const kind = options.kind ?? (isCompileInput(input) ? 'compile' : 'error')
-  const frames = await buildFrames(input, error, options, kind, budget)
+  const frames = await buildFrames(input, error, ctx, kind)
 
   const sections: Section[] = []
   if (error.data !== undefined) {
@@ -137,16 +148,16 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
 
   if (depth < options.maxCauses) {
     if (error.cause !== undefined && !(typeof error.cause === 'object' && error.cause !== null && seen.has(error.cause))) {
-      report.causes.push(await buildReport(error.cause, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen, budget))
+      report.causes.push(await buildReport(error.cause, nestedContext(ctx), depth + 1))
     }
     if (Array.isArray(error.errors)) {
       report.errors = []
       const kept = error.errors.slice(0, Math.max(0, options.maxErrors))
-      for (const nested of kept) {
-        if (typeof nested === 'object' && nested !== null && seen.has(nested)) {
+      for (const child of kept) {
+        if (typeof child === 'object' && child !== null && seen.has(child)) {
           continue
         }
-        report.errors.push(await buildReport(nested, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen, budget))
+        report.errors.push(await buildReport(child, nestedContext(ctx), depth + 1))
       }
       const omitted = error.errors.length - kept.length
       if (omitted > 0) {
@@ -162,6 +173,10 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
   const top = frames.find(frame => frame.type === 'app') ?? frames[0]
   report.id = fnv1a64Base36(`${report.name}\n${report.message}\n${top?.file ?? ''}:${top?.line ?? ''}`)
   return report
+}
+
+function nestedContext(ctx: BuildContext): BuildContext {
+  return { ...ctx, options: { ...ctx.options, kind: undefined, compiled: undefined } }
 }
 
 interface NormalizedError {
@@ -243,7 +258,8 @@ function mergeFrameLoc(declared: { file?: string, line: number, column: number }
   return { ...declared, ...frameLoc }
 }
 
-async function buildFrames(input: unknown, error: NormalizedError, options: ResolvedReportOptions, kind: ReportKind, budget: Budget): Promise<Frame[]> {
+async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildContext, kind: ReportKind): Promise<Frame[]> {
+  const { options } = ctx
   if (kind === 'compile' && isCompileInput(input)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
     const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
@@ -257,7 +273,7 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
     const explicit = marker === false || marker === undefined ? undefined : (typeof marker === 'object' ? marker : {})
     let generated = explicit !== undefined
     if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
-      const contents = await readSource(file, options)
+      const contents = await readSource(file, ctx)
       generated = contents !== undefined && caretLineMatchesSource(snippet, frameLoc.line, contents) === false
     }
 
@@ -277,7 +293,7 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
         }),
       }
       if (frame.file && frame.line !== undefined && options.snippets) {
-        frame.snippet = await loadSnippet(frame.file, frame.line, options)
+        frame.snippet = await loadSnippet(frame.file, frame.line, ctx)
       }
       addDisplayPaths(frame, options.cwd)
       return [frame]
@@ -290,7 +306,7 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
       ...(snippet && { snippet }),
     }
     if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
-      frame.snippet = await loadSnippet(frame.file, frame.line, options)
+      frame.snippet = await loadSnippet(frame.file, frame.line, ctx)
     }
     else if (frame.snippet) {
       frame.snippet = withTokens(frame.snippet, options)
@@ -303,42 +319,43 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
     return []
   }
 
-  const parsed = parseRawStackTrace(error.stack)
-  const frames: Frame[] = []
-  for (const trace of parsed) {
-    let frame: Frame = {
-      ...(trace.source && !trace.isNative && { file: stripCacheQuery(toPath(trace.source)) }),
-      ...(trace.line !== undefined && { line: trace.line }),
-      ...(trace.column !== undefined && { column: trace.column }),
-      ...(trace.function && { function: trace.function }),
-      type: 'native',
-      ...(trace.isAsync && { isAsync: true }),
-      ...(trace.isConstructor && { isConstructor: true }),
-      ...(trace.isEval && { isEval: true }),
-      ...('raw' in trace && typeof trace.raw === 'string' && { raw: trace.raw }),
-    }
-    frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
+  return Promise.all(parseRawStackTrace(error.stack).map(trace => buildStackFrame(trace, ctx)))
+}
 
-    if (frame.type !== 'native' && budget.frames > 0) {
-      budget.frames--
-      const mapped = await mapFrame(frame, options)
-      const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
-      frame = mapped
-      frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
-      if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
-        frame.snippet = await loadSnippet(frame.file, frame.line, options)
-        if (frame.compiled?.line !== undefined) {
-          const compiled = await loadCompiledSnippet(frame.compiled.file, frame.compiled.line, options, frame.compiled.file !== frame.file)
-          if (compiled) {
-            frame.compiled = { ...frame.compiled, snippet: compiled }
-          }
-        }
+async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[number], ctx: BuildContext): Promise<Frame> {
+  const { options, budget } = ctx
+  let frame: Frame = {
+    ...(trace.source && !trace.isNative && { file: stripCacheQuery(toPath(trace.source)) }),
+    ...(trace.line !== undefined && { line: trace.line }),
+    ...(trace.column !== undefined && { column: trace.column }),
+    ...(trace.function && { function: trace.function }),
+    type: 'native',
+    ...(trace.isAsync && { isAsync: true }),
+    ...(trace.isConstructor && { isConstructor: true }),
+    ...(trace.isEval && { isEval: true }),
+    ...('raw' in trace && typeof trace.raw === 'string' && { raw: trace.raw }),
+  }
+  frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
+
+  if (frame.type !== 'native' && budget.frames > 0) {
+    budget.frames--
+    const mapped = await mapFrame(frame, options)
+    const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
+    frame = mapped
+    frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
+    if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
+      const [snippet, compiled] = await Promise.all([
+        loadSnippet(frame.file, frame.line, ctx),
+        frame.compiled?.line !== undefined ? loadCompiledSnippet(frame.compiled.file, frame.compiled.line, ctx, frame.compiled.file !== frame.file) : undefined,
+      ])
+      frame.snippet = snippet
+      if (compiled) {
+        frame.compiled = { ...frame.compiled!, snippet: compiled }
       }
     }
-    addDisplayPaths(frame, options.cwd)
-    frames.push(frame)
   }
-  return frames
+  addDisplayPaths(frame, options.cwd)
+  return frame
 }
 
 const LEADING_ELLIPSIS = /^\s*(?:…|\.\.\.)/
@@ -362,7 +379,7 @@ function caretLineMatchesSource(snippet: Snippet, caretLine: number, contents: s
   if (!expected || UNINFORMATIVE.test(stripEllipsis(expected))) {
     return
   }
-  const actual = contents.split(/\r?\n/)[caretLine - 1]?.trim()
+  const actual = lineAt(contents, caretLine)?.trim()
   if (actual === undefined) {
     return false
   }
@@ -427,7 +444,16 @@ async function mapFrame(frame: Frame, options: ResolvedReportOptions): Promise<F
   return frame
 }
 
-async function readSource(file: string, options: ResolvedReportOptions): Promise<string | undefined> {
+function readSource(file: string, ctx: BuildContext): Promise<string | undefined> {
+  let pending = ctx.sources.get(file)
+  if (!pending) {
+    pending = readSourceUncached(file, ctx.options)
+    ctx.sources.set(file, pending)
+  }
+  return pending
+}
+
+async function readSourceUncached(file: string, options: ResolvedReportOptions): Promise<string | undefined> {
   for (const loader of options.loaders) {
     if (!loader.read) {
       continue
@@ -442,9 +468,9 @@ async function readSource(file: string, options: ResolvedReportOptions): Promise
   }
 }
 
-async function loadSnippet(file: string, line: number, options: ResolvedReportOptions) {
-  const contents = await readSource(file, options)
-  return contents === undefined ? undefined : withTokens(extractSnippet(contents, line, options.snippetLines, file), options)
+async function loadSnippet(file: string, line: number, ctx: BuildContext) {
+  const contents = await readSource(file, ctx)
+  return contents === undefined ? undefined : withTokens(extractSnippet(contents, line, ctx.options.snippetLines, file), ctx.options)
 }
 
 /**
@@ -452,17 +478,29 @@ async function loadSnippet(file: string, line: number, options: ResolvedReportOp
  * the compiled location is a separate file: when it shares the source path
  * (module runners) the code lives in memory and only `readCompiled` has it.
  */
-async function loadCompiledSnippet(file: string, line: number, options: ResolvedReportOptions, separateFile: boolean) {
+async function loadCompiledSnippet(file: string, line: number, ctx: BuildContext, separateFile: boolean) {
+  let pending = ctx.compiled.get(file)
+  if (!pending) {
+    pending = readCompiledUncached(file, ctx.options)
+    ctx.compiled.set(file, pending)
+  }
+  const contents = await pending
+  if (contents !== undefined) {
+    return withTokens(extractSnippet(contents, line, ctx.options.snippetLines, file), ctx.options)
+  }
+  return separateFile ? loadSnippet(file, line, ctx) : undefined
+}
+
+async function readCompiledUncached(file: string, options: ResolvedReportOptions): Promise<string | undefined> {
   for (const loader of options.loaders) {
     try {
       const contents = await loader.readCompiled?.(file)
       if (contents !== undefined) {
-        return withTokens(extractSnippet(contents, line, options.snippetLines, file), options)
+        return contents
       }
     }
     catch {}
   }
-  return separateFile ? loadSnippet(file, line, options) : undefined
 }
 
 function withTokens<T extends Snippet | undefined>(snippet: T, options: ResolvedReportOptions): T {
