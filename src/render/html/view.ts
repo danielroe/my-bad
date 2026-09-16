@@ -100,11 +100,14 @@ function renderCauseNavigation(state: PageState, selected: string): string {
 
 /** Causes and related errors in full, for when the picker's client script is unavailable. */
 function renderFallback(state: PageState, selected: string): string {
-  const rest = reportEntries(state.report).filter(entry => entry.path !== selected)
+  const all = reportEntries(state.report)
+  const rest = all.filter(entry => entry.path !== selected)
   if (!rest.length) {
     return ''
   }
-  return `<details class="mb-disclosure mb-fallback" data-fallback><summary>${ICONS.chevron}${rest.length === 1 ? 'Cause' : 'Causes and related errors'} <span class="mb-count">${rest.length}</span></summary>${rest.map(entry => `<section class="mb-fallback-entry"><p class="mb-fallback-label">${escapeHtml(entry.label)}</p>${renderReport(entry.report, state, entry.path, false)}</section>`).join('')}</details>`
+  const omitted = all.reduce((total, entry) => total + (entry.report.omittedErrors ?? 0), 0)
+  const note = omitted ? `<p class="mb-fallback-label">and ${omitted} more related ${omitted === 1 ? 'error' : 'errors'} not shown</p>` : ''
+  return `<details class="mb-disclosure mb-fallback" data-fallback><summary>${ICONS.chevron}${rest.length === 1 ? 'Cause' : 'Causes and related errors'} <span class="mb-count">${rest.length}</span></summary>${rest.map(entry => `<section class="mb-fallback-entry"><p class="mb-fallback-label">${escapeHtml(entry.label)}</p>${renderReport(entry.report, state, entry.path, false)}</section>`).join('')}${note}</details>`
 }
 
 function renderReport(report: ErrorReport, state: PageState, path: string, chrome = true): string {

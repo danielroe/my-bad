@@ -126,6 +126,9 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
       out.push(...renderReport(nested, ctx, depth + 1))
     }
   }
+  if (report.omittedErrors) {
+    out.push('', `${indent}  ${p.dim(`… and ${report.omittedErrors} more`)}`)
+  }
 
   return out
 }
