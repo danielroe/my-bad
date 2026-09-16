@@ -36,6 +36,12 @@ export interface RenderHtmlOptions {
   theme?: Theme
   /** URL scheme for opening files when no `open` action is available. Default `vscode`. */
   editor?: string
+  /**
+   * Embed `rawStack` in the page state. Nothing in the rendered UI reads it, and
+   * it stays available over the channel at `GET {channel}/history/{id}`.
+   * Default `false`.
+   */
+  rawStack?: boolean
 }
 
 export interface RenderPageOptions extends RenderHtmlOptions {
@@ -79,9 +85,10 @@ function cssValue(value: string): string {
   return String(value).replace(/[;{}<]/g, '')
 }
 
-function stateScript(state: PageState, assets: ClientAssets | undefined): string {
-  const script = assets?.script ? `<script src="${escapeHtml(assets.script)}"></script>` : `<script>${clientScript}</script>`
-  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n${script}`
+function stateScript(state: PageState, options: RenderHtmlOptions): string {
+  const script = options.assets?.script ? `<script src="${escapeHtml(options.assets.script)}"></script>` : `<script>${clientScript}</script>`
+  const json = JSON.stringify(state, options.rawStack ? undefined : (key, value) => key === 'rawStack' ? undefined : value)
+  return `<script type="application/json">${escapeScript(json)}</script>\n${script}`
 }
 
 function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageState['mode']): PageState {
@@ -115,7 +122,7 @@ ${options.head ?? ''}
 </head>
 <body>
 <div class="mb-root" data-my-bad-root>${renderView(state)}</div>
-${stateScript(state, options.assets)}
+${stateScript(state, options)}
 ${options.inject ?? ''}
 </body>
 </html>`
@@ -137,7 +144,7 @@ export function renderOverlay(report: ErrorReport, options: RenderOverlayOptions
     styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n:host{all:initial;display:contents}`,
     stylesUrl: options.assets?.styles,
   }
-  return `<${tag}></${tag}>\n${stateScript(state, options.assets)}`
+  return `<${tag}></${tag}>\n${stateScript(state, options)}`
 }
 
 /** Insert the overlay before `</body>`, or append it. Avoids `String.replace`, whose `$` patterns would corrupt the inlined script. */
