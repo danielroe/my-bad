@@ -90,6 +90,8 @@ export interface ErrorReport {
   causes: ErrorReport[]
   /** Populated for `AggregateError`. */
   errors?: ErrorReport[]
+  /** Number of `errors` entries dropped because `maxErrors` was reached. */
+  omittedErrors?: number
   trace?: TraceEntry[]
   sections: Section[]
   rawStack?: string
@@ -137,6 +139,20 @@ export interface ReportOptions {
   plugins?: ReportPlugin[]
   presets?: ReportPreset[]
   maxCauses?: number
+  /** Maximum `errors` entries kept per level. Default `20`. */
+  maxErrors?: number
+  /**
+   * Maximum frames sourcemapped across the whole report, causes and related
+   * errors included. Default `200`. Frames past the budget are still reported,
+   * classified but unmapped and without snippets.
+   */
+  maxMappedFrames?: number
+  /** Maximum characters of section content. Default `50_000`. */
+  maxSectionLength?: number
+  /** Maximum characters of each report's `message`. Default `10_000`. */
+  maxMessageLength?: number
+  /** Maximum characters of each report's `rawStack`. Default `50_000`. */
+  maxRawStackLength?: number
   snippetLines?: number
   /** Skip snippet loading entirely. */
   snippets?: boolean
@@ -167,6 +183,11 @@ export interface ResolvedReportOptions {
   internal: (string | RegExp)[]
   plugins: ReportPlugin[]
   maxCauses: number
+  maxErrors: number
+  maxMappedFrames: number
+  maxSectionLength: number
+  maxMessageLength: number
+  maxRawStackLength: number
   snippetLines: number
   snippets: boolean
   context: Record<string, unknown>

@@ -21,6 +21,11 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
     internal: [...presets.flatMap(preset => preset.internal ?? []), ...(options.internal ?? [])],
     plugins: [...presets.flatMap(preset => preset.plugins ?? []), ...(options.plugins ?? [])],
     maxCauses: options.maxCauses ?? 10,
+    maxErrors: options.maxErrors ?? 20,
+    maxMappedFrames: options.maxMappedFrames ?? 200,
+    maxSectionLength: options.maxSectionLength ?? 50_000,
+    maxMessageLength: options.maxMessageLength ?? 10_000,
+    maxRawStackLength: options.maxRawStackLength ?? 50_000,
     snippetLines: options.snippetLines ?? 5,
     snippets: options.snippets ?? true,
     context: options.context ?? {},
@@ -32,7 +37,7 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
 /** Build a serialisable report from an error, warning, or Vite-style compile error. */
 export async function createReport(input: unknown, options: ReportOptions = {}): Promise<ErrorReport> {
   const resolved = resolveOptions(options)
-  const report = hoistCompileError(collapseDuplicateCauses(await buildReport(input, resolved, 0, new WeakSet())))
+  const report = hoistCompileError(collapseDuplicateCauses(await buildReport(input, resolved, 0, new WeakSet(), { frames: resolved.maxMappedFrames })))
   for (const plugin of resolved.plugins) {
     await plugin.transform(report, { input, options: resolved })
   }
@@ -93,7 +98,15 @@ function mergeSections(base: Section[], extra: Section[]): Section[] {
   return [...base, ...extra.filter(section => !base.some(existing => existing.id === section.id))]
 }
 
-async function buildReport(input: unknown, options: ResolvedReportOptions, depth: number, seen: WeakSet<object>): Promise<ErrorReport> {
+interface Budget {
+  frames: number
+}
+
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max)}… [truncated, ${text.length - max} more characters]`
+}
+
+async function buildReport(input: unknown, options: ResolvedReportOptions, depth: number, seen: WeakSet<object>, budget: Budget): Promise<ErrorReport> {
   const error = normalizeInput(input)
   const isObject = typeof input === 'object' && input !== null
   if (isObject) {
@@ -101,38 +114,43 @@ async function buildReport(input: unknown, options: ResolvedReportOptions, depth
   }
 
   const kind = options.kind ?? (isCompileInput(input) ? 'compile' : 'error')
-  const frames = await buildFrames(input, error, options, kind)
+  const frames = await buildFrames(input, error, options, kind, budget)
 
   const sections: Section[] = []
   if (error.data !== undefined) {
-    sections.push({ id: 'data', title: 'Data', content: toSectionContent(error.data) })
+    sections.push({ id: 'data', title: 'Data', content: toSectionContent(error.data, options.maxSectionLength) })
   }
 
   const report: ErrorReport = {
     id: '',
     kind,
     name: error.name,
-    message: kind === 'compile' ? stripEmbeddedFrame(error.message) : error.message,
+    message: truncate(kind === 'compile' ? stripEmbeddedFrame(error.message) : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
     ...(error.status && { status: error.status }),
     frames,
     causes: [],
     sections,
-    ...(error.stack && { rawStack: error.stack }),
+    ...(error.stack && { rawStack: truncate(error.stack, options.maxRawStackLength) }),
     timestamp: Date.now(),
   }
 
   if (depth < options.maxCauses) {
     if (error.cause !== undefined && !(typeof error.cause === 'object' && error.cause !== null && seen.has(error.cause))) {
-      report.causes.push(await buildReport(error.cause, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen))
+      report.causes.push(await buildReport(error.cause, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen, budget))
     }
     if (Array.isArray(error.errors)) {
       report.errors = []
-      for (const nested of error.errors) {
+      const kept = error.errors.slice(0, Math.max(0, options.maxErrors))
+      for (const nested of kept) {
         if (typeof nested === 'object' && nested !== null && seen.has(nested)) {
           continue
         }
-        report.errors.push(await buildReport(nested, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen))
+        report.errors.push(await buildReport(nested, { ...options, kind: undefined, compiled: undefined }, depth + 1, seen, budget))
+      }
+      const omitted = error.errors.length - kept.length
+      if (omitted > 0) {
+        report.omittedErrors = omitted
       }
     }
   }
@@ -225,7 +243,7 @@ function mergeFrameLoc(declared: { file?: string, line: number, column: number }
   return { ...declared, ...frameLoc }
 }
 
-async function buildFrames(input: unknown, error: NormalizedError, options: ResolvedReportOptions, kind: ReportKind): Promise<Frame[]> {
+async function buildFrames(input: unknown, error: NormalizedError, options: ResolvedReportOptions, kind: ReportKind, budget: Budget): Promise<Frame[]> {
   if (kind === 'compile' && isCompileInput(input)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
     const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
@@ -301,7 +319,8 @@ async function buildFrames(input: unknown, error: NormalizedError, options: Reso
     }
     frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
 
-    if (frame.type !== 'native') {
+    if (frame.type !== 'native' && budget.frames > 0) {
+      budget.frames--
       const mapped = await mapFrame(frame, options)
       const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
       frame = mapped
@@ -454,9 +473,13 @@ function withTokens<T extends Snippet | undefined>(snippet: T, options: Resolved
   return { ...snippet, tokens }
 }
 
-function toSectionContent(data: unknown): Record<string, unknown> | string {
+function toSectionContent(data: unknown, max: number): Record<string, unknown> | string {
+  const text = stringifyValue(data, 2)
+  if (text.length > max) {
+    return truncate(text, max)
+  }
   if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
     return data as Record<string, unknown>
   }
-  return stringifyValue(data, 2)
+  return text
 }
