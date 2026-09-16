@@ -14,7 +14,8 @@ export const defaultTokenizer: Tokenizer = (line, lang) => {
   const tokens: Token[] = []
   let last = 0
   let inTag = false
-  for (const match of line.matchAll(TOKEN_RE)) {
+  TOKEN_RE.lastIndex = 0
+  for (let match = TOKEN_RE.exec(line); match; match = TOKEN_RE.exec(line)) {
     if (match.index > last) {
       tokens.push({ type: 'text', text: line.slice(last, match.index) })
     }
