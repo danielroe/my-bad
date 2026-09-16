@@ -110,7 +110,7 @@ export function locFromCodeFrame(frame: string): { line: number, column: number 
   }
 }
 
-const LABELLED_FRAME_RE = /[\u2500\u252C\u256D\u250C\-]\[\s*([^\]\s]+?):(\d+):(\d+)\s*\]/
+const LABELLED_FRAME_RE = /[\u2500\u252C\u256D\u250C\-]\[[^\S\n]*([^[\]\s]+):(\d+):(\d+)[^\S\n]*\]/
 
 /** Position from an oxc / miette style frame header such as `╭─[ src/a.ts:2:24 ]`. */
 export function locFromLabelledFrame(text: string): { file: string, line: number, column: number } | undefined {

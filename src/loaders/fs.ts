@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolvePath } from '../report/path'
 import { sourceMapLoader } from './sourcemap'
 
-const SOURCE_MAPPING_URL_RE = /\/\/[#@]\s*sourceMappingURL=(\S+)\s*$/
+const SOURCE_MAPPING_URL_MARKER = 'sourceMappingURL='
+const SOURCE_MAPPING_URL_PREFIX_RE = /\/\/[#@][^\S\n]*$/
 /** The comment can only be in the tail of a file. */
 const TAIL = 8192
 
@@ -27,12 +28,21 @@ export function parseDataUrl(url: string): string | undefined {
   return meta.includes(';base64') ? Buffer.from(data, 'base64').toString('utf8') : decodeURIComponent(data)
 }
 
+function lastSourceMappingURL(tail: string): string | undefined {
+  const at = tail.lastIndexOf(SOURCE_MAPPING_URL_MARKER)
+  if (at < 0 || !SOURCE_MAPPING_URL_PREFIX_RE.test(tail.slice(0, at))) {
+    return
+  }
+  const url = tail.slice(at + SOURCE_MAPPING_URL_MARKER.length).trimEnd()
+  return url && !/\s/.test(url) ? url : undefined
+}
+
 /**
  * Decode the `sourceMappingURL=data:` comment of a module's transformed code,
  * for module runners that expose the code but not the parsed map.
  */
 export function parseInlineSourceMap(code: string): RawSourceMap | undefined {
-  const url = SOURCE_MAPPING_URL_RE.exec(code.slice(-TAIL))?.[1]
+  const url = lastSourceMappingURL(code.slice(-TAIL))
   const data = url ? parseDataUrl(url) : undefined
   return data === undefined ? undefined : parse(data)
 }
@@ -54,7 +64,7 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
       return
     }
     const contents = await readFile(file, 'utf8').catch(() => undefined)
-    const url = contents ? SOURCE_MAPPING_URL_RE.exec(contents.slice(-TAIL))?.[1] : undefined
+    const url = contents ? lastSourceMappingURL(contents.slice(-TAIL)) : undefined
     if (!url) {
       return
     }
