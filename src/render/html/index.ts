@@ -1,7 +1,6 @@
 import type { ErrorReport, HistoryEntry } from '../../types'
 import type { PageState, Theme } from './state'
 import { clientScript, clientStyles } from 'virtual:my-bad-client'
-import { version } from '../../../package.json'
 import { escapeHtml, escapeScript } from './escape'
 import { renderView } from './view'
 
@@ -101,7 +100,7 @@ function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageSt
     history: options.history,
     theme: options.theme,
     editor: options.editor,
-    version,
+    version: __MY_BAD_VERSION__,
   }
 }
 

@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsdown'
+import pkg from './package.json' with { type: 'json' }
 import { clientPlugin } from './scripts/client-plugin.ts'
 
 export default defineConfig({
@@ -6,5 +7,6 @@ export default defineConfig({
   dts: { generator: 'oxc' },
   exports: { devExports: true },
   deps: { neverBundle: ['tiny-open'] },
+  define: { __MY_BAD_VERSION__: JSON.stringify(pkg.version) },
   plugins: [clientPlugin()],
 })
