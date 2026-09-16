@@ -119,3 +119,77 @@ describe('embedded state', () => {
     }), { numRuns: 300 })
   })
 })
+
+function poison<T>(value: T, payload: string): T {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return payload as T
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => poison(item, payload)) as T
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, poison(item, payload)])) as T
+  }
+  return value
+}
+
+interface Shape { message: string, causes: number, errors: number, frames: number, compiled: boolean, trace: boolean, section: boolean, history: boolean, status: boolean }
+
+describe('escaping', () => {
+  const shape = fc.record({
+    message: fc.string(),
+    causes: fc.nat({ max: 2 }),
+    errors: fc.nat({ max: 2 }),
+    frames: fc.nat({ max: 3 }),
+    compiled: fc.boolean(),
+    trace: fc.boolean(),
+    section: fc.boolean(),
+    history: fc.boolean(),
+    status: fc.boolean(),
+  })
+
+  async function poisoned(spec: Shape, payload: string) {
+    const base = await createReport(new Error(spec.message), options)
+    base.frames = Array.from({ length: spec.frames }, (_, index) => ({
+      type: (['app', 'vendor', 'internal'] as const)[index % 3]!,
+      file: `/proj/f${index}.ts`,
+      function: `fn${index}`,
+      line: 1,
+      column: 1,
+      snippet: { start: 1, lines: ['const a = 1'], lang: 'ts' },
+      compiled: spec.compiled ? { file: `/proj/f${index}.js`, line: 2, column: 3, snippet: { start: 2, lines: ['var a = 1'] } } : undefined,
+    }))
+    base.hint = 'hint'
+    base.code = 'E1'
+    base.docsUrl = 'https://example.com'
+    base.status = spec.status ? 500 : undefined
+    base.trace = spec.trace ? [{ label: '<App>', file: '/proj/app.vue', line: 1 }] : undefined
+    base.sections = spec.section ? [{ id: 'request', title: 'Request', content: { method: 'GET' } }] : []
+    base.causes = Array.from({ length: spec.causes }, (_, index) => ({ ...base, id: `c${index}`, causes: [], errors: undefined }))
+    base.errors = spec.errors ? Array.from({ length: spec.errors }, (_, index) => ({ ...base, id: `e${index}`, causes: [], errors: undefined })) : undefined
+    const history = spec.history ? [{ id: base.id, kind: 'error' as const, name: 'a', message: 'b', timestamp: 0 }, { id: 'other', kind: 'error' as const, name: 'c', message: 'd', timestamp: 1 }] : undefined
+    const report = poison(base, payload)
+    return renderPage(report, { cwd: '/proj', channel: '/__my-bad', environment: payload, history: poison(history, payload), theme: { name: payload, url: payload, scheme: payload as 'dark' } })
+  }
+
+  it('escapes every field it renders, whatever the report looks like', async () => {
+    const breakout = fc.constantFrom('"><mb-canary>', '\'><mb-canary>', '</script><mb-canary>', '<mb-canary onx=1>', '" onx="1', '&<>"\'')
+    await fc.assert(fc.asyncProperty(shape, breakout, async (spec, payload) => {
+      const html = await poisoned(spec, payload)
+      const markup = html.slice(0, html.indexOf('<script type="application/json">'))
+      expect(markup).not.toContain('<mb-canary')
+      expect(markup).not.toContain(payload)
+    }), { numRuns: 200 })
+  })
+
+  it('never renders a link a browser would execute', async () => {
+    const scheme = fc.constantFrom('javascript:alert(1)', ' javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'java\tscript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)', 'jAvAsCrIpT\n:alert(1)')
+    await fc.assert(fc.asyncProperty(shape, scheme, async (spec, payload) => {
+      const html = await poisoned(spec, payload)
+      const markup = html.slice(0, html.indexOf('<script type="application/json">'))
+      for (const [, href] of markup.matchAll(/href="([^"]*)"/g)) {
+        expect(href).toMatch(/^(?:https?:|mailto:|[./#?]|$)/i)
+      }
+    }), { numRuns: 100 })
+  })
+})

@@ -287,28 +287,7 @@ describe('source-first presentation', () => {
 })
 
 describe('escaping', () => {
-  it('escapes hostile report content in every rendered surface', async () => {
-    const payload = '"><img src=x onerror=alert(1)>'
-    const r = await report()
-    const hostile = <T>(target: T): T => Object.assign(target as object, { name: payload, message: payload, hint: payload, code: payload }) as T
-    hostile(r)
-    hostile(r.frames[0]!)
-    Object.assign(r.frames[0]!, { function: payload, file: payload, raw: payload })
-    r.frames[0]!.compiled = { file: payload, line: 1, column: 1, snippet: { start: 1, lines: [payload] } }
-    r.trace = [{ label: payload, file: payload }]
-    r.sections = [{ id: payload, title: payload, content: { [payload]: payload } }]
-    r.causes = [hostile({ ...r, id: payload, causes: [], errors: undefined })]
-    r.errors = [hostile({ ...r, id: payload, causes: [], errors: undefined })]
-    r.status = payload as unknown as number
-    Object.assign(r, { kind: payload })
-    Object.assign(r.frames[0]!, { type: payload, line: payload, column: payload })
-    Object.assign(r.frames[0]!.snippet ?? {}, { lang: payload, start: payload })
-    const html = markup(renderPage(r, { cwd: '/proj', channel: '/__my-bad', environment: payload, theme: { name: payload, scheme: payload as 'dark' }, history: [{ id: payload, message: payload, kind: 'error', name: payload, timestamp: 0 }, { id: 'other', message: payload, kind: 'error', name: payload, timestamp: 0 }] }))
-    expect(html).not.toContain('<img')
-    expect(html).not.toContain(payload)
-  })
-
-  it('only links out over schemes a browser cannot execute', async () => {
+  it('keeps safe documentation links and drops the rest', async () => {
     const r = await report()
     r.docsUrl = 'javascript:alert(1)'
     const html = markup(renderPage(r, { theme: { name: 'Acme', url: 'java\tscript:alert(2)' } }))
