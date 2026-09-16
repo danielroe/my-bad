@@ -99,11 +99,11 @@
     "vitest": "5.0.0"
   },
   "simple-git-hooks": {
-    "pre-commit": "npx nano-staged"
+    "pre-commit": "pnpm nano-staged"
   },
   "nano-staged": {
     "*.{js,ts,mjs,cjs,json,.*rc}": [
-      "npx eslint --fix"
+      "pnpm eslint --fix"
     ]
   }
 }
