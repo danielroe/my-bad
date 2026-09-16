@@ -85,6 +85,13 @@ describe('parseInlineSourceMap', () => {
     expect(await inlineLoader.map!({ file: generated, line: 3, column: 8, type: 'app' })).toMatchObject({ file: '/proj/src/lib.ts', line: 2, column: 9 })
   })
 
+  it('recovers a map whose data url is longer than 8kB', async () => {
+    const { parseInlineSourceMap } = await import('../src')
+    const large = { ...map, sourcesContent: ['x'.repeat(20_000)] }
+    const code = `function explode() {}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(large)).toString('base64')}\n`
+    expect(parseInlineSourceMap(code)).toEqual(large)
+  })
+
   it('returns undefined for code without an inline map', async () => {
     const { parseInlineSourceMap } = await import('../src')
     expect(parseInlineSourceMap('function explode() {}\n')).toBeUndefined()

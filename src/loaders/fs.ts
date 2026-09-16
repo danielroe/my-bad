@@ -7,7 +7,7 @@ import { sourceMapLoader } from './sourcemap'
 
 const SOURCE_MAPPING_URL_MARKER = 'sourceMappingURL='
 const SOURCE_MAPPING_URL_PREFIX_RE = /\/\/[#@][^\S\n]*$/
-/** The comment can only be in the tail of a file. */
+/** Trailing bytes scanned when the comment is not on the final line. */
 const TAIL = 8192
 
 export interface FsLoaderOptions {
@@ -28,7 +28,7 @@ export function parseDataUrl(url: string): string | undefined {
   return meta.includes(';base64') ? Buffer.from(data, 'base64').toString('utf8') : decodeURIComponent(data)
 }
 
-function lastSourceMappingURL(tail: string): string | undefined {
+function sourceMappingURLIn(tail: string): string | undefined {
   const at = tail.lastIndexOf(SOURCE_MAPPING_URL_MARKER)
   if (at < 0 || !SOURCE_MAPPING_URL_PREFIX_RE.test(tail.slice(0, at))) {
     return
@@ -38,11 +38,24 @@ function lastSourceMappingURL(tail: string): string | undefined {
 }
 
 /**
+ * The comment is normally the final line, which for an inline map can be far
+ * longer than any fixed tail window, so that line is checked first.
+ */
+function lastSourceMappingURL(code: string): string | undefined {
+  let end = code.length
+  while (end > 0 && (code.charCodeAt(end - 1) === 10 || code.charCodeAt(end - 1) === 13)) {
+    end--
+  }
+  const start = code.lastIndexOf('\n', end - 1) + 1
+  return sourceMappingURLIn(code.slice(start, end)) ?? sourceMappingURLIn(code.slice(-TAIL))
+}
+
+/**
  * Decode the `sourceMappingURL=data:` comment of a module's transformed code,
  * for module runners that expose the code but not the parsed map.
  */
 export function parseInlineSourceMap(code: string): RawSourceMap | undefined {
-  const url = lastSourceMappingURL(code.slice(-TAIL))
+  const url = lastSourceMappingURL(code)
   const data = url ? parseDataUrl(url) : undefined
   return data === undefined ? undefined : parse(data)
 }
@@ -75,7 +88,7 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
       return
     }
     const contents = await readFile(file, 'utf8').catch(() => undefined)
-    const url = contents ? lastSourceMappingURL(contents.slice(-TAIL)) : undefined
+    const url = contents ? lastSourceMappingURL(contents) : undefined
     if (!url) {
       return
     }
