@@ -1,7 +1,7 @@
 import type { SourceLoader } from '../types'
 import type { RawSourceMap } from './sourcemap'
 import { Buffer } from 'node:buffer'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, resolvePath } from '../report/path'
 import { sourceMapLoader } from './sourcemap'
 
@@ -53,9 +53,20 @@ export function parseInlineSourceMap(code: string): RawSourceMap | undefined {
  */
 export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
   const { sidecar = true, inline = true } = options
-  const bases = new Map<string, string>()
+  const linked = new Map<string, string>()
+
+  async function stamp(path: string): Promise<string> {
+    const stats = await stat(path).catch(() => undefined)
+    return stats ? `${stats.mtimeMs}:${stats.size}` : '-'
+  }
+
+  async function getVersion(file: string): Promise<string> {
+    const paths = [...(sidecar ? [`${file}.map`] : []), ...(inline ? [file] : []), ...(linked.has(file) ? [linked.get(file)!] : [])]
+    return (await Promise.all(paths.map(stamp))).join('|')
+  }
 
   async function getSourceMap(file: string): Promise<RawSourceMap | undefined> {
+    linked.delete(file)
     const sidecarRaw = sidecar ? await readFile(`${file}.map`, 'utf8').catch(() => undefined) : undefined
     if (sidecarRaw) {
       return parse(sidecarRaw)
@@ -73,14 +84,14 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
       return parse(data)
     }
     const mapPath = resolvePath(dirname(file), url)
-    const linked = await readFile(mapPath, 'utf8').catch(() => undefined)
-    if (linked) {
-      bases.set(file, dirname(mapPath))
-      return parse(linked)
+    const linkedRaw = await readFile(mapPath, 'utf8').catch(() => undefined)
+    linked.set(file, mapPath)
+    if (linkedRaw) {
+      return parse(linkedRaw)
     }
   }
 
-  const loader = sourceMapLoader({ getSourceMap, base: file => bases.get(file) ?? dirname(file) })
+  const loader = sourceMapLoader({ getSourceMap, getVersion, base: file => dirname(linked.get(file) ?? file) })
   return {
     ...loader,
     name: 'fs',

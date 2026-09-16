@@ -28,6 +28,12 @@ export interface SourceMapLoaderOptions {
   fs?: boolean
   /** Directory relative sources in the map resolve against. Defaults to the generated file's directory. */
   base?: (file: string) => string
+  /**
+   * Return a token that changes when the map for `file` changes, such as mtime
+   * and size for a map on disk. Maps are cached while the token is unchanged;
+   * without this option `getSourceMap` is consulted on every lookup.
+   */
+  getVersion?: (file: string) => string | undefined | Promise<string | undefined>
 }
 
 export interface MappedPosition {
@@ -77,28 +83,48 @@ interface Loaded {
 
 /** Maps frames with sourcemaps supplied by the caller, and reads original sources from disk. */
 export function sourceMapLoader(options: SourceMapLoaderOptions): SourceLoader {
-  const cache = new Map<string, Promise<Loaded | undefined>>()
+  const cache = new Map<string, { version: string | undefined, value: Promise<Loaded | undefined> }>()
+  const parsed = new WeakMap<RawSourceMap, SourceMap | null>()
+
+  function parseMap(raw: RawSourceMap): SourceMap | undefined {
+    const existing = parsed.get(raw)
+    if (existing !== undefined) {
+      return existing ?? undefined
+    }
+    try {
+      const map = new SourceMap(raw as ConstructorParameters<typeof SourceMap>[0])
+      parsed.set(raw, map)
+      return map
+    }
+    catch {
+      parsed.set(raw, null)
+    }
+  }
 
   async function load(file: string): Promise<Loaded | undefined> {
     const raw = await options.getSourceMap(file)
     if (!raw?.mappings) {
       return
     }
-    try {
-      return { map: new SourceMap(raw as ConstructorParameters<typeof SourceMap>[0]), raw, base: options.base?.(file) ?? dirname(file) }
+    const map = parseMap(raw)
+    if (!map) {
+      return
     }
-    catch {
-      return undefined
-    }
+    return { map, raw, base: options.base?.(file) ?? dirname(file) }
   }
 
-  function loaded(file: string): Promise<Loaded | undefined> {
-    let entry = cache.get(file)
-    if (!entry) {
-      entry = load(file)
-      cache.set(file, entry)
+  async function loaded(file: string): Promise<Loaded | undefined> {
+    if (!options.getVersion) {
+      return load(file)
     }
-    return entry
+    const version = await options.getVersion(file)
+    const entry = cache.get(file)
+    if (entry && entry.version === version) {
+      return entry.value
+    }
+    const value = load(file)
+    cache.set(file, { version, value })
+    return value
   }
 
   return {
