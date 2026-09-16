@@ -168,23 +168,24 @@ function setLive(m: Mount, value: boolean): void {
   }
 }
 
+function childNodesOf(el: Element | null): ChildNode[] {
+  return el ? [...el.childNodes] : []
+}
+
 function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void {
   m.selected = undefined
   m.state.report = report
   if (history) {
     m.state.history = history
   }
-  const logs = m.root.querySelector('[data-log-list]')?.innerHTML
+  const logs = childNodesOf(m.root.querySelector('[data-log-list]'))
   const logFilter = m.root.querySelector<HTMLSelectElement>('[data-log-filter]')?.value ?? ''
   const logsOpen = !m.root.querySelector('[data-logs]')?.hasAttribute('hidden')
-  const toasts = m.root.querySelector('[data-toasts]')?.innerHTML
+  const toasts = childNodesOf(m.root.querySelector('[data-toasts]'))
   m.root.innerHTML = renderView(m.state)
   m.root.querySelector('[data-fallback]')?.remove()
-  if (logs) {
-    const list = m.root.querySelector('[data-log-list]')
-    if (list) {
-      list.innerHTML = logs
-    }
+  if (logs.length) {
+    m.root.querySelector('[data-log-list]')?.replaceChildren(...logs)
   }
   const filter = m.root.querySelector<HTMLSelectElement>('[data-log-filter]')
   if (filter)
@@ -194,11 +195,8 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
     m.root.querySelector('[data-action="logs"]')?.setAttribute('aria-pressed', 'true')
   }
   markScrollableLogs(m)
-  if (toasts) {
-    const container = m.root.querySelector('[data-toasts]')
-    if (container) {
-      container.innerHTML = toasts
-    }
+  if (toasts.length) {
+    m.root.querySelector('[data-toasts]')?.replaceChildren(...toasts)
   }
   updateBadges(m)
   setLive(m, connected)
