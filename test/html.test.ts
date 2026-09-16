@@ -80,6 +80,10 @@ describe('renderPage', () => {
     expect(r.causes[0]!.rawStack).toBeTruthy()
   })
 
+  it('keeps the embedded state small', async () => {
+    expect(stateJson(renderPage(await report(), { cwd: '/proj' })).length).toBeLessThan(1100)
+  })
+
   it('omits live-only UI without a channel', async () => {
     const html = markup(renderPage(await report()))
     expect(html).not.toContain('data-action="logs"')
