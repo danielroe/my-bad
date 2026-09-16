@@ -259,7 +259,7 @@ function mergeFrameLoc(declared: { file?: string, line: number, column: number }
 }
 
 async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildContext, kind: ReportKind): Promise<Frame[]> {
-  const { options, budget } = ctx
+  const { options } = ctx
   if (kind === 'compile' && isCompileInput(input)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
     const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
@@ -319,42 +319,43 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
     return []
   }
 
-  const parsed = parseRawStackTrace(error.stack)
-  const frames: Frame[] = []
-  for (const trace of parsed) {
-    let frame: Frame = {
-      ...(trace.source && !trace.isNative && { file: stripCacheQuery(toPath(trace.source)) }),
-      ...(trace.line !== undefined && { line: trace.line }),
-      ...(trace.column !== undefined && { column: trace.column }),
-      ...(trace.function && { function: trace.function }),
-      type: 'native',
-      ...(trace.isAsync && { isAsync: true }),
-      ...(trace.isConstructor && { isConstructor: true }),
-      ...(trace.isEval && { isEval: true }),
-      ...('raw' in trace && typeof trace.raw === 'string' && { raw: trace.raw }),
-    }
-    frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
+  return Promise.all(parseRawStackTrace(error.stack).map(trace => buildStackFrame(trace, ctx)))
+}
 
-    if (frame.type !== 'native' && budget.frames > 0) {
-      budget.frames--
-      const mapped = await mapFrame(frame, options)
-      const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
-      frame = mapped
-      frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
-      if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
-        frame.snippet = await loadSnippet(frame.file, frame.line, ctx)
-        if (frame.compiled?.line !== undefined) {
-          const compiled = await loadCompiledSnippet(frame.compiled.file, frame.compiled.line, ctx, frame.compiled.file !== frame.file)
-          if (compiled) {
-            frame.compiled = { ...frame.compiled, snippet: compiled }
-          }
-        }
+async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[number], ctx: BuildContext): Promise<Frame> {
+  const { options, budget } = ctx
+  let frame: Frame = {
+    ...(trace.source && !trace.isNative && { file: stripCacheQuery(toPath(trace.source)) }),
+    ...(trace.line !== undefined && { line: trace.line }),
+    ...(trace.column !== undefined && { column: trace.column }),
+    ...(trace.function && { function: trace.function }),
+    type: 'native',
+    ...(trace.isAsync && { isAsync: true }),
+    ...(trace.isConstructor && { isConstructor: true }),
+    ...(trace.isEval && { isEval: true }),
+    ...('raw' in trace && typeof trace.raw === 'string' && { raw: trace.raw }),
+  }
+  frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
+
+  if (frame.type !== 'native' && budget.frames > 0) {
+    budget.frames--
+    const mapped = await mapFrame(frame, options)
+    const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
+    frame = mapped
+    frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
+    if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
+      const [snippet, compiled] = await Promise.all([
+        loadSnippet(frame.file, frame.line, ctx),
+        frame.compiled?.line !== undefined ? loadCompiledSnippet(frame.compiled.file, frame.compiled.line, ctx, frame.compiled.file !== frame.file) : undefined,
+      ])
+      frame.snippet = snippet
+      if (compiled) {
+        frame.compiled = { ...frame.compiled!, snippet: compiled }
       }
     }
-    addDisplayPaths(frame, options.cwd)
-    frames.push(frame)
   }
-  return frames
+  addDisplayPaths(frame, options.cwd)
+  return frame
 }
 
 const LEADING_ELLIPSIS = /^\s*(?:…|\.\.\.)/
