@@ -1,8 +1,10 @@
+import type { Stats } from 'node:fs'
 import type { SourceLoader } from '../types'
 import type { RawSourceMap } from './sourcemap'
 import { Buffer } from 'node:buffer'
-import { readFile, stat } from 'node:fs/promises'
-import { dirname, resolvePath } from '../report/path'
+import { statSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { dirname, isFilePath, resolvePath, withoutQuery } from '../report/path'
 import { sourceMapLoader } from './sourcemap'
 
 const SOURCE_MAPPING_URL_MARKER = 'sourceMappingURL='
@@ -61,6 +63,56 @@ export function parseInlineSourceMap(code: string): RawSourceMap | undefined {
 }
 
 /**
+ * Contents keyed by size and mtime, shared by every loader instance: integrations
+ * commonly create loaders per request, and validation against `stat` keeps a
+ * shared cache correct after a rebuild.
+ */
+const files = new Map<string, CachedFile>()
+const MAX_FILES = 64
+
+/** Lookups made in the same event-loop turn (the frames of one stack) share a single `stat`. */
+let turn: Map<string, Promise<CachedFile | undefined>> | undefined
+
+function read(path: string): Promise<CachedFile | undefined> {
+  if (!turn) {
+    turn = new Map()
+    setImmediate(() => {
+      turn = undefined
+    })
+  }
+  let pending = turn.get(path)
+  if (!pending) {
+    pending = readFresh(path)
+    turn.set(path, pending)
+  }
+  return pending
+}
+
+async function readFresh(path: string): Promise<CachedFile | undefined> {
+  const info = statOrUndefined(path)
+  if (!info?.isFile()) {
+    files.delete(path)
+    return
+  }
+  const cached = files.get(path)
+  if (cached && cached.size === info.size && cached.mtimeMs === info.mtimeMs) {
+    return cached
+  }
+  const contents = await readFile(path, 'utf8').catch(() => undefined)
+  if (contents === undefined) {
+    files.delete(path)
+    return
+  }
+  const entry: CachedFile = { size: info.size, mtimeMs: info.mtimeMs, contents }
+  files.delete(path)
+  if (files.size >= MAX_FILES) {
+    files.delete(files.keys().next().value!)
+  }
+  files.set(path, entry)
+  return entry
+}
+
+/**
  * Maps frames through `.map` sidecars or `sourceMappingURL` comments and reads
  * sources from disk. Node-only.
  */
@@ -68,48 +120,78 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
   const { sidecar = true, inline = true } = options
   const linked = new Map<string, string>()
 
-  async function stamp(path: string): Promise<string> {
-    const stats = await stat(path).catch(() => undefined)
-    return stats ? `${stats.mtimeMs}:${stats.size}` : '-'
-  }
-
-  async function getVersion(file: string): Promise<string> {
-    const paths = [...(sidecar ? [`${file}.map`] : []), ...(inline ? [file] : []), ...(linked.has(file) ? [linked.get(file)!] : [])]
-    return (await Promise.all(paths.map(stamp))).join('|')
-  }
-
   async function getSourceMap(file: string): Promise<RawSourceMap | undefined> {
     linked.delete(file)
-    const sidecarRaw = sidecar ? await readFile(`${file}.map`, 'utf8').catch(() => undefined) : undefined
-    if (sidecarRaw) {
-      return parse(sidecarRaw)
+    const sidecarFile = sidecar ? await read(`${file}.map`) : undefined
+    if (sidecarFile) {
+      return parsed(sidecarFile)
     }
     if (!inline) {
       return
     }
-    const contents = await readFile(file, 'utf8').catch(() => undefined)
-    const url = contents ? lastSourceMappingURL(contents) : undefined
+    const source = await read(file)
+    if (!source) {
+      return
+    }
+    source.url ??= lastSourceMappingURL(source.contents) ?? null
+    const url = source.url
     if (!url) {
       return
     }
-    const data = parseDataUrl(url)
-    if (data !== undefined) {
-      return parse(data)
+    if (url.startsWith('data:')) {
+      return parsed(source, url)
     }
     const mapPath = resolvePath(dirname(file), url)
-    const linkedRaw = await readFile(mapPath, 'utf8').catch(() => undefined)
+    const linkedFile = await read(mapPath)
     linked.set(file, mapPath)
-    if (linkedRaw) {
-      return parse(linkedRaw)
+    if (linkedFile) {
+      return parsed(linkedFile)
     }
   }
 
-  const loader = sourceMapLoader({ getSourceMap, getVersion, base: file => dirname(linked.get(file) ?? file) })
+  const loader = sourceMapLoader({ getSourceMap, base: file => dirname(linked.get(file) ?? file) })
+  const readContents = async (file: string) => {
+    const path = withoutQuery(file)
+    return isFilePath(path) ? (await read(path))?.contents : undefined
+  }
   return {
     ...loader,
     name: 'fs',
-    readCompiled: file => loader.read!(file),
+    read: readContents,
+    readCompiled: readContents,
   }
+}
+
+/**
+ * A synchronous `stat` on the page cache costs a few microseconds, whereas the
+ * promise-based one materialises an exception for every missing sidecar.
+ */
+function statOrUndefined(path: string): Stats | undefined {
+  try {
+    return statSync(path, { throwIfNoEntry: false })
+  }
+  catch {
+    return undefined
+  }
+}
+
+interface CachedFile {
+  size: number
+  mtimeMs: number
+  contents: string
+  /** Map decoded from these contents, or `null` once decoding has failed. */
+  map?: RawSourceMap | null
+  /** `sourceMappingURL` in these contents, or `null` when there is none. */
+  url?: string | null
+}
+
+/** Decode a file's map once per version of its contents. */
+function parsed(file: CachedFile, dataUrl?: string): RawSourceMap | undefined {
+  if (file.map === undefined) {
+    const data = dataUrl ? parseDataUrl(dataUrl) : file.contents
+    file.map = (data === undefined ? undefined : parse(data)) ?? null
+  }
+  return file.map ?? undefined
 }
 
 function parse(raw: string): RawSourceMap | undefined {
