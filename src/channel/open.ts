@@ -60,14 +60,24 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
  * is set: it only joins the arguments with spaces.
  */
 export function escapeCmdArg(arg: string): string {
-  const quoted = `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1')}"`
-  return quoted.replace(/[()\][%!^"`<>&|;, *?]/g, '^$&')
+  let body = ''
+  let slashes = 0
+  for (const char of arg) {
+    if (char === '\\') {
+      slashes++
+      continue
+    }
+    body += '\\'.repeat(char === '"' ? slashes * 2 : slashes) + (char === '"' ? '\\"' : char)
+    slashes = 0
+  }
+  body += '\\'.repeat(slashes * 2)
+  return `"${body}"`.replace(/[()\][%!^"`<>&|;, *?]/g, '^$&')
 }
 
 function run(bin: string, args: string[], shell = false): Promise<boolean> {
   return new Promise((resolve) => {
     try {
-      const child = spawn(bin, shell ? args.map(escapeCmdArg) : args, { stdio: 'ignore', detached: true, shell })
+      const child = spawn(shell ? escapeCmdArg(bin) : bin, shell ? args.map(escapeCmdArg) : args, { stdio: 'ignore', detached: true, shell })
       child.once('error', () => resolve(false))
       child.once('spawn', () => {
         child.unref()
