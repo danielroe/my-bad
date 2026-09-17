@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ErrorReport, HistoryEntry } from '../types'
 import type { BuildProgress, ChannelEvent, LogEntry } from './protocol'
+import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { json } from 'node:stream/consumers'
@@ -27,9 +28,10 @@ export interface ChannelOptions {
   /**
    * Handle "open in editor" requests. `true` uses the built-in `openInEditor`
    * (`LAUNCH_EDITOR` / `VISUAL` / `EDITOR`, falling back to the OS default app);
-   * a function receives the location. Omit to disable the action.
+   * a function receives the location and may return `false` to refuse it.
+   * Omit to disable the action.
    */
-  open?: boolean | ((request: OpenRequest) => void | Promise<void>)
+  open?: boolean | ((request: OpenRequest) => boolean | void | Promise<boolean | void>)
   /**
    * Directories that `open` requests are confined to. Defaults to
    * `process.cwd()`; pass `false` to accept any path, for example to open a
@@ -141,15 +143,14 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     return helloFrame ??= encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current, history: history() } })
   }
 
+  /** Roots are resolved through symlinks, so a project reached by a link still matches. */
   const roots = options.root === false
     ? undefined
-    : (Array.isArray(options.root) ? options.root : [options.root ?? process.cwd()]).map(root => resolve(root))
+    : Promise.all((Array.isArray(options.root) ? options.root : [options.root ?? process.cwd()])
+        .map(root => realpath(root).catch(() => resolve(root))))
 
-  function contained(target: string): boolean {
-    if (!roots) {
-      return true
-    }
-    return roots.some((root) => {
+  function within(target: string, against: string[]): boolean {
+    return against.some((root) => {
       const path = relative(root, target)
       return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path)
     })
@@ -157,8 +158,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   async function open(request: OpenRequest): Promise<boolean> {
     if (typeof options.open === 'function') {
-      await options.open(request)
-      return true
+      return await options.open(request) !== false
     }
     if (options.open === true) {
       return openInEditor(request)
@@ -206,10 +206,14 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     if (!request) {
       return 400
     }
-    request.file = resolve(request.file)
-    if (!contained(request.file)) {
+    const target = await realpath(resolve(request.file)).catch(() => undefined)
+    if (!target || !await stat(target).then(stats => stats.isFile(), () => false)) {
+      return 400
+    }
+    if (roots && !within(target, await roots)) {
       return 403
     }
+    request.file = target
     return await open(request).catch(() => false) ? 204 : 400
   }
 
