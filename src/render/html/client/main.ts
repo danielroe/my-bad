@@ -13,7 +13,6 @@ const STORAGE = {
   theme: 'my-bad:theme',
   dock: 'my-bad:overlay:dock',
   minimized: 'my-bad:overlay:minimized',
-  hidden: 'my-bad:overlay:hidden',
 }
 
 type Dock = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
@@ -50,15 +49,30 @@ function readState(): PageState | undefined {
 }
 
 function storage(key: string, value?: string | null): string | null {
+  return store(() => localStorage, key, value)
+}
+
+/** Dismissal is remembered per project, so another project on this origin still shows its errors. */
+function hiddenKey(cwd?: string): string {
+  return `my-bad:overlay:hidden${cwd ? `:${cwd}` : ''}`
+}
+
+function session(key: string, value?: string | null): string | null {
+  return store(() => sessionStorage, key, value)
+}
+
+/** The area is resolved lazily: reading it throws outright on an opaque origin. */
+function store(getArea: () => Storage, key: string, value?: string | null): string | null {
   try {
+    const area = getArea()
     if (value === undefined) {
-      return localStorage.getItem(key)
+      return area.getItem(key)
     }
     if (value === null) {
-      localStorage.removeItem(key)
+      area.removeItem(key)
     }
     else {
-      localStorage.setItem(key, value)
+      area.setItem(key, value)
     }
   }
   catch {}
@@ -658,7 +672,7 @@ function setHidden(m: Mount, value: boolean): void {
   m.overlay.toggleAttribute('data-hidden', value)
   m.overlay.toggleAttribute('inert', value)
   m.restore.hidden = !value
-  storage(STORAGE.hidden, value ? '1' : '0')
+  session(hiddenKey(m.state.cwd), value ? '1' : '0')
   setHostInert(m, !value && !m.overlay.hasAttribute('data-minimized'))
   updatePreview(m)
 }
@@ -726,7 +740,7 @@ function setupOverlay(m: Mount): void {
   m.preview?.setAttribute('data-dock', dock)
   const minimized = storage(STORAGE.minimized)
   setMinimized(m, !!m.state.startMinimized || minimized === '1', { animate: false, persist: false })
-  setHidden(m, storage(STORAGE.hidden) === '1')
+  setHidden(m, session(hiddenKey(m.state.cwd)) === '1')
 
   draggable(m, overlay, () => overlay.hasAttribute('data-minimized'), () => setMinimized(m, false))
   if (m.preview) {

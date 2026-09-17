@@ -208,6 +208,8 @@ describe('browser client', () => {
     await preview.locator('[data-action="minimize"]').click()
     await overlay.locator('[data-action="hide"]').click()
     await waitFor(() => overlay.locator('[data-action="restore"]').isVisible(), true)
+    expect(await page.evaluate(() => localStorage.getItem('my-bad:overlay:hidden'))).toBeNull()
+    expect(await page.evaluate(key => sessionStorage.getItem(key), `my-bad:overlay:hidden:${proj}`)).toBe('1')
     channel.clearError()
     await waitFor(() => page.locator('my-bad-overlay').count(), 0)
     await page.close()
