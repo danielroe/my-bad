@@ -1,6 +1,7 @@
 import process from 'node:process'
 import { styleText } from 'node:util'
 import { supportsHyperlinks } from 'clickable-path'
+import { stripAnsi } from '../../report/ansi'
 
 export interface AnsiEnv {
   colors: boolean
@@ -37,14 +38,6 @@ export function createPalette(env: AnsiEnv): Palette {
     palette[style] = env.colors ? text => styleText(style, text, { validateStream: false }) : identity
   }
   return palette
-}
-
-/** OSC 8 payloads can contain commas, which `util.stripVTControlCharacters` mangles. */
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\u001B\[[0-9;]*m|\u001B\]8;;[^\u0007\u001B]*(?:\u0007|\u001B\\)/g
-
-export function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '')
 }
 
 export function visibleWidth(text: string): number {

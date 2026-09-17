@@ -68,6 +68,16 @@ describe('createReport', () => {
     expect(report.errors![0]!.causes[0]!.causes).toHaveLength(0)
   })
 
+  it('strips ANSI escapes from every message', async () => {
+    const nested = new Error('\u001B[31mUnexpected token\u001B[39m')
+    const agg = new AggregateError([new Error('\u001B[1mbold\u001B[22m')], '\u001B[33mmany\u001B[39m')
+    agg.cause = nested
+    const report = await createReport(agg, { snippets: false })
+    expect(report.message).toBe('many')
+    expect(report.causes[0]!.message).toBe('Unexpected token')
+    expect(report.errors![0]!.message).toBe('bold')
+  })
+
   it('classifies native and vendor frames', async () => {
     const error = new Error('x')
     error.stack = `Error: x

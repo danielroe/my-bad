@@ -1,9 +1,9 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { createReport, renderAnsi, renderOverlay, renderPage, serializeReport, toMarkdown } from '../src'
-import { stripAnsi } from '../src/render/ansi/style'
 import { escapeHtml } from '../src/render/html/escape'
 import { highlightLine } from '../src/render/html/highlight'
+import { stripAnsi } from '../src/report/ansi'
 import { relativeToCwd, resolvePath, stripCacheQuery, toPath } from '../src/report/path'
 import { parseCodeFrame } from '../src/report/snippet'
 

@@ -3,6 +3,7 @@ import process from 'node:process'
 import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
 import { fsLoader } from '../loaders/fs'
+import { stripAnsi } from './ansi'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
 import { hasScheme, isFilePath, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
@@ -197,7 +198,7 @@ function normalizeInput(input: unknown): NormalizedError {
     const status = error.statusCode ?? error.status
     return {
       name: typeof error.name === 'string' && error.name ? error.name : 'Error',
-      message: typeof error.message === 'string' ? error.message : String(error.message),
+      message: stripAnsi(typeof error.message === 'string' ? error.message : String(error.message)),
       stack: typeof error.stack === 'string' ? error.stack : undefined,
       code: typeof error.code === 'string' ? error.code : undefined,
       status: typeof status === 'number' ? status : undefined,
@@ -206,7 +207,7 @@ function normalizeInput(input: unknown): NormalizedError {
       errors: error.errors,
     }
   }
-  return { name: 'Error', message: stringifyValue(input, 2) }
+  return { name: 'Error', message: stripAnsi(stringifyValue(input, 2)) }
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i

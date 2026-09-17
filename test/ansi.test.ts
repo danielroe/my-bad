@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 import { renderString } from 'ansivision'
 import { describe, expect, it } from 'vitest'
 import { createReport, renderAnsi } from '../src'
-import { stripAnsi } from '../src/render/ansi/style'
+import { stripAnsi } from '../src/report/ansi'
 
 const fixtures = fileURLToPath(new URL('./fixtures/basic/', import.meta.url))
 
