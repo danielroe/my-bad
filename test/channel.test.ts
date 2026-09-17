@@ -1,3 +1,4 @@
+import type { BuildProgress } from '../src/channel'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -252,5 +253,36 @@ describe('escapeCmdArg', () => {
     expect(escapeCmdArg('a & calc')).toBe('^^^"a^^^ ^^^&^^^ calc^^^"')
     expect(escapeCmdArg('say "hi"')).toBe('^^^"say^^^ \\^^^"hi\\^^^"^^^"')
     expect(escapeCmdArg('dir\\')).toBe('^^^"dir\\\\^^^"')
+  })
+})
+
+describe('build progress', () => {
+  function collect() {
+    const events: BuildProgress[] = []
+    const channel = createChannel({ sink: event => void (event.type === 'build' && events.push(event.payload)) })
+    return { channel, events }
+  }
+
+  it('reports the least advanced source when publishers interleave', () => {
+    const { channel, events } = collect()
+    channel.progress({ phase: 'startup', percent: 20, source: 'cli' })
+    channel.progress({ phase: 'modules', percent: 80, source: 'app' })
+    channel.progress({ phase: 'startup', percent: 60, source: 'cli' })
+    channel.progress({ phase: 'restart', percent: 10 })
+    channel.close()
+
+    expect(events.map(event => event.percent)).toEqual([20, 20, 60, 10])
+    expect(events[1]!.phase).toBe('startup')
+  })
+
+  it('stops counting a source that has finished', () => {
+    const { channel, events } = collect()
+    channel.progress({ phase: 'startup', percent: 30, source: 'cli' })
+    channel.progress({ phase: 'modules', percent: 90, source: 'app' })
+    channel.progress({ phase: 'startup', percent: 100, source: 'cli' })
+    channel.progress({ phase: 'modules', percent: 100, source: 'app' })
+    channel.close()
+
+    expect(events.map(event => [event.source, event.percent])).toEqual([['cli', 30], ['cli', 30], ['app', 90], ['app', 100]])
   })
 })
