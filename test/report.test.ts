@@ -1,7 +1,10 @@
 import { execFile } from 'node:child_process'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createReport, serializeReport } from '../src'
 
 const fixtures = fileURLToPath(new URL('./fixtures/basic/', import.meta.url))
@@ -420,5 +423,40 @@ describe('compiled compile errors', () => {
     expect(frame).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 16 })
     expect(frame!.snippet!.lines).toContain('  <div :class="bob !">')
     expect(frame!.compiled).toMatchObject({ line: 8, column: 39 })
+  })
+})
+
+describe('positions quoted in an error message', () => {
+  const dir = resolve(tmpdir(), 'my-bad-quoted-position')
+  const file = resolve(dir, 'nuxt.config.ts').replaceAll('\\', '/')
+
+  beforeAll(async () => {
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, 'export default defineNuxtConfig({\n  modules: [],\n  oops\n})\n')
+  })
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('reports the quoted file as a compile error', async () => {
+    const error = new Error(`ParseError: Unexpected token, expected ","\n ${file}:3:2`)
+    const report = await createReport(error, { cwd: dir })
+    expect(report.kind).toBe('compile')
+    expect(report.name).toBe('ParseError')
+    expect(report.message).toBe('Unexpected token, expected ","')
+    expect(report.frames).toHaveLength(1)
+    expect(report.frames[0]).toMatchObject({ file, line: 3, column: 2, type: 'app' })
+    expect(report.frames[0]!.snippet!.lines).toContain('  oops')
+  })
+
+  it('ignores a single-line message, a relative path and a missing file', async () => {
+    const single = await createReport(new Error(`${file}:3:2`), { cwd: dir })
+    expect(single.kind).toBe('error')
+
+    const relative = await createReport(new Error('ParseError: bad\n nuxt.config.ts:3:2'), { cwd: dir })
+    expect(relative.kind).toBe('error')
+
+    const missing = await createReport(new Error(`ParseError: bad\n ${resolve(dir, 'nope.ts').replaceAll('\\', '/')}:3:2`), { cwd: dir })
+    expect(missing.kind).toBe('error')
   })
 })

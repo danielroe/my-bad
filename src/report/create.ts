@@ -5,7 +5,7 @@ import { fnv1a64Base36 } from 'fnv1a-64'
 import { fsLoader } from '../loaders/fs'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
-import { hasScheme, isFilePath, resolvePath, stripCacheQuery, toPath } from './path'
+import { hasScheme, isFilePath, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
 import { extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeLine } from './tokenize'
@@ -124,8 +124,9 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     seen.add(input)
   }
 
-  const kind = options.kind ?? (isCompileInput(input) ? 'compile' : 'error')
-  const frames = await buildFrames(input, error, ctx, kind)
+  const quoted = options.kind === undefined && !isCompileInput(input) ? await compileInputFromMessage(error, ctx) : undefined
+  const kind = options.kind ?? (quoted || isCompileInput(input) ? 'compile' : 'error')
+  const frames = await buildFrames(quoted ?? input, error, ctx, kind)
 
   const sections: Section[] = []
   if (error.data !== undefined) {
@@ -135,8 +136,8 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   const report: ErrorReport = {
     id: '',
     kind,
-    name: error.name,
-    message: truncate(kind === 'compile' ? stripEmbeddedFrame(error.message) : error.message, options.maxMessageLength),
+    name: quoted?.name ?? error.name,
+    message: truncate(quoted ? quoted.message : kind === 'compile' ? stripEmbeddedFrame(error.message) : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
     ...(error.status && { status: error.status }),
     frames,
@@ -206,6 +207,38 @@ function normalizeInput(input: unknown): NormalizedError {
     }
   }
   return { name: 'Error', message: stringifyValue(input, 2) }
+}
+
+const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
+const ERROR_NAME_RE = /^(?<name>[A-Z][A-Za-z]*(?:Error|Exception)): (?<message>[\s\S]*)$/
+
+/**
+ * Parsers and loaders (oxc, esbuild, rolldown, `jiti`, Vite's config loader)
+ * throw a plain `Error` whose stack points at the parser and quote the source
+ * position on the last line of the message. All three guards are needed: an
+ * ordinary message can end in colon-separated text.
+ */
+async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext): Promise<CompileErrorInput | undefined> {
+  const lines = error.message.split('\n')
+  if (lines.length < 2) {
+    return
+  }
+  const groups = TRAILING_POSITION_RE.exec(lines.at(-1)!)?.groups
+  if (!groups) {
+    return
+  }
+  const file = normalizeSlashes(groups.file!)
+  if (!isFilePath(file) || await readSource(file, ctx) === undefined) {
+    return
+  }
+  const head = lines.slice(0, -1).join('\n').trimEnd()
+  const named = error.name === 'Error' ? ERROR_NAME_RE.exec(head)?.groups : undefined
+  return {
+    message: named?.message ?? head,
+    ...(named?.name && { name: named.name }),
+    id: file,
+    loc: { file, line: Number(groups.line), column: Number(groups.column) },
+  }
 }
 
 function isCompileInput(input: unknown): input is CompileErrorInput {
