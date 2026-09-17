@@ -284,9 +284,10 @@ function compileLoc(input: CompileErrorInput): { file?: string, line: number, co
  * On the line the caret is already on, the declared column wins: bundlers count
  * columns from zero when rendering a frame but compilers report them from one,
  * so the caret is a character to the right of the position the compiler named.
+ * A declared column past the end of the caret line is an offset, not a column.
  */
-function mergeFrameLoc(declared: { file?: string, line: number, column: number } | undefined, frameLoc: { line: number, column: number }): { file?: string, line: number, column: number } {
-  if (declared && declared.line === frameLoc.line && typeof declared.column === 'number') {
+function mergeFrameLoc(declared: { file?: string, line: number, column: number } | undefined, frameLoc: { line: number, column: number }, caretLine: string | undefined): { file?: string, line: number, column: number } {
+  if (declared && declared.line === frameLoc.line && typeof declared.column === 'number' && (caretLine === undefined || declared.column <= caretLine.length + 1)) {
     return declared
   }
   return { ...declared, ...frameLoc }
@@ -299,7 +300,7 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
     const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
     const frameLoc = typeof input.frame === 'string' ? locFromCodeFrame(input.frame) : undefined
     const declared = compileLoc(input)
-    const loc = snippet && frameLoc ? mergeFrameLoc(declared, frameLoc) : declared ?? frameLoc ?? labelled
+    const loc = snippet && frameLoc ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start]) : declared ?? frameLoc ?? labelled
     const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
     const file = rawFile ? resolveFile(rawFile, options.cwd) : undefined
     if (snippet && file) {

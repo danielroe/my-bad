@@ -317,6 +317,18 @@ describe('compiled compile errors', () => {
     expect(frame!.snippet).toMatchObject({ start: 2 })
   })
 
+  it('falls back to the caret column when the declared column is past the end of the line', async () => {
+    const source = '<script setup lang="ts">\n</script>\n\n<template>\n  <div>\n    <p>a</p>\n    <span>index\n  </div>\n</template>\n'
+    const report = await createReport({
+      message: 'Element is missing end tag.',
+      id: '/proj/app/app.vue',
+      loc: { file: '/proj/app/app.vue', line: 7, column: 55 },
+      frame: '6  |      <p>a</p>\n7  |      <span>index\n   |      ^\n8  |    </div>',
+    }, { cwd: '/proj', loaders: memoryLoader(source) })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 7, column: 5, type: 'app' })
+    expect(report.frames[0]!.compiled).toBeUndefined()
+  })
+
   it('ignores indentation differences', async () => {
     const report = await createReport({
       message: 'Element is missing end tag.',
