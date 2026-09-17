@@ -206,6 +206,88 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
   focusHeading(m)
 }
 
+const labelRestores = new WeakMap<HTMLElement, () => void>()
+
+function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFailed'): () => void {
+  labelRestores.get(button)?.()
+  const original = button.innerHTML
+  button.textContent = label
+  button.dataset[flag] = ''
+  const restore = () => {
+    if (labelRestores.get(button) !== restore) {
+      return
+    }
+    labelRestores.delete(button)
+    button.innerHTML = original
+    delete button.dataset.copied
+    delete button.dataset.copyFailed
+  }
+  labelRestores.set(button, restore)
+  return restore
+}
+
+function flash(button: HTMLElement, label: string): void {
+  setTimeout(setLabel(button, label, 'copied'), 1200)
+}
+
+/** In the host document: `execCommand` cannot act on a selection inside a shadow root. */
+function selectionTextarea(text: string): HTMLTextAreaElement {
+  const area = document.createElement('textarea')
+  area.value = text
+  area.readOnly = true
+  area.setAttribute('data-my-bad', '')
+  area.setAttribute('aria-hidden', 'true')
+  area.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;z-index:2147483647'
+  document.body.append(area)
+  area.focus({ preventScroll: true })
+  area.select()
+  return area
+}
+
+function execCommandCopy(text: string): boolean {
+  const selection = document.getSelection()
+  const previous = selection?.rangeCount ? selection.getRangeAt(0) : undefined
+  const area = selectionTextarea(text)
+  let copied = false
+  try {
+    copied = document.execCommand('copy')
+  }
+  catch {}
+  area.remove()
+  if (previous && selection) {
+    selection.removeAllRanges()
+    selection.addRange(previous)
+  }
+  return copied
+}
+
+const MANUAL_COPY_TIMEOUT = 15_000
+
+function offerManualCopy(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    const area = selectionTextarea(text)
+    const controller = new AbortController()
+    const signal = controller.signal
+    const done = () => {
+      if (signal.aborted) {
+        return
+      }
+      controller.abort()
+      area.remove()
+      resolve()
+    }
+    setTimeout(done, MANUAL_COPY_TIMEOUT)
+    addEventListener('keyup', (event) => {
+      if (event.key === 'Escape' || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c')) {
+        done()
+      }
+    }, { capture: true, signal })
+    area.addEventListener('blur', done, { signal })
+  })
+}
+
+const copyShortcut = () => /mac|iphone|ipad/i.test(navigator.userAgent) ? '\u2318C' : 'Ctrl+C'
+
 async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> {
   const report = reportEntries(m.state.report).find(entry => entry.path === m.selected)?.report ?? m.state.report
   const text = what === 'json'
@@ -213,15 +295,16 @@ async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> 
     : `${what === 'prompt' ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behaviour.\n\n' : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
   try {
     await navigator.clipboard.writeText(text)
-    const original = button.innerHTML
-    button.textContent = 'Copied'
-    button.dataset.copied = ''
-    setTimeout(() => {
-      button.innerHTML = original
-      delete button.dataset.copied
-    }, 1200)
+    return flash(button, 'Copied')
   }
   catch {}
+  if (execCommandCopy(text)) {
+    button.focus({ preventScroll: true })
+    return flash(button, 'Copied')
+  }
+  const restore = setLabel(button, `Press ${copyShortcut()}`, 'copyFailed')
+  await offerManualCopy(text)
+  restore()
 }
 
 async function open(m: Mount, file: string, line?: string, column?: string): Promise<void> {

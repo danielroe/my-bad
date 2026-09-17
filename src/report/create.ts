@@ -5,7 +5,7 @@ import { fnv1a64Base36 } from 'fnv1a-64'
 import { fsLoader } from '../loaders/fs'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
-import { hasScheme, isFilePath, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
+import { hasScheme, isFilePath, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
 import { extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeLine } from './tokenize'
@@ -301,6 +301,9 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
     const loc = snippet && frameLoc ? mergeFrameLoc(declared, frameLoc) : declared ?? frameLoc ?? labelled
     const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
     const file = rawFile ? resolveFile(rawFile, options.cwd) : undefined
+    if (snippet && file) {
+      snippet.lang ??= langFromFile(file)
+    }
 
     const marker = compiledMarker(input, options)
     const explicit = marker === false || marker === undefined ? undefined : (typeof marker === 'object' ? marker : {})

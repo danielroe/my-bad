@@ -104,6 +104,7 @@
 .mb-tool[aria-pressed='true'], .mb-tool[aria-expanded='true'] { background: var(--mb-accent-soft); border-color: var(--mb-accent-ink); color: var(--mb-accent-ink); }
 .mb-tool:disabled { opacity: 0.35; cursor: default; }
 .mb-tool[data-copied] { background: var(--mb-accent-soft); border-color: var(--mb-accent-ink); color: var(--mb-accent-ink); }
+.mb-tool[data-copy-failed] { background: var(--mb-surface-2); border-color: var(--mb-line-strong); color: var(--mb-fg); }
 .mb-badge {
   position: absolute; top: -5px; right: -5px;
   min-width: 18px; height: 18px; padding: 0 5px;
@@ -144,9 +145,10 @@
 .mb-kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--mb-fg-muted); font: 12px var(--mb-font-mono); }
 .mb-name { font: inherit; }
 .mb-kicker [data-kind-label] { display: inline-flex; align-items: center; gap: 5px; }
-.mb-kicker svg { width: 13px; height: 13px; }
+.mb-kicker .mb-kind-icon { display: inline-flex; align-items: center; margin-right: -3px; }
+.mb-kicker svg { width: 1.1em; height: 1.1em; }
 .mb-report[data-kind='warning'] { --mb-error: var(--mb-warning); --mb-error-bg: color-mix(in srgb, var(--mb-warning) 10%, var(--mb-code-bg)); }
-.mb-report[data-kind='warning'] [data-kind-label] { color: var(--mb-warning); }
+.mb-report[data-kind='warning'] [data-kind-label], .mb-report[data-kind='warning'] .mb-kind-icon { color: var(--mb-warning); }
 .mb-code a { display: inline-flex; align-items: center; gap: 4px; }
 .mb-copy { display: flex; flex: none; }
 .mb-copy > button { border-color: var(--mb-line-strong); border-radius: 6px 0 0 6px; color: var(--mb-fg); }
@@ -355,9 +357,9 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-overlay[data-minimized] > .mb-root { display: block; overflow: hidden; pointer-events: none; }
 .mb-overlay[data-minimized] .mb-ordered-stack, .mb-overlay[data-minimized] .mb-secondary, .mb-overlay[data-minimized] .mb-causes, .mb-overlay[data-minimized] .mb-single-cause, .mb-overlay[data-minimized] .mb-copy, .mb-overlay[data-minimized] .mb-disclosure, .mb-overlay[data-minimized] .mb-unavailable, .mb-overlay[data-minimized] .mb-header, .mb-overlay[data-minimized] .mb-hint, .mb-overlay[data-minimized] .mb-logs, .mb-overlay[data-minimized] .mb-toasts, .mb-overlay[data-minimized] .mb-progress { display: none; }
 .mb-overlay[data-minimized] .mb-main { padding: 14px 44px 14px 16px; max-width: none; }
-.mb-overlay[data-minimized] .mb-kicker { margin-bottom: 6px; }
-.mb-overlay[data-minimized] .mb-name { font-size: 15px; }
-.mb-overlay[data-minimized] .mb-message { margin-top: 4px; font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+.mb-overlay[data-minimized] .mb-kicker { margin-bottom: 6px; gap: 6px; font-size: 11.5px; }
+.mb-overlay[data-minimized] .mb-name { font-size: 13px; }
+.mb-overlay[data-minimized] .mb-message { margin-top: 4px; font-size: 13.5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
 .mb-pip-button {
   position: absolute; z-index: 30;
   width: 28px; height: 28px; display: none; align-items: center; justify-content: center;

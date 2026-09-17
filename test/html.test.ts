@@ -240,7 +240,8 @@ describe('source-first presentation', () => {
     warning.kind = 'warning'
     const html = markup(renderPage(warning))
     expect(html).toContain('<span class="mb-header-count">Warning</span>')
-    expect(html).toContain('</svg>Warning</span>')
+    expect(html).toContain('<span class="mb-kind-icon" aria-hidden="true">')
+    expect(html).toContain('<span data-kind-label>Warning</span>')
     expect(html).not.toContain('data-kind-label class="mb-sr-only"')
   })
 

@@ -2,7 +2,7 @@ import type { Stats } from 'node:fs'
 import type { SourceLoader } from '../types'
 import type { RawSourceMap } from './sourcemap'
 import { Buffer } from 'node:buffer'
-import { statSync } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, isFilePath, resolvePath, withoutQuery } from '../report/path'
 import { sourceMapLoader } from './sourcemap'
@@ -17,6 +17,10 @@ export interface FsLoaderOptions {
   sidecar?: boolean
   /** Parse `sourceMappingURL` comments. Default `true`. */
   inline?: boolean
+  /** Directories the loader may read from, maps included. Paths are canonicalised, so a symlink out of a root is denied. Unrestricted by default. */
+  roots?: string[]
+  /** Further per-file check, applied after `roots`. */
+  canRead?: (file: string) => boolean
 }
 
 /** Decode a `sourceMappingURL=data:` payload. */
@@ -117,19 +121,40 @@ async function readFresh(path: string): Promise<CachedFile | undefined> {
  * sources from disk. Node-only.
  */
 export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
-  const { sidecar = true, inline = true } = options
+  const { sidecar = true, inline = true, roots, canRead } = options
   const linked = new Map<string, string>()
+  const bounds = roots?.map(root => canonicalPath(root).replace(/\/$/, ''))
+
+  /** The canonical path to read, or `undefined` when it is out of bounds. */
+  function allowed(path: string): string | undefined {
+    let target = path
+    if (bounds) {
+      target = canonicalPath(path)
+      if (!bounds.some(root => target === root || target.startsWith(`${root}/`))) {
+        return
+      }
+    }
+    return canRead && !canRead(path) ? undefined : target
+  }
+
+  const readAllowed = (path: string) => {
+    const target = allowed(path)
+    return target === undefined ? Promise.resolve(undefined) : read(target)
+  }
 
   async function getSourceMap(file: string): Promise<RawSourceMap | undefined> {
     linked.delete(file)
-    const sidecarFile = sidecar ? await read(`${file}.map`) : undefined
+    if (allowed(file) === undefined) {
+      return
+    }
+    const sidecarFile = sidecar ? await readAllowed(`${file}.map`) : undefined
     if (sidecarFile) {
       return parsed(sidecarFile)
     }
     if (!inline) {
       return
     }
-    const source = await read(file)
+    const source = await readAllowed(file)
     if (!source) {
       return
     }
@@ -142,7 +167,7 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
       return parsed(source, url)
     }
     const mapPath = resolvePath(dirname(file), url)
-    const linkedFile = await read(mapPath)
+    const linkedFile = await readAllowed(mapPath)
     linked.set(file, mapPath)
     if (linkedFile) {
       return parsed(linkedFile)
@@ -152,7 +177,7 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
   const loader = sourceMapLoader({ getSourceMap, base: file => dirname(linked.get(file) ?? file) })
   const readContents = async (file: string) => {
     const path = withoutQuery(file)
-    return isFilePath(path) ? (await read(path))?.contents : undefined
+    return isFilePath(path) ? (await readAllowed(path))?.contents : undefined
   }
   return {
     ...loader,
@@ -160,6 +185,35 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
     read: readContents,
     readCompiled: readContents,
   }
+}
+
+/** Lexical containment can be escaped through a symlink, so roots and candidates are compared as real paths. */
+function canonicalPath(path: string): string {
+  try {
+    return normalizePath(realpathSync(path))
+  }
+  catch {}
+  const normalized = normalizePath(path)
+  const parent = dirname(normalized)
+  if (parent === normalized || parent === '.') {
+    return normalized
+  }
+  const base = canonicalPath(parent)
+  return `${base === '/' ? '' : base}/${normalized.split('/').pop()}`
+}
+
+function normalizePath(path: string): string {
+  const normalized = path.replace(/\\/g, '/')
+  const segments: string[] = []
+  for (const part of normalized.split('/')) {
+    if (part === '..') {
+      segments.pop()
+    }
+    else if (part !== '.' && part !== '') {
+      segments.push(part)
+    }
+  }
+  return `${normalized.startsWith('/') ? '/' : ''}${segments.join('/')}`
 }
 
 /**

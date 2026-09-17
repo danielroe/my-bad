@@ -94,7 +94,7 @@ describe('createReport', () => {
     expect(report.kind).toBe('compile')
     expect(report.frames).toHaveLength(1)
     expect(report.frames[0]).toMatchObject({ file: '/proj/app.vue', line: 3, column: 5, type: 'app' })
-    expect(report.frames[0]!.snippet).toEqual({ start: 1, lines: ['<template>', '  <div>', '    <p', '</template>'] })
+    expect(report.frames[0]!.snippet).toEqual({ start: 1, lines: ['<template>', '  <div>', '    <p', '</template>'], lang: 'vue' })
   })
 
   it('derives the location of a compile error from its code frame', async () => {

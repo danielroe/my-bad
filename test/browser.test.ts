@@ -430,6 +430,66 @@ describe('copy formats', () => {
     expect(await page.locator('[data-action="info"]').count()).toBe(0)
     await page.close()
   })
+
+  it('falls back to execCommand when the async clipboard refuses', async () => {
+    channel.setError(await report('Clipboard refused'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.assign(window, { testClipboard: '' })
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
+        throw new Error('Write permission denied')
+      } } })
+      document.execCommand = () => {
+        Object.assign(window, { testClipboard: (document.activeElement as HTMLTextAreaElement).value })
+        return true
+      }
+    })
+    await page.goto(`${origin}/overlay`)
+    await page.getByRole('button', { name: 'Copy error', exact: true }).click()
+    await waitFor(async () => (await page.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')).includes('Clipboard refused'), true)
+    await waitFor(() => page.getByRole('button', { name: 'Copied', exact: true }).count(), 1)
+    expect(await page.locator('textarea[data-my-bad]').count()).toBe(0)
+    await page.close()
+  })
+
+  it('restores the button label after repeated copies', async () => {
+    channel.setError(await report('Copy twice'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} } })
+    })
+    await page.goto(origin)
+    const button = page.getByRole('button', { name: 'Copy error', exact: true })
+    await button.click()
+    await page.locator('[data-copied]').click()
+    await page.locator('[data-copied]').click()
+    await waitFor(() => button.count(), 1, 4000)
+    expect(await page.locator('[data-copied]').count()).toBe(0)
+    await page.close()
+  })
+
+  it('offers a keyboard copy when every clipboard path is refused', async () => {
+    channel.setError(await report('Clipboard unavailable'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
+        throw new Error('Write permission denied')
+      } } })
+      document.execCommand = () => false
+    })
+    await page.goto(`${origin}/overlay`)
+    await page.getByRole('button', { name: 'Copy error', exact: true }).click()
+    await waitFor(() => page.locator('[data-copy-failed]').count(), 1)
+    expect(await page.locator('[data-copy-failed]').textContent()).toMatch(/Press (?:\u2318C|Ctrl\+C)/)
+    expect(await page.evaluate(() => {
+      const area = document.querySelector<HTMLTextAreaElement>('textarea[data-my-bad]')
+      return area && area.selectionEnd - area.selectionStart === area.value.length && area.value.includes('Clipboard unavailable')
+    })).toBe(true)
+    await page.keyboard.press('Escape')
+    await waitFor(() => page.locator('textarea[data-my-bad]').count(), 0)
+    await waitFor(() => page.getByRole('button', { name: 'Copy error', exact: true }).count(), 1)
+    await page.close()
+  })
 })
 
 describe('accessibility', () => {
