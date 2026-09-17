@@ -57,6 +57,7 @@ export interface Channel {
   clearError: (id?: string) => void
   warn: (report: ErrorReport) => void
   log: (entry: Omit<LogEntry, 'timestamp'> & { timestamp?: number }) => void
+  /** Publish build progress. Updates carrying a `source` are resolved against the other live sources; `percent: 100` retires one. */
   progress: (progress: BuildProgress) => void
   readonly current: ErrorReport | undefined
   readonly history: HistoryEntry[]
@@ -64,6 +65,17 @@ export interface Channel {
   /** Number of connected clients. */
   readonly clients: number
   close: () => void
+}
+
+/** A source with no `percent` has unknown work left, so it ranks below any number. */
+function leastAdvanced(live: Map<string, BuildProgress>): BuildProgress | undefined {
+  let lowest: BuildProgress | undefined
+  for (const progress of live.values()) {
+    if (!lowest || (progress.percent ?? -1) < (lowest.percent ?? -1)) {
+      lowest = progress
+    }
+  }
+  return lowest
 }
 
 interface Client {
@@ -81,6 +93,7 @@ const SSE_HEADERS = {
 export function createChannel(options: ChannelOptions = {}): Channel {
   const max = options.history ?? 20
   const reports = new Map<string, ErrorReport>()
+  const live = new Map<string, BuildProgress>()
   let current: ErrorReport | undefined
   const clients = new Set<Client>()
   const actions: string[] = []
@@ -312,7 +325,17 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       broadcast({ type: 'log', payload: { timestamp: Date.now(), ...entry } })
     },
     progress(progress) {
-      broadcast({ type: 'build', payload: progress })
+      if (!progress.source) {
+        broadcast({ type: 'build', payload: progress })
+        return
+      }
+      if (progress.percent !== undefined && progress.percent >= 100) {
+        live.delete(progress.source)
+      }
+      else {
+        live.set(progress.source, progress)
+      }
+      broadcast({ type: 'build', payload: leastAdvanced(live) ?? progress })
     },
     get current() {
       return current

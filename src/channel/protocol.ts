@@ -12,6 +12,12 @@ export interface BuildProgress {
   phase: string
   percent?: number
   message?: string
+  /**
+   * Identifies the publisher of this update. The channel keeps the most recent
+   * update per source and broadcasts the least advanced of them, so several
+   * publishers can report independently without the bar jumping backwards.
+   */
+  source?: string
 }
 
 export type ChannelEvent

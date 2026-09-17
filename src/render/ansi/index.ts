@@ -116,7 +116,7 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     }
   }
 
-  for (const cause of report.causes) {
+  for (const cause of visibleCauses(report)) {
     out.push('')
     out.push(...renderReport(cause, ctx, depth + 1))
   }
@@ -131,6 +131,11 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   }
 
   return out
+}
+
+/** Skip a cause that only repeats its parent's message, keeping whatever it wraps. */
+function visibleCauses(report: ErrorReport): ErrorReport[] {
+  return report.causes.flatMap(cause => cause.message === report.message && !cause.errors?.length && !cause.omittedErrors ? visibleCauses(cause) : [cause])
 }
 
 function renderFrames(frames: Frame[], ctx: Ctx, indent: string): string[] {

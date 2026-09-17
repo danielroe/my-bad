@@ -1,3 +1,4 @@
+import type { ErrorReport } from '../src'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -137,5 +138,26 @@ describe('compiled-only compile errors', () => {
     expect(output).toContain('generated code:')
     expect(output).toContain('_normalizeClass(_ctx.bob !)')
     expect(output).toContain('app/app.vue (generated 8:39)')
+  })
+})
+
+describe('echoing causes', () => {
+  const report = (name: string, message: string, causes: ErrorReport[] = []): ErrorReport => ({ id: name, kind: 'error', name, message, frames: [], causes, sections: [], timestamp: 0 })
+
+  it('renders a repeated message once and keeps what the echo wraps', () => {
+    const chain = report('FetchError', 'Server error', [report('HTTPError', 'Server error', [report('TypeError', 'x is not a function')])])
+    const output = stripAnsi(renderAnsi(chain, { colors: false, width: 100 }))
+
+    expect(output.match(/Server error/g)).toHaveLength(1)
+    expect(output).toContain('x is not a function')
+    expect(output).not.toContain('HTTPError')
+  })
+
+  it('keeps an echoing cause that carries related errors', () => {
+    const chain = report('FetchError', 'Server error', [{ ...report('AggregateError', 'Server error'), errors: [report('TypeError', 'x is not a function')], omittedErrors: 2 }])
+    const output = stripAnsi(renderAnsi(chain, { colors: false, width: 100 }))
+
+    expect(output).toContain('x is not a function')
+    expect(output).toContain('and 2 more')
   })
 })
