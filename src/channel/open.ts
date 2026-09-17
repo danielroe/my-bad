@@ -28,7 +28,7 @@ const TERMINAL_EDITORS = new Set(['vi', 'vim', 'nvim', 'nano', 'pico', 'micro', 
  * Open a file in the user's editor. Uses `LAUNCH_EDITOR`, `VISUAL` or `EDITOR`
  * when set, passing the line and column for editors we know how to drive. Falls
  * back to the OS default application (via `tiny-open` if installed, otherwise
- * `open` / `xdg-open` / `start`), which cannot jump to a line.
+ * `open` / `rundll32` / `xdg-open`), which cannot jump to a line.
  */
 export async function openInEditor(request: OpenRequest): Promise<boolean> {
   const configured = process.env.LAUNCH_EDITOR || process.env.VISUAL || process.env.EDITOR
@@ -50,7 +50,9 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
     return run('open', [request.file])
   }
   if (process.platform === 'win32') {
-    return run('cmd.exe', ['/c', 'start', '', request.file])
+    // `url.dll,FileProtocolHandler` opens a path with its default application
+    // through `CreateProcess`, so the filename never reaches an interpreter.
+    return run('rundll32.exe', ['url.dll,FileProtocolHandler', request.file])
   }
   return run('xdg-open', [request.file])
 }

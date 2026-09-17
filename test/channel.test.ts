@@ -1,6 +1,8 @@
-import type { BuildProgress } from '../src/channel'
+import type { BuildProgress, OpenRequest } from '../src/channel'
+import { mkdir, mkdtemp, realpath, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createReport } from '../src'
 import { createChannel } from '../src/channel'
@@ -81,7 +83,7 @@ describe('createChannel', () => {
     expect(clear).toMatchObject({ event: 'error:clear' })
     expect(events).toEqual(['error:set', 'error:clear'])
 
-    const file = resolve('a.ts')
+    const file = resolve('package.json')
     const res = await fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file, line: 3 }) })
     expect(res.status).toBe(204)
     expect(opened).toEqual([{ file, line: 3, column: undefined }])
@@ -131,7 +133,7 @@ describe('createChannel', () => {
 })
 
 describe('cross-origin requests', () => {
-  const file = resolve('a.ts')
+  const file = resolve('package.json')
 
   async function post(url: string, headers: Record<string, string>): Promise<number> {
     const res = await fetch(`${url}/open`, { method: 'POST', headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify({ file }) })
@@ -192,7 +194,7 @@ describe('open containment', () => {
 
     const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
     expect(await post('/etc/passwd')).toBe(403)
-    expect(await post(`${resolve('src')}/../../outside.ts`)).toBe(403)
+    expect(await post(resolve('/outside.ts'))).toBe(400)
     expect(await post(resolve('src/index.ts'))).toBe(204)
     expect(await post('src/../src/index.ts')).toBe(204)
     expect(opened).toEqual([
@@ -213,10 +215,65 @@ describe('open containment', () => {
     const anywhereUrl = await listen(anywhere)
     expect(await post(anywhereUrl, '/etc/passwd')).toBe(204)
   })
+
+  it('refuses a path that names no file', async () => {
+    const opened: unknown[] = []
+    const channel = createChannel({ open: request => void opened.push(request) })
+    const url = await listen(channel)
+    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+
+    expect(await post(resolve('src/nope.ts'))).toBe(400)
+    expect(await post(`${resolve('src/index.ts')}&calc.exe`)).toBe(400)
+    expect(await post(resolve('src'))).toBe(400)
+    expect(opened).toEqual([])
+  })
+
+  it('refuses a symlink pointing outside the root', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'my-bad-root-'))
+    const outside = join(await mkdtemp(join(tmpdir(), 'my-bad-out-')), 'secret.txt')
+    await writeFile(outside, 'secret')
+    await writeFile(join(dir, 'inside.txt'), 'fine')
+    await symlink(outside, join(dir, 'link.txt'))
+
+    const opened: OpenRequest[] = []
+    const channel = createChannel({ open: request => void opened.push(request), root: dir })
+    const url = await listen(channel)
+    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+
+    expect(await post(join(dir, 'link.txt'))).toBe(403)
+    expect(await post(join(dir, 'inside.txt'))).toBe(204)
+    expect(opened.map(request => request.file)).toEqual([await realpath(join(dir, 'inside.txt'))])
+  })
+
+  it('opens files in a root that is itself a symlink', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'my-bad-link-'))
+    const real = join(base, 'project')
+    await mkdir(real)
+    await writeFile(join(real, 'app.ts'), 'export {}')
+    const link = join(base, 'linked')
+    await symlink(real, link)
+
+    const opened: OpenRequest[] = []
+    const channel = createChannel({ open: request => void opened.push(request), root: link })
+    const url = await listen(channel)
+    const res = await fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file: join(link, 'app.ts') }) })
+
+    expect(res.status).toBe(204)
+    expect(opened.map(request => request.file)).toEqual([await realpath(join(real, 'app.ts'))])
+  })
+
+  it('lets a function refuse a request', async () => {
+    const channel = createChannel({ open: request => !request.file.endsWith('index.ts') })
+    const url = await listen(channel)
+    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+
+    expect(await post(resolve('src/index.ts'))).toBe(400)
+    expect(await post(resolve('src/types.ts'))).toBe(204)
+  })
 })
 
 describe('host validation', () => {
-  const file = resolve('a.ts')
+  const file = resolve('package.json')
   const body = JSON.stringify({ file })
 
   it('refuses browser requests addressed to a non-loopback host', async () => {

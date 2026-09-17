@@ -1,5 +1,8 @@
 import type { Browser } from 'playwright'
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { clientAssets, createReport, renderOverlay, renderPage } from '../src'
@@ -8,8 +11,13 @@ import { createChannel } from '../src/channel'
 let browser: Browser
 let close: () => void
 let origin: string
+const proj = await realpath(await mkdtemp(join(tmpdir(), 'my-bad-proj-')))
+await mkdir(join(proj, 'src'))
+await writeFile(join(proj, 'src/handler.ts'), 'line1\nthrow new Error()\nline3\n')
+await writeFile(join(proj, 'caller.ts'), 'start()\nhandler()\nfinish()\n')
+
 const openRequests: unknown[] = []
-const channel = createChannel({ open: request => void openRequests.push(request), root: '/proj' })
+const channel = createChannel({ open: request => void openRequests.push(request), root: proj })
 const assets = { script: '/client.js', styles: '/client.css' }
 
 async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000): Promise<void> {
@@ -27,8 +35,8 @@ async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000)
 
 async function report(message: string) {
   const error = new Error(message)
-  error.stack = `Error: ${message}\n    at handler (/proj/src/handler.ts:2:3)\n    at dep (/proj/node_modules/dep/index.js:1:1)`
-  return createReport(error, { cwd: '/proj', loaders: [{ name: 'memory', read: () => 'line1\nthrow new Error()\nline3\n' }] })
+  error.stack = `Error: ${message}\n    at handler (${proj}/src/handler.ts:2:3)\n    at dep (${proj}/node_modules/dep/index.js:1:1)`
+  return createReport(error, { cwd: proj, loaders: [{ name: 'memory', read: () => 'line1\nthrow new Error()\nline3\n' }] })
 }
 
 beforeAll(async () => {
@@ -45,11 +53,11 @@ beforeAll(async () => {
     const current = channel.current ?? await report('initial')
     res.setHeader('content-type', 'text/html')
     if (req.url === '/overlay-external') {
-      res.end(`<!DOCTYPE html><html><body>${renderOverlay(current, { cwd: '/proj', assets })}</body></html>`)
+      res.end(`<!DOCTYPE html><html><body>${renderOverlay(current, { cwd: proj, assets })}</body></html>`)
       return
     }
     if (req.url === '/page-external') {
-      res.end(renderPage(current, { cwd: '/proj', assets }))
+      res.end(renderPage(current, { cwd: proj, assets }))
       return
     }
     if (req.url === '/blank') {
@@ -58,18 +66,18 @@ beforeAll(async () => {
     }
     if (req.url === '/fragment-external') {
       res.setHeader('content-type', 'text/plain')
-      res.end(renderOverlay(current, { cwd: '/proj', assets }))
+      res.end(renderOverlay(current, { cwd: proj, assets }))
       return
     }
     if (req.url === '/overlay-minimized') {
-      res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: '/proj', channel: '/__my-bad', startMinimized: true })}</body></html>`)
+      res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad', startMinimized: true })}</body></html>`)
       return
     }
     if (req.url === '/overlay') {
-      res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: '/proj', channel: '/__my-bad' })}</body></html>`)
+      res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad' })}</body></html>`)
       return
     }
-    res.end(renderPage(current, { cwd: '/proj', channel: '/__my-bad', history: channel.history }))
+    res.end(renderPage(current, { cwd: proj, channel: '/__my-bad', history: channel.history }))
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
@@ -284,8 +292,8 @@ describe('source-first inspection', () => {
     const current = await report('Cannot save this widget')
     current.frames[0]!.line = 6
     current.frames[0]!.snippet = { start: 1, lines: Array.from({ length: 11 }, (_, i) => `const line${i + 1} = ${i + 1}`) }
-    current.frames[0]!.compiled = { file: '/proj/dist/handler.js', line: 20, column: 9, snippet: { start: 20, lines: ['throw Error()'] } }
-    current.frames.splice(1, 0, { type: 'app', file: '/proj/caller.ts', function: 'caller', line: 2, snippet: { start: 1, lines: ['start()', 'handler()', 'finish()'] } })
+    current.frames[0]!.compiled = { file: `${proj}/dist/handler.js`, line: 20, column: 9, snippet: { start: 20, lines: ['throw Error()'] } }
+    current.frames.splice(1, 0, { type: 'app', file: `${proj}/caller.ts`, function: 'caller', line: 2, snippet: { start: 1, lines: ['start()', 'handler()', 'finish()'] } })
     current.causes = [{ ...current, id: 'inner', message: 'Missing name', frames: [], causes: [] }]
     current.trace = [{ label: '<Widget>' }]
     channel.setError(current)
@@ -307,7 +315,7 @@ describe('source-first inspection', () => {
       const requests = openRequests.length
       await source.locator('[data-location-compiled] [data-loc]').click()
       await waitFor(() => openRequests.length, requests + 1)
-      expect(openRequests.at(-1)).toEqual({ file: '/proj/src/handler.ts', line: 6, column: 3 })
+      expect(openRequests.at(-1)).toEqual({ file: `${proj}/src/handler.ts`, line: 6, column: 3 })
       await source.locator('[data-switch="source"]').click()
       expect(await source.locator('.mb-line:not(.mb-line-caret):visible').count()).toBe(7)
       const before = await source.boundingBox()
@@ -333,7 +341,7 @@ describe('source-first inspection', () => {
       await caller.locator('[data-loc]').focus()
       await page.keyboard.press('Enter')
       await waitFor(() => openRequests.length, callerRequests + 1)
-      expect(openRequests.at(-1)).toEqual({ file: '/proj/caller.ts', line: 2 })
+      expect(openRequests.at(-1)).toEqual({ file: `${proj}/caller.ts`, line: 2 })
       expect(await source.boundingBox()).toEqual(before)
       expect(await root.getByRole('region', { name: 'Error source', exact: true }).count()).toBe(1)
       expect(await stack.locator('.mb-framework-hidden').isVisible()).toBe(true)
@@ -444,7 +452,7 @@ describe('accessibility', () => {
     const requests = openRequests.length
     await page.getByRole('button', { name: 'Open original source in your editor', exact: true }).first().click()
     await waitFor(() => openRequests.length, requests + 1)
-    expect(openRequests.at(-1)).toEqual({ file: '/proj/src/handler.ts', line: 2, column: 3 })
+    expect(openRequests.at(-1)).toEqual({ file: `${proj}/src/handler.ts`, line: 2, column: 3 })
     await page.close()
   }, 30_000)
 })
