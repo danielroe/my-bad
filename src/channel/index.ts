@@ -40,7 +40,7 @@ export interface ChannelOptions {
   root?: string | string[] | false
   /**
    * Hosts a browser may address the channel through, besides `localhost`,
-   * `*.localhost`, `127.0.0.1` and `::1`. Entries starting with `.` also match
+   * `*.localhost` and any IP literal. Entries starting with `.` also match
    * subdomains; `true` accepts any host. Guards against DNS rebinding.
    */
   allowedHosts?: string[] | true

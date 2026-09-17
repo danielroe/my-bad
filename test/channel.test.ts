@@ -288,6 +288,16 @@ describe('host validation', () => {
     channel.close()
   })
 
+  it('accepts IP-literal hosts', async () => {
+    const channel = createChannel({ open: () => {} })
+    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body })).then(res => res?.status)
+
+    expect(await post('192.168.1.20:3000')).toBe(204)
+    expect(await post('[fe80::1]:3000')).toBe(204)
+    expect(await post('1.2.3.4.evil.example:3000')).toBe(403)
+    channel.close()
+  })
+
   it('honours allowedHosts', async () => {
     const channel = createChannel({ open: () => {}, allowedHosts: ['.example.dev', 'devbox'] })
     const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body })).then(res => res?.status)

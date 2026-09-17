@@ -165,8 +165,9 @@ const channel = createChannel({ open: true, sink: fileSink('.nuxt/my-bad.jsonl')
 // `open` may be a function instead, returning `false` to refuse a request
 
 // The channel refuses requests a page on another origin made (`Sec-Fetch-Site`, else `Origin` must match the
-// host addressed), and browser requests addressed to a host other than loopback or `allowedHosts` (the Vite
-// plugin passes `server.allowedHosts`). Requests with neither header (`curl`, editor integrations) are allowed.
+// host addressed), and browser requests addressed to a host that is neither an IP literal, `localhost`,
+// `*.localhost`, nor listed in `allowedHosts` (the Vite plugin passes `server.allowedHosts`).
+// Requests with neither header (`curl`, editor integrations) are allowed.
 
 // Node: mount at the channel base path
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))

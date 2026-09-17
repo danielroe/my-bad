@@ -2,8 +2,9 @@ import type { IncomingMessage } from 'node:http'
 
 export interface TrustOptions {
   /**
-   * Hosts a browser may address the channel through, besides loopback. Entries
-   * starting with `.` also match subdomains. `true` accepts any host.
+   * Hosts a browser may address the channel through, besides `localhost`,
+   * `*.localhost` and IP literals. Entries starting with `.` also match
+   * subdomains. `true` accepts any host.
    */
   allowedHosts?: string[] | true
 }
@@ -12,7 +13,7 @@ export interface TrustOptions {
  * Whether a request may run channel actions, i.e. it was not made by a page on
  * another origin. `Sec-Fetch-Site` decides it where the browser sends one; an
  * `Origin` must otherwise name the host being addressed. Either way the host
- * must be loopback or allowed, so a DNS-rebound hostname pointing at the
+ * must be an IP literal or allowed, so a DNS-rebound hostname pointing at the
  * machine cannot vouch for itself. Requests with neither header cannot come
  * from a browser (`curl`, editor integrations) and pass.
  */
@@ -37,12 +38,19 @@ export function isAllowedHost(host: string, allowedHosts: string[] | true = []):
   if (!name) {
     return false
   }
-  if (name === 'localhost' || name.endsWith('.localhost') || name === '127.0.0.1' || name === '::1') {
+  if (name === 'localhost' || name.endsWith('.localhost') || isIpLiteral(name)) {
     return true
   }
   return allowedHosts.some(allowed => allowed.startsWith('.')
     ? name === allowed.slice(1) || name.endsWith(allowed)
     : name === allowed.toLowerCase())
+}
+
+const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/
+
+/** Any IP literal is accepted: DNS rebinding needs a hostname to re-point. */
+function isIpLiteral(name: string): boolean {
+  return IPV4_RE.test(name) || name.includes(':')
 }
 
 /** Hostname without port; IPv6 literals lose their brackets. */
