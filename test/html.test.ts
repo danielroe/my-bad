@@ -317,3 +317,21 @@ describe('escaping', () => {
     expect(markup(renderPage({ ...r, docsUrl: 'https://example.com/docs' }))).toContain('href="https://example.com/docs"')
   })
 })
+
+describe('long messages', () => {
+  it('clamps the heading and hides the rest behind a button', async () => {
+    const r = await report()
+    r.message = 'L'.repeat(3000)
+    const html = markup(renderPage(r, { maxMessageLength: 100 }))
+    expect(html).toContain('Show full message <span class="mb-count">2900 more characters</span>')
+    expect(html).toContain('<span class="mb-message-rest" data-message-rest hidden>')
+    const heading = html.slice(html.indexOf('data-message>'), html.indexOf('<span class="mb-message-rest"'))
+    expect(heading).not.toContain('L'.repeat(101))
+    expect(markup(renderPage(r))).toContain('2000 more characters')
+  })
+
+  it('leaves a short message alone', async () => {
+    const html = markup(renderPage(await report()))
+    expect(html).not.toContain('data-message-rest')
+  })
+})

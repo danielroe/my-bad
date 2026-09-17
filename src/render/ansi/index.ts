@@ -2,6 +2,7 @@ import type { ErrorReport, Frame, Snippet } from '../../types'
 import type { Palette } from './style'
 import process from 'node:process'
 import { hyperlink, link } from 'clickable-path'
+import { clampMessage, DEFAULT_DISPLAY_MESSAGE_LENGTH } from '../../report/message'
 import { displayPath, isFilePath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { snippetTokens } from '../../report/tokenize'
@@ -22,6 +23,8 @@ export interface RenderAnsiOptions {
   snippetContext?: number
   /** Leading `✖` / `⚠` glyph. Disable when a logger such as consola already prints a badge. Default `true`. */
   icon?: boolean
+  /** Characters of each message printed before the rest is summarised. Default `1000`. */
+  maxMessageLength?: number
 }
 
 interface Ctx {
@@ -32,6 +35,7 @@ interface Ctx {
   verbose: boolean
   snippetContext: number
   icon: boolean
+  maxMessageLength: number
 }
 
 export function renderAnsi(report: ErrorReport, options: RenderAnsiOptions = {}): string {
@@ -45,6 +49,7 @@ export function renderAnsi(report: ErrorReport, options: RenderAnsiOptions = {})
     verbose: options.verbose ?? false,
     snippetContext: options.snippetContext ?? 2,
     icon: options.icon ?? true,
+    maxMessageLength: options.maxMessageLength ?? DEFAULT_DISPLAY_MESSAGE_LENGTH,
   }
   return renderReport(report, ctx, 0).join('\n')
 }
@@ -60,10 +65,14 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const meta = [report.code && p.dim(`[${report.code}]`), report.status && p.dim(`(${report.status})`)].filter(Boolean).join(' ')
   const header = depth === 0 ? (ctx.icon ? `${icon} ${name}` : name) : `${p.dim('Caused by:')} ${name}`
   const title = `${header}${meta ? ` ${meta}` : ''}${p.dim(':')} `
-  const messageLines = wrap(report.message, width - 2, '')
+  const { head, rest } = clampMessage(report.message, ctx.maxMessageLength)
+  const messageLines = wrap(rest ? `${head}…` : head, width - 2, '')
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)
   for (const line of messageLines.slice(1)) {
     out.push(`${indent}  ${p.bold(line)}`)
+  }
+  if (rest) {
+    out.push(`${indent}  ${p.dim(`${rest.length} more characters`)}`)
   }
 
   if (report.hint) {

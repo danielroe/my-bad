@@ -1,6 +1,7 @@
 import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../types'
 import type { PageState } from './state'
+import { clampMessage } from '../../report/message'
 import { displayPath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
@@ -128,12 +129,20 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
         </ul>
       </div>`
     : ''}</div>
-  <${tag} class="mb-message" id="${id}-message" data-message>${escapeHtml(report.message || report.name)}</${tag}>
+  ${renderMessage(report, state, tag, `${id}-message`)}
   ${report.hint ? `<p class="mb-hint" data-hint>${escapeHtml(report.hint)}${docs ? ` <a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer">Learn more</a>` : ''}</p>` : ''}
   ${chrome ? renderCauseNavigation(state, path) : ''}
   ${renderFrames(report.frames, state, id)}
   ${report.trace?.length ? `<details class="mb-disclosure"><summary>${ICONS.chevron}Component trace <span class="mb-count">${report.trace.length}</span></summary>${renderTrace(report, state)}</details>` : ''}
 </article>`
+}
+
+function renderMessage(report: ErrorReport, state: PageState, tag: string, id: string): string {
+  const { head, rest } = clampMessage(report.message || report.name, state.maxMessageLength)
+  const more = rest
+    ? `<span class="mb-message-rest" data-message-rest hidden>${escapeHtml(rest)}</span><button type="button" class="mb-message-more" data-action="expand-message">Show full message <span class="mb-count">${rest.length} more characters</span></button>`
+    : ''
+  return `<${tag} class="mb-message" id="${id}" data-message>${escapeHtml(head)}${more}</${tag}>`
 }
 
 function renderTrace(report: ErrorReport, state: PageState): string {

@@ -161,3 +161,12 @@ describe('echoing causes', () => {
     expect(output).toContain('and 2 more')
   })
 })
+
+describe('long messages', () => {
+  it('truncates the message and reports how much was left out', async () => {
+    const report = await createReport(new Error('L'.repeat(5000)), { loaders: [], snippets: false })
+    const output = stripAnsi(renderAnsi(report, { colors: false, width: 80, maxMessageLength: 100 }))
+    expect(output).toContain('4900 more characters')
+    expect(output).not.toContain('L'.repeat(101))
+  })
+})

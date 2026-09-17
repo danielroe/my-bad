@@ -35,6 +35,8 @@ export interface PageState {
   tag?: string
   /** URL scheme used to open files when the channel has no `open` action. */
   editor?: string
+  /** Characters of the message shown before it has to be expanded. */
+  maxMessageLength?: number
   /** CSS applied to the overlay shadow root. */
   styles?: string
   /** URL of a stylesheet to load into the overlay shadow root, alongside `styles`. */

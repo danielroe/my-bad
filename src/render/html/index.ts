@@ -1,6 +1,7 @@
 import type { ErrorReport, HistoryEntry } from '../../types'
 import type { PageState, Theme } from './state'
 import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
+import { clampMessage } from '../../report/message'
 import { escapeHtml, escapeScript } from './escape'
 import { renderView } from './view'
 
@@ -48,6 +49,11 @@ export interface RenderHtmlOptions {
    * Default `false`.
    */
   rawStack?: boolean
+  /**
+   * Characters of the message shown in the heading before the rest is hidden
+   * behind a "show full message" button. Default `1000`.
+   */
+  maxMessageLength?: number
 }
 
 export interface RenderPageOptions extends RenderHtmlOptions {
@@ -107,6 +113,7 @@ function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageSt
     history: options.history,
     theme: options.theme,
     editor: options.editor,
+    maxMessageLength: options.maxMessageLength,
     version: __MY_BAD_VERSION__,
   }
 }
@@ -114,7 +121,7 @@ function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageSt
 /** Render a complete HTML document for the report. */
 export function renderPage(report: ErrorReport, options: RenderPageOptions = {}): string {
   const state = baseState(report, options, 'page')
-  const title = options.title ?? `${report.name}: ${report.message.split('\n')[0]}`
+  const title = options.title ?? `${report.name}: ${clampMessage(report.message.split('\n')[0] ?? '', options.maxMessageLength).head}`
   const scheme = options.theme?.scheme
   return `<!DOCTYPE html>
 <html lang="en"${scheme ? ` data-theme="${escapeHtml(scheme)}"` : ''}>

@@ -879,6 +879,12 @@ function bind(m: Mount): void {
         focusHeading(m)
         return
       }
+      case 'expand-message': {
+        const rest = target.closest('[data-message]')?.querySelector('[data-message-rest]')
+        rest?.removeAttribute('hidden')
+        target.remove()
+        return
+      }
       case 'context': {
         const frame = target.closest<HTMLElement>('[data-frame]')
         if (!frame) {
