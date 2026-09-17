@@ -17,6 +17,10 @@ export interface FsLoaderOptions {
   sidecar?: boolean
   /** Parse `sourceMappingURL` comments. Default `true`. */
   inline?: boolean
+  /** Directories the loader may read from, maps included. Unrestricted by default; symlinks are not resolved. */
+  roots?: string[]
+  /** Further per-file check, applied after `roots`. */
+  canRead?: (file: string) => boolean
 }
 
 /** Decode a `sourceMappingURL=data:` payload. */
@@ -117,19 +121,35 @@ async function readFresh(path: string): Promise<CachedFile | undefined> {
  * sources from disk. Node-only.
  */
 export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
-  const { sidecar = true, inline = true } = options
+  const { sidecar = true, inline = true, roots, canRead } = options
   const linked = new Map<string, string>()
+  const bounds = roots?.map(root => normalizePath(root).replace(/\/$/, ''))
+
+  function allowed(path: string): boolean {
+    if (bounds) {
+      const file = normalizePath(path)
+      if (!bounds.some(root => file === root || file.startsWith(`${root}/`))) {
+        return false
+      }
+    }
+    return canRead ? canRead(path) : true
+  }
+
+  const readAllowed = (path: string) => allowed(path) ? read(path) : Promise.resolve(undefined)
 
   async function getSourceMap(file: string): Promise<RawSourceMap | undefined> {
     linked.delete(file)
-    const sidecarFile = sidecar ? await read(`${file}.map`) : undefined
+    if (!allowed(file)) {
+      return
+    }
+    const sidecarFile = sidecar ? await readAllowed(`${file}.map`) : undefined
     if (sidecarFile) {
       return parsed(sidecarFile)
     }
     if (!inline) {
       return
     }
-    const source = await read(file)
+    const source = await readAllowed(file)
     if (!source) {
       return
     }
@@ -142,7 +162,7 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
       return parsed(source, url)
     }
     const mapPath = resolvePath(dirname(file), url)
-    const linkedFile = await read(mapPath)
+    const linkedFile = await readAllowed(mapPath)
     linked.set(file, mapPath)
     if (linkedFile) {
       return parsed(linkedFile)
@@ -152,7 +172,7 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
   const loader = sourceMapLoader({ getSourceMap, base: file => dirname(linked.get(file) ?? file) })
   const readContents = async (file: string) => {
     const path = withoutQuery(file)
-    return isFilePath(path) ? (await read(path))?.contents : undefined
+    return isFilePath(path) ? (await readAllowed(path))?.contents : undefined
   }
   return {
     ...loader,
@@ -160,6 +180,20 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
     read: readContents,
     readCompiled: readContents,
   }
+}
+
+function normalizePath(path: string): string {
+  const normalized = path.replace(/\\/g, '/')
+  const segments: string[] = []
+  for (const part of normalized.split('/')) {
+    if (part === '..') {
+      segments.pop()
+    }
+    else if (part !== '.' && part !== '') {
+      segments.push(part)
+    }
+  }
+  return `${normalized.startsWith('/') ? '/' : ''}${segments.join('/')}`
 }
 
 /**

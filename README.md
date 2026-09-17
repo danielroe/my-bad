@@ -108,7 +108,7 @@ Tokens: `--mb-accent`, `--mb-bg`, `--mb-fg`, `--mb-font-sans`, `--mb-font-mono`,
 
 Frames are mapped by loaders, tried in order:
 
-- `fsLoader()` reads `.map` sidecars and inline `sourceMappingURL` comments (Nitro dev builds, tsdown/rollup output).
+- `fsLoader()` reads `.map` sidecars and inline `sourceMappingURL` comments (Nitro dev builds, tsdown/rollup output). When the frames can come from an untrusted source, such as a browser-submitted stack, confine it with `fsLoader({ roots: [cwd] })` or `fsLoader({ canRead })`; it reads any absolute path by default.
 - `sourceMapLoader({ getSourceMap })` takes maps from memory, for module runners (`nitroApp.ssrSourceMaps.getSourceMap` in Nuxt, `runner.moduleCache.getSourceMap` in vite-node).
 - `viteLoader(server)` from `my-bad/vite` uses the module graph of a `ViteDevServer`.
 - `passthroughLoader()` only reads sources, for processes whose stacks are already mapped.

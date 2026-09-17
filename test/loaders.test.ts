@@ -1,11 +1,11 @@
 import { Buffer } from 'node:buffer'
 import { mkdtempSync } from 'node:fs'
-import { rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { describe, expect, it } from 'vitest'
-import { createReport, sourceMapLoader } from '../src'
+import { createReport, fsLoader, sourceMapLoader } from '../src'
 
 const generated = '/proj/dist/lib.mjs'
 
@@ -137,5 +137,32 @@ describe('fsLoader cache invalidation', () => {
 
     await write(sidecar, mapFor('AAAA'))
     expect(await lineOf()).toBe(1)
+  })
+})
+
+describe('fsLoader containment', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'my-bad-roots-'))
+  const inside = join(dir, 'app', 'main.ts')
+  const outside = join(dir, 'secret.env')
+
+  it('reads only within the configured roots', async () => {
+    await mkdir(join(dir, 'app'), { recursive: true })
+    await writeFile(inside, 'const a = 1\n', 'utf8')
+    await writeFile(outside, 'TOKEN=1\n', 'utf8')
+    const loader = fsLoader({ roots: [join(dir, 'app')] })
+    expect(await loader.read!(inside)).toBe('const a = 1\n')
+    expect(await loader.read!(outside)).toBeUndefined()
+    expect(await loader.read!(join(dir, 'app', '..', 'secret.env'))).toBeUndefined()
+    expect(await loader.readCompiled!(outside)).toBeUndefined()
+  })
+
+  it('applies canRead after the roots check', async () => {
+    const loader = fsLoader({ canRead: file => !file.endsWith('.env') })
+    expect(await loader.read!(inside)).toBe('const a = 1\n')
+    expect(await loader.read!(outside)).toBeUndefined()
+  })
+
+  it('reads anywhere by default', async () => {
+    expect(await fsLoader().read!(outside)).toBe('TOKEN=1\n')
   })
 })
