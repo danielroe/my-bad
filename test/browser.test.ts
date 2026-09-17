@@ -73,6 +73,11 @@ beforeAll(async () => {
       res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad', startMinimized: true })}</body></html>`)
       return
     }
+    if (req.url?.startsWith('/scoped')) {
+      const requestId = new URL(req.url, origin).searchParams.get('rid') ?? undefined
+      res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad', requestId })}</body></html>`)
+      return
+    }
     if (req.url === '/overlay') {
       res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad' })}</body></html>`)
       return
@@ -213,6 +218,33 @@ describe('browser client', () => {
     channel.clearError()
     await waitFor(() => page.locator('my-bad-overlay').count(), 0)
     await page.close()
+  }, 30_000)
+
+  it('ignores an error from another request and follows its own', async () => {
+    channel.setError(await report('scoped start'))
+    const pages = await Promise.all(['a', 'b'].map(async (id) => {
+      const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+      await page.goto(`${origin}/scoped?rid=${id}`)
+      await waitFor(() => page.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'scoped start')
+      return page
+    }))
+    const [a, b] = pages as [typeof pages[0], typeof pages[0]]
+
+    const forA = await report('only for a')
+    channel.setError(forA, 'a', 'GET /scoped?rid=a')
+    await waitFor(() => a.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'only for a')
+    expect(await b.locator('my-bad-overlay').locator('[data-message]').first().textContent()).toBe('scoped start')
+    await waitFor(async () => (await b.locator('my-bad-overlay').locator('[data-pager-label]').textContent())?.endsWith(`of ${channel.history.length}`), true)
+
+    channel.clearError(forA.id)
+    await waitFor(() => a.locator('my-bad-overlay').count(), 0)
+    expect(await b.locator('my-bad-overlay').locator('[data-message]').first().textContent()).toBe('scoped start')
+
+    channel.setError(await report('for everyone'))
+    await waitFor(() => b.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'for everyone')
+    for (const page of pages) {
+      await page.close()
+    }
   }, 30_000)
 
   it('keeps a startMinimized overlay minimised whatever the user last chose', async () => {

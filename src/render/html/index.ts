@@ -49,11 +49,14 @@ export interface RenderHtmlOptions {
    * Default `false`.
    */
   rawStack?: boolean
-  /**
-   * Characters of the message shown in the heading before the rest is hidden
-   * behind a "show full message" button. Default `1000`.
-   */
+  /** Characters of the message shown before a "show full message" button. Default `1000`. */
   maxMessageLength?: number
+  /**
+   * Correlation id of the request this page was rendered for. The channel then
+   * only sends it errors from that request, and errors from no request at all.
+   * Without it the page's path is matched against the request instead.
+   */
+  requestId?: string
 }
 
 export interface RenderPageOptions extends RenderHtmlOptions {
@@ -114,6 +117,7 @@ function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageSt
     theme: options.theme,
     editor: options.editor,
     maxMessageLength: options.maxMessageLength,
+    requestId: options.requestId,
     version: __MY_BAD_VERSION__,
   }
 }

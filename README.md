@@ -63,6 +63,8 @@ html = injectOverlay(html, report, { channel: '/__my-bad', startMinimized: statu
 
 `startMinimized: true` always mounts minimised, even if the user last expanded an overlay in this origin. Errors arriving over the channel leave the current minimised state alone.
 
+Pass `requestId` alongside the same id given to `channel.setError` so the channel only sends this page the errors its own request produced. Without it the page's path is matched against the request instead. Errors published with no request (compile errors, client runtime errors) reach every page.
+
 Use `injectOverlay` rather than `html.replace('</body>', ...)`: the inlined client contains `$` sequences that a string replacement would interpret.
 
 ### Serving the client separately
@@ -174,6 +176,7 @@ server.on('request', (req, res) => channel.handler(req, res).then(handled => han
 // or fetch-style: await channel.fetchHandler(request)
 
 channel.setError(report) // pages swap content in place
+channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
 channel.clearError() // pages reload, overlays dismiss
 channel.warn(report) // toast
 channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer

@@ -32,8 +32,8 @@ async function listen(channel: ReturnType<typeof createChannel>): Promise<string
   return `http://127.0.0.1:${address.port}/__my-bad`
 }
 
-async function readEvents(url: string, count: number, signal: AbortSignal): Promise<Array<{ event: string, data: any }>> {
-  const res = await fetch(`${url}/events`, { signal })
+async function readEvents(url: string, count: number, signal: AbortSignal, query = ''): Promise<Array<{ event: string, data: any }>> {
+  const res = await fetch(`${url}/events${query}`, { signal })
   const reader = res.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -104,6 +104,58 @@ describe('createChannel', () => {
     expect((await fetch(`${url}/history/${reports[2]!.id}`)).status).toBe(200)
     expect((await fetch(`${url}/history/${reports[0]!.id}`)).status).toBe(404)
     expect((await fetch(`${url}/nothing`)).status).toBe(404)
+  })
+
+  it('sends an error only to the pages its request concerns', async () => {
+    const channel = createChannel()
+    const url = await listen(channel)
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+
+    const controller = new AbortController()
+    const mine = readEvents(url, 2, controller.signal, '?requestId=a&path=/about')
+    const theirs = readEvents(url, 2, controller.signal, '?requestId=b&path=/contact')
+    while (channel.clients < 2) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.setError(report, 'a', 'GET /about')
+    const [[, set], [, other]] = await Promise.all([mine, theirs])
+    controller.abort()
+
+    expect(set).toMatchObject({ event: 'error:set', data: { report: { id: report.id }, requestId: 'a', request: 'GET /about' } })
+    expect(other).toMatchObject({ event: 'history', data: { history: [{ id: report.id }] } })
+  })
+
+  it('ignores a clear naming a report that is no longer current', async () => {
+    const events: string[] = []
+    const channel = createChannel({ sink: event => void events.push(event.type) })
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+
+    channel.setError(report, 'a', 'GET /about')
+    channel.clearError(report.id)
+    channel.clearError(report.id)
+    expect(events).toEqual(['error:set', 'error:clear'])
+    channel.close()
+  })
+
+  it('announces the current error in hello only to the pages it concerns', async () => {
+    const channel = createChannel()
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    const hello = async (query: string): Promise<any> => {
+      const res = await channel.fetchHandler(new Request(`http://localhost/__my-bad/events${query}`))
+      const reader = res!.body!.getReader()
+      const { value } = await reader.read()
+      await reader.cancel()
+      return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
+    }
+
+    channel.setError(report, 'a', 'GET /about')
+    expect(await hello('?requestId=a')).toMatchObject({ current: { id: report.id } })
+    expect(await hello('?path=/about')).toMatchObject({ current: { id: report.id } })
+    expect((await hello('?requestId=b&path=/contact')).current).toBeUndefined()
+    expect((await hello('?requestId=b&path=/contact')).history).toMatchObject([{ id: report.id }])
+    channel.setError(report)
+    expect(await hello('?requestId=b')).toMatchObject({ current: { id: report.id } })
+    channel.close()
   })
 
   it('works through the fetch handler', async () => {

@@ -3,7 +3,7 @@ import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml } from '../escape'
-import { ICONS, renderToast, renderView, reportEntries } from '../view'
+import { ICONS, renderPager, renderToast, renderView, reportEntries } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -61,7 +61,7 @@ function session(key: string, value?: string | null): string | null {
   return store(() => sessionStorage, key, value)
 }
 
-/** The area is resolved lazily: reading it throws outright on an opaque origin. */
+/** The area is read lazily: touching it throws outright on an opaque origin. */
 function store(getArea: () => Storage, key: string, value?: string | null): string | null {
   try {
     const area = getArea()
@@ -461,12 +461,28 @@ function updateBadges(m: Mount): void {
   }
 }
 
+/** The channel only sends this page the errors its own request produced, and those from no request at all. */
+function eventsUrl(m: Mount): string {
+  const query = new URLSearchParams({ path: `${location.pathname}${location.search}` })
+  if (m.state.requestId) {
+    query.set('requestId', m.state.requestId)
+  }
+  return `${m.state.channel}/events?${query}`
+}
+
+function updatePager(m: Mount): void {
+  const pager = m.root.querySelector('[data-pager]')
+  if (pager) {
+    pager.outerHTML = renderPager(m.state.report, m.state.history)
+  }
+}
+
 function connect(m: Mount): void {
   const base = m.state.channel
   if (!base || typeof EventSource === 'undefined') {
     return
   }
-  const source = new EventSource(`${base}/events`)
+  const source = new EventSource(eventsUrl(m))
   source.addEventListener('open', () => setLive(m, true))
   source.addEventListener('error', () => setLive(m, false))
   const on = <T extends ChannelEvent['type']>(type: T, handler: (payload: Extract<ChannelEvent, { type: T }>['payload']) => void) => {
@@ -488,6 +504,10 @@ function connect(m: Mount): void {
     else if (payload.history) {
       m.state.history = payload.history
     }
+  })
+  on('history', (payload) => {
+    m.state.history = payload.history
+    updatePager(m)
   })
   on('error:set', (payload) => {
     previewDismissed = false

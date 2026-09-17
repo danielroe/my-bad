@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ErrorReport, HistoryEntry } from '../types'
-import type { BuildProgress, ChannelEvent, LogEntry } from './protocol'
+import type { BuildProgress, ChannelEvent, LogEntry, ReportRequest } from './protocol'
+import type { ClientScope } from './scope'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
@@ -8,10 +9,11 @@ import { json } from 'node:stream/consumers'
 import { openInEditor } from './open'
 import { isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
 import { toHistoryEntry } from './protocol'
+import { concernsClient, scopeFromQuery } from './scope'
 
 export { openInEditor } from './open'
 
-export type { BuildProgress, ChannelEvent, LogEntry, LogLevel } from './protocol'
+export type { BuildProgress, ChannelEvent, LogEntry, LogLevel, ReportRequest } from './protocol'
 export { toHistoryEntry } from './protocol'
 
 export interface OpenRequest {
@@ -55,7 +57,8 @@ export interface Channel {
   handler: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>
   /** Fetch-style handler returning `undefined` for unknown paths. */
   fetchHandler: (request: Request) => Promise<Response | undefined>
-  setError: (report: ErrorReport) => void
+  /** Publish the current error. Naming the request it came from (`requestId`, `METHOD /path?query`) sends it only to the pages that request concerns. */
+  setError: (report: ErrorReport, requestId?: string, request?: string) => void
   clearError: (id?: string) => void
   warn: (report: ErrorReport) => void
   log: (entry: Omit<LogEntry, 'timestamp'> & { timestamp?: number }) => void
@@ -83,6 +86,7 @@ function leastAdvanced(live: Map<string, BuildProgress>): BuildProgress | undefi
 interface Client {
   send: (chunk: string) => void
   close: () => void
+  scope: ClientScope
 }
 
 const SSE_HEADERS = {
@@ -97,7 +101,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const reports = new Map<string, ErrorReport>()
   const live = new Map<string, BuildProgress>()
   let current: ErrorReport | undefined
+  let currentRequest: ReportRequest = {}
   const clients = new Set<Client>()
+  const concerned = (client: Client) => concernsClient(client.scope, currentRequest)
   const actions: string[] = []
   if (options.open) {
     actions.push('open')
@@ -106,7 +112,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const keepalive = setInterval(send, options.keepalive ?? 15_000, ': ping\n\n')
   keepalive.unref?.()
 
-  let helloFrame: string | undefined
+  const helloFrames = new Map<boolean, string>()
 
   function history(): HistoryEntry[] {
     return [...reports.values()].map(toHistoryEntry)
@@ -118,11 +124,14 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     while (reports.size > max) {
       reports.delete(reports.keys().next().value!)
     }
-    helloFrame = undefined
+    helloFrames.clear()
   }
 
-  function send(chunk: string): void {
+  function send(chunk: string, to: (client: Client) => boolean = () => true): void {
     for (const client of clients) {
+      if (!to(client)) {
+        continue
+      }
       try {
         client.send(chunk)
       }
@@ -132,15 +141,22 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
   }
 
-  function broadcast(event: ChannelEvent): void {
-    send(encode(event))
+  function broadcast(event: ChannelEvent, to?: (client: Client) => boolean): void {
+    send(encode(event), to)
     if (options.sink) {
       Promise.resolve(options.sink(event)).catch(() => {})
     }
   }
 
-  function hello(): string {
-    return helloFrame ??= encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current, history: history() } })
+  /** The current error is only announced to the pages it concerns; the rest just learn it happened. */
+  function hello(scope: ClientScope): string {
+    const mine = current !== undefined && concernsClient(scope, currentRequest)
+    let frame = helloFrames.get(mine)
+    if (!frame) {
+      frame = encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current: mine ? current : undefined, history: history() } })
+      helloFrames.set(mine, frame)
+    }
+    return frame
   }
 
   /** Roots are resolved through symlinks, so a project reached by a link still matches. */
@@ -228,8 +244,8 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   const channel: Channel = {
     async handler(req, res) {
-      const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
-      const matched = route(pathname)
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      const matched = route(url.pathname)
       if (!matched) {
         return false
       }
@@ -243,9 +259,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         const client: Client = {
           send: chunk => void res.write(chunk),
           close: () => res.end(),
+          scope: scopeFromQuery(url.searchParams),
         }
         clients.add(client)
-        client.send(hello())
+        client.send(hello(client.scope))
         req.on('close', () => clients.delete(client))
         return true
       }
@@ -265,7 +282,8 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     },
 
     async fetchHandler(request) {
-      const matched = route(new URL(request.url).pathname)
+      const url = new URL(request.url)
+      const matched = route(url.pathname)
       if (!matched) {
         return
       }
@@ -280,9 +298,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
             client = {
               send: chunk => controller.enqueue(encoder.encode(chunk)),
               close: () => controller.close(),
+              scope: scopeFromQuery(url.searchParams),
             }
             clients.add(client)
-            client.send(hello())
+            client.send(hello(client.scope))
           },
           cancel() {
             if (client) {
@@ -307,18 +326,21 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       return new Response(body, { status, headers: JSON_HEADERS })
     },
 
-    setError(report) {
+    setError(report, requestId, request) {
       remember(report)
       current = report
-      broadcast({ type: 'error:set', payload: { report, history: history() } })
+      currentRequest = { ...(requestId && { requestId }), ...(request && { request }) }
+      broadcast({ type: 'error:set', payload: { report, history: history(), ...currentRequest } }, concerned)
+      send(encode({ type: 'history', payload: { history: history() } }), client => !concerned(client))
     },
     clearError(id) {
-      if (id && current && current.id !== id) {
+      if (id && current?.id !== id) {
         return
       }
+      broadcast({ type: 'error:clear', payload: { id } }, concerned)
       current = undefined
-      helloFrame = undefined
-      broadcast({ type: 'error:clear', payload: { id } })
+      currentRequest = {}
+      helloFrames.clear()
     },
     warn(report) {
       const warning = { ...report, kind: 'warning' as const }

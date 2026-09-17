@@ -20,9 +20,17 @@ export interface BuildProgress {
   source?: string
 }
 
+/** The request a report came from, so a page can tell whether an error is about itself. */
+export interface ReportRequest {
+  requestId?: string
+  /** `METHOD /path?query`. */
+  request?: string
+}
+
 export type ChannelEvent
   = | { type: 'hello', payload: { version: string, actions: string[], current?: ErrorReport, history?: HistoryEntry[] } }
-    | { type: 'error:set', payload: { report: ErrorReport, history: HistoryEntry[] } }
+    | { type: 'error:set', payload: { report: ErrorReport, history: HistoryEntry[] } & ReportRequest }
+    | { type: 'history', payload: { history: HistoryEntry[] } }
     | { type: 'error:clear', payload: { id?: string } }
     | { type: 'warning', payload: { report: ErrorReport, history: HistoryEntry[] } }
     | { type: 'log', payload: LogEntry }

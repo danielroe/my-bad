@@ -37,6 +37,8 @@ export interface PageState {
   editor?: string
   /** Characters of the message shown before it has to be expanded. */
   maxMessageLength?: number
+  /** Correlation id of the request this page was rendered for. */
+  requestId?: string
   /** CSS applied to the overlay shadow root. */
   styles?: string
   /** URL of a stylesheet to load into the overlay shadow root, alongside `styles`. */

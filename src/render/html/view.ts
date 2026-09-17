@@ -69,7 +69,7 @@ ${report.sections.length ? renderInfoDialog(report.sections) : ''}
 <section class="mb-toasts" data-toasts aria-live="polite" aria-label="Warnings"></section>`
 }
 
-function renderPager(report: ErrorReport, history?: HistoryEntry[]): string {
+export function renderPager(report: ErrorReport, history?: HistoryEntry[]): string {
   if (!history || history.length < 2) {
     return `<li class="mb-pager" data-pager hidden></li>`
   }
