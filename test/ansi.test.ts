@@ -152,4 +152,12 @@ describe('echoing causes', () => {
     expect(output).toContain('x is not a function')
     expect(output).not.toContain('HTTPError')
   })
+
+  it('keeps an echoing cause that carries related errors', () => {
+    const chain = report('FetchError', 'Server error', [{ ...report('AggregateError', 'Server error'), errors: [report('TypeError', 'x is not a function')], omittedErrors: 2 }])
+    const output = stripAnsi(renderAnsi(chain, { colors: false, width: 100 }))
+
+    expect(output).toContain('x is not a function')
+    expect(output).toContain('and 2 more')
+  })
 })
