@@ -452,6 +452,22 @@ describe('copy formats', () => {
     await page.close()
   })
 
+  it('restores the button label after repeated copies', async () => {
+    channel.setError(await report('Copy twice'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} } })
+    })
+    await page.goto(origin)
+    const button = page.getByRole('button', { name: 'Copy error', exact: true })
+    await button.click()
+    await page.locator('[data-copied]').click()
+    await page.locator('[data-copied]').click()
+    await waitFor(() => button.count(), 1, 4000)
+    expect(await page.locator('[data-copied]').count()).toBe(0)
+    await page.close()
+  })
+
   it('offers a keyboard copy when every clipboard path is refused', async () => {
     channel.setError(await report('Clipboard unavailable'))
     const page = await browser.newPage()

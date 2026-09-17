@@ -2,7 +2,7 @@ import type { Stats } from 'node:fs'
 import type { SourceLoader } from '../types'
 import type { RawSourceMap } from './sourcemap'
 import { Buffer } from 'node:buffer'
-import { statSync } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, isFilePath, resolvePath, withoutQuery } from '../report/path'
 import { sourceMapLoader } from './sourcemap'
@@ -17,7 +17,7 @@ export interface FsLoaderOptions {
   sidecar?: boolean
   /** Parse `sourceMappingURL` comments. Default `true`. */
   inline?: boolean
-  /** Directories the loader may read from, maps included. Unrestricted by default; symlinks are not resolved. */
+  /** Directories the loader may read from, maps included. Paths are canonicalised, so a symlink out of a root is denied. Unrestricted by default. */
   roots?: string[]
   /** Further per-file check, applied after `roots`. */
   canRead?: (file: string) => boolean
@@ -123,23 +123,28 @@ async function readFresh(path: string): Promise<CachedFile | undefined> {
 export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
   const { sidecar = true, inline = true, roots, canRead } = options
   const linked = new Map<string, string>()
-  const bounds = roots?.map(root => normalizePath(root).replace(/\/$/, ''))
+  const bounds = roots?.map(root => canonicalPath(root).replace(/\/$/, ''))
 
-  function allowed(path: string): boolean {
+  /** The canonical path to read, or `undefined` when it is out of bounds. */
+  function allowed(path: string): string | undefined {
+    let target = path
     if (bounds) {
-      const file = normalizePath(path)
-      if (!bounds.some(root => file === root || file.startsWith(`${root}/`))) {
-        return false
+      target = canonicalPath(path)
+      if (!bounds.some(root => target === root || target.startsWith(`${root}/`))) {
+        return
       }
     }
-    return canRead ? canRead(path) : true
+    return canRead && !canRead(path) ? undefined : target
   }
 
-  const readAllowed = (path: string) => allowed(path) ? read(path) : Promise.resolve(undefined)
+  const readAllowed = (path: string) => {
+    const target = allowed(path)
+    return target === undefined ? Promise.resolve(undefined) : read(target)
+  }
 
   async function getSourceMap(file: string): Promise<RawSourceMap | undefined> {
     linked.delete(file)
-    if (!allowed(file)) {
+    if (allowed(file) === undefined) {
       return
     }
     const sidecarFile = sidecar ? await readAllowed(`${file}.map`) : undefined
@@ -180,6 +185,21 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
     read: readContents,
     readCompiled: readContents,
   }
+}
+
+/** Lexical containment can be escaped through a symlink, so roots and candidates are compared as real paths. */
+function canonicalPath(path: string): string {
+  try {
+    return normalizePath(realpathSync(path))
+  }
+  catch {}
+  const normalized = normalizePath(path)
+  const parent = dirname(normalized)
+  if (parent === normalized || parent === '.') {
+    return normalized
+  }
+  const base = canonicalPath(parent)
+  return `${base === '/' ? '' : base}/${normalized.split('/').pop()}`
 }
 
 function normalizePath(path: string): string {

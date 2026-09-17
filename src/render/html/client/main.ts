@@ -206,15 +206,24 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
   focusHeading(m)
 }
 
+const labelRestores = new WeakMap<HTMLElement, () => void>()
+
 function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFailed'): () => void {
+  labelRestores.get(button)?.()
   const original = button.innerHTML
   button.textContent = label
   button.dataset[flag] = ''
-  return () => {
+  const restore = () => {
+    if (labelRestores.get(button) !== restore) {
+      return
+    }
+    labelRestores.delete(button)
     button.innerHTML = original
     delete button.dataset.copied
     delete button.dataset.copyFailed
   }
+  labelRestores.set(button, restore)
+  return restore
 }
 
 function flash(button: HTMLElement, label: string): void {

@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { mkdtempSync } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
@@ -160,6 +160,13 @@ describe('fsLoader containment', () => {
     const loader = fsLoader({ canRead: file => !file.endsWith('.env') })
     expect(await loader.read!(inside)).toBe('const a = 1\n')
     expect(await loader.read!(outside)).toBeUndefined()
+  })
+
+  it('denies a symlink pointing out of a root', async () => {
+    const link = join(dir, 'app', 'link.env')
+    await symlink(outside, link)
+    const loader = fsLoader({ roots: [join(dir, 'app')] })
+    expect(await loader.read!(link)).toBeUndefined()
   })
 
   it('reads anywhere by default', async () => {
