@@ -3,7 +3,7 @@ import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml } from '../escape'
-import { ICONS, renderPager, renderToast, renderView, reportEntries } from '../view'
+import { ICONS, pagerIndex, renderPager, renderToast, renderView, reportEntries } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -346,8 +346,7 @@ async function open(m: Mount, file: string, line?: string, column?: string): Pro
 
 async function navigateHistory(m: Mount, dir: number): Promise<void> {
   const history = m.state.history ?? []
-  const index = history.findIndex(entry => entry.id === m.state.report.id)
-  const target = history[index + dir]
+  const target = history[pagerIndex(m.state.report, history) + dir]
   if (!target || !m.state.channel) {
     return
   }

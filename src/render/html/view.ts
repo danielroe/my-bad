@@ -62,18 +62,23 @@ export function renderView(state: PageState, selected = 'r'): string {
 <main class="mb-main" data-report-id="${escapeHtml(report.id)}" tabindex="-1">
   ${renderReport(reportEntries(report).find(entry => entry.path === selected)?.report ?? report, state, selected)}
   ${renderFallback(state, selected)}
-  <div class="mb-secondary">${report.sections.length ? `<button class="mb-tool" type="button" data-action="info">${ICONS.info}Request &amp; environment</button>` : ''}${live ? `<button class="mb-tool mb-tool-logs" type="button" data-action="logs" aria-pressed="false" aria-controls="mb-logs" title="Server logs" aria-label="Server logs">${ICONS.logs}Logs<span class="mb-badge" data-log-count hidden></span></button>` : ''}${state.history?.length ? `<details class="mb-history"><summary>${ICONS.history}History</summary><ol>${state.history.map((entry, index) => `<li><button type="button" data-action="history" data-dir="${index - Math.max(0, state.history!.findIndex(item => item.id === report.id))}">${escapeHtml(entry.message)}</button></li>`).join('')}</ol></details>` : ''}</div>
+  <div class="mb-secondary">${report.sections.length ? `<button class="mb-tool" type="button" data-action="info">${ICONS.info}Request &amp; environment</button>` : ''}${live ? `<button class="mb-tool mb-tool-logs" type="button" data-action="logs" aria-pressed="false" aria-controls="mb-logs" title="Server logs" aria-label="Server logs">${ICONS.logs}Logs<span class="mb-badge" data-log-count hidden></span></button>` : ''}${state.history?.length ? `<details class="mb-history"><summary>${ICONS.history}History</summary><ol>${state.history.map((entry, index) => `<li><button type="button" data-action="history" data-dir="${index - pagerIndex(report, state.history!)}">${escapeHtml(entry.message)}</button></li>`).join('')}</ol></details>` : ''}</div>
 </main>
 ${live ? renderLogDrawer() : ''}
 ${report.sections.length ? renderInfoDialog(report.sections) : ''}
 <section class="mb-toasts" data-toasts aria-live="polite" aria-label="Warnings"></section>`
 }
 
+/** Position of the shown report in the history, falling back to the first entry when the history has dropped it. */
+export function pagerIndex(report: ErrorReport, history: HistoryEntry[]): number {
+  return Math.max(0, history.findIndex(entry => entry.id === report.id))
+}
+
 export function renderPager(report: ErrorReport, history?: HistoryEntry[]): string {
   if (!history || history.length < 2) {
     return `<li class="mb-pager" data-pager hidden></li>`
   }
-  const index = Math.max(0, history.findIndex(entry => entry.id === report.id))
+  const index = pagerIndex(report, history)
   return `<li class="mb-pager" data-pager><span role="group" aria-label="Error history">
     <button class="mb-tool" type="button" data-action="history" data-dir="-1"${attr('disabled', index <= 0)} title="Previous error" aria-label="Previous error">${ICONS.prev}</button>
     <span data-pager-label>${index + 1} of ${history.length}</span>

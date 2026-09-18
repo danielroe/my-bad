@@ -335,3 +335,15 @@ describe('long messages', () => {
     expect(html).not.toContain('data-message-rest')
   })
 })
+
+describe('history pager', () => {
+  it('points navigation at the first entry when the history has dropped the shown report', async () => {
+    const r = await report()
+    const entry = (id: string) => ({ id, kind: 'error' as const, name: 'Error', message: id, timestamp: 0 })
+    const html = markup(renderPage(r, { history: [entry('a'), entry('b')] }))
+    expect(html).toContain('<span data-pager-label>1 of 2</span>')
+    expect(html).toContain('data-action="history" data-dir="-1" disabled')
+    expect(html).toContain('data-action="history" data-dir="0">a')
+    expect(html).toContain('data-action="history" data-dir="1">b')
+  })
+})
