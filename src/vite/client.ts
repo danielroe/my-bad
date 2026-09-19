@@ -2,7 +2,9 @@
 
 /**
  * Browser-side companion for the Vite plugin. Mounts the overlay HTML pushed
- * over Vite's HMR channel and removes it when the error clears.
+ * over Vite's HMR channel and removes it when the error clears. A client already
+ * listening to the channel renders later errors itself, so only the first is
+ * mounted from here.
  */
 export function installMyBadClient(hot: ImportMetaHot | undefined = import.meta.hot): void {
   if (!hot) {
@@ -14,6 +16,9 @@ export function installMyBadClient(hot: ImportMetaHot | undefined = import.meta.
     }
   }
   hot.on('my-bad:error', ({ html }: { html: string }) => {
+    if (window.__MY_BAD_CLIENT__) {
+      return
+    }
     remove()
     const template = document.createElement('template')
     template.innerHTML = html

@@ -96,54 +96,55 @@ function mount(): Mount | undefined {
     return
   }
   if (state.mode === 'overlay') {
-    const host = (document.currentScript?.previousElementSibling?.previousElementSibling as HTMLElement | null) ?? document.querySelector(state.tag ?? 'my-bad-overlay')
-    if (!host) {
-      return
-    }
-    const shadow = host.attachShadow({ mode: 'open' })
-    const sheets: HTMLElement[] = []
-    if (state.stylesUrl) {
-      const link = document.createElement('link')
-      link.rel = 'stylesheet'
-      link.href = state.stylesUrl
-      sheets.push(link)
-    }
-    const style = document.createElement('style')
-    style.textContent = state.styles ?? ''
-    sheets.push(style)
-    const overlay = document.createElement('div')
-    overlay.className = 'mb-overlay'
-    overlay.dataset.overlay = ''
-    overlay.setAttribute('role', 'dialog')
-    overlay.setAttribute('aria-modal', 'true')
-    overlay.setAttribute('aria-label', 'Error details')
-    overlay.setAttribute('lang', 'en')
-    const root = document.createElement('div')
-    root.className = 'mb-root'
-    root.dataset.myBadRoot = ''
-    root.innerHTML = renderView(state)
-    const close = pipButton('hide', 'mb-overlay-close', 'Hide error overlay', ICONS.close)
-    const expand = pipButton('expand', 'mb-overlay-expand', 'Show error details', EXPAND_ICON)
-    const restore = document.createElement('button')
-    restore.type = 'button'
-    restore.className = 'mb-restore'
-    restore.dataset.action = 'restore'
-    restore.hidden = true
-    restore.textContent = 'Show error overlay'
-    const preview = document.createElement('div')
-    preview.className = 'mb-preview'
-    preview.dataset.preview = ''
-    preview.hidden = true
-    preview.innerHTML = `<button type="button" class="mb-preview-toggle" data-action="minimize" title="Show page behind this error" aria-label="Show page behind this error"><iframe class="mb-preview-frame" title="" aria-hidden="true" tabindex="-1" sandbox="" inert></iframe><span class="mb-preview-label">Show page</span></button><button type="button" class="mb-pip-button mb-preview-close" data-action="hide-preview" title="Hide page preview" aria-label="Hide page preview">${ICONS.close}</button>`
-    overlay.append(expand, close, root, preview)
-    shadow.append(...sheets, overlay, restore)
-    return { state, themeTarget: host, root, overlay, restore, preview }
+    const host = (document.currentScript?.previousElementSibling?.previousElementSibling as HTMLElement | null) ?? document.querySelector<HTMLElement>(state.tag ?? 'my-bad-overlay')
+    return host ? overlayMount(state, host) : undefined
   }
   const root = document.querySelector<HTMLElement>('[data-my-bad-root]')
   if (!root) {
     return
   }
   return { state, themeTarget: document.documentElement, root }
+}
+
+function overlayMount(state: PageState, host: HTMLElement): Mount {
+  const shadow = host.attachShadow({ mode: 'open' })
+  const sheets: HTMLElement[] = []
+  if (state.stylesUrl) {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = state.stylesUrl
+    sheets.push(link)
+  }
+  const style = document.createElement('style')
+  style.textContent = state.styles ?? ''
+  sheets.push(style)
+  const overlay = document.createElement('div')
+  overlay.className = 'mb-overlay'
+  overlay.dataset.overlay = ''
+  overlay.setAttribute('role', 'dialog')
+  overlay.setAttribute('aria-modal', 'true')
+  overlay.setAttribute('aria-label', 'Error details')
+  overlay.setAttribute('lang', 'en')
+  const root = document.createElement('div')
+  root.className = 'mb-root'
+  root.dataset.myBadRoot = ''
+  root.innerHTML = renderView(state)
+  const close = pipButton('hide', 'mb-overlay-close', 'Hide error overlay', ICONS.close)
+  const expand = pipButton('expand', 'mb-overlay-expand', 'Show error details', EXPAND_ICON)
+  const restore = document.createElement('button')
+  restore.type = 'button'
+  restore.className = 'mb-restore'
+  restore.dataset.action = 'restore'
+  restore.hidden = true
+  restore.textContent = 'Show error overlay'
+  const preview = document.createElement('div')
+  preview.className = 'mb-preview'
+  preview.dataset.preview = ''
+  preview.hidden = true
+  preview.innerHTML = `<button type="button" class="mb-preview-toggle" data-action="minimize" title="Show page behind this error" aria-label="Show page behind this error"><iframe class="mb-preview-frame" title="" aria-hidden="true" tabindex="-1" sandbox="" inert></iframe><span class="mb-preview-label">Show page</span></button><button type="button" class="mb-pip-button mb-preview-close" data-action="hide-preview" title="Hide page preview" aria-label="Hide page preview">${ICONS.close}</button>`
+  overlay.append(expand, close, root, preview)
+  shadow.append(...sheets, overlay, restore)
+  return { state, themeTarget: host, root, overlay, restore, preview }
 }
 
 function applyTheme(m: Mount): void {
@@ -186,7 +187,27 @@ function childNodesOf(el: Element | null): ChildNode[] {
   return el ? [...el.childNodes] : []
 }
 
+/** Pending removal of a dismissed overlay's host. */
+let dismissal: ReturnType<typeof setTimeout> | undefined
+
+/** Cancel a pending dismissal, and build a new host if it has already gone. */
+function revive(m: Mount): void {
+  if (m.state.mode !== 'overlay') {
+    return
+  }
+  clearTimeout(dismissal)
+  dismissal = undefined
+  if (m.overlay?.isConnected) {
+    return
+  }
+  const host = document.createElement(m.themeTarget.localName)
+  document.body.append(host)
+  Object.assign(m, overlayMount(m.state, host))
+  activate(m)
+}
+
 function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void {
+  revive(m)
   m.selected = undefined
   m.state.report = report
   if (history) {
@@ -481,6 +502,7 @@ function connect(m: Mount): void {
   if (!base || typeof EventSource === 'undefined') {
     return
   }
+  window.__MY_BAD_CLIENT__ = true
   const source = new EventSource(eventsUrl(m))
   source.addEventListener('open', () => setLive(m, true))
   source.addEventListener('error', () => setLive(m, false))
@@ -521,10 +543,12 @@ function connect(m: Mount): void {
   })
   on('error:clear', () => {
     if (m.overlay) {
+      const host = (m.overlay.getRootNode() as ShadowRoot | undefined)?.host
       m.overlay.setAttribute('data-hidden', '')
       setHostInert(m, false)
       m.restore?.remove()
-      setTimeout(() => (m.overlay?.getRootNode() as ShadowRoot | undefined)?.host?.remove(), 250)
+      clearTimeout(dismissal)
+      dismissal = setTimeout(() => host?.remove(), 250)
     }
     else {
       source.close()
@@ -765,7 +789,6 @@ function setupOverlay(m: Mount): void {
   if (m.preview) {
     draggable(m, m.preview, () => true, () => setMinimized(m, true))
   }
-  addEventListener('resize', () => sizePreview(m))
   overlay.addEventListener('keydown', (event) => {
     const layered = m.root.querySelector('dialog[open], [data-menu-list]:not([hidden])') || (event.target as HTMLElement).closest('[data-toast]')
     if (event.key === 'Escape' && !overlay.hasAttribute('data-minimized') && !layered) {
@@ -1037,8 +1060,8 @@ function bind(m: Mount): void {
   })
 }
 
-const m = mount()
-if (m) {
+/** Wire up a freshly built view. Window-level listeners stay outside, so reviving does not stack them. */
+function activate(m: Mount): void {
   m.root.querySelector('[data-fallback]')?.remove()
   applyTheme(m)
   bind(m)
@@ -1046,9 +1069,17 @@ if (m) {
     setupOverlay(m)
   }
   markOverflowingSnippets(m)
-  addEventListener('resize', () => markOverflowingSnippets(m))
   if (!m.overlay?.hasAttribute('data-minimized')) {
     focusHeading(m)
   }
+}
+
+const m = mount()
+if (m) {
+  activate(m)
+  addEventListener('resize', () => {
+    markOverflowingSnippets(m)
+    sizePreview(m)
+  })
   connect(m)
 }

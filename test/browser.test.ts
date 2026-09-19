@@ -78,6 +78,10 @@ beforeAll(async () => {
       res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad', requestId })}</body></html>`)
       return
     }
+    if (req.url === '/overlay-tagged') {
+      res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad', tag: 'nuxt-error-overlay' })}</body></html>`)
+      return
+    }
     if (req.url === '/overlay') {
       res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad' })}</body></html>`)
       return
@@ -241,10 +245,36 @@ describe('browser client', () => {
     expect(await b.locator('my-bad-overlay').locator('[data-message]').first().textContent()).toBe('scoped start')
 
     channel.setError(await report('for everyone'))
-    await waitFor(() => b.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'for everyone')
     for (const page of pages) {
+      await waitFor(() => page.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'for everyone')
       await page.close()
     }
+  }, 30_000)
+
+  it('builds a new overlay for an error arriving after a clear', async () => {
+    channel.setError(await report('before the clear'))
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.goto(`${origin}/overlay-tagged`)
+    const overlay = page.locator('nuxt-error-overlay')
+    const message = () => overlay.locator('[data-message]').first().textContent()
+    await waitFor(message, 'before the clear')
+
+    channel.clearError()
+    await waitFor(() => overlay.count(), 0)
+    channel.setError(await report('after the clear'))
+    await waitFor(message, 'after the clear')
+    expect(await overlay.count()).toBe(1)
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+    expect(await overlay.locator('[data-overlay]').isVisible()).toBe(true)
+
+    channel.clearError()
+    channel.clearError()
+    channel.setError(await report('cleared and replaced at once'))
+    await waitFor(message, 'cleared and replaced at once')
+    await new Promise(resolve => setTimeout(resolve, 400))
+    expect(await overlay.count()).toBe(1)
+    expect(await message()).toBe('cleared and replaced at once')
+    await page.close()
   }, 30_000)
 
   it('keeps a startMinimized overlay minimised whatever the user last chose', async () => {
