@@ -7,12 +7,12 @@ import { vuePreset } from './vue'
 export interface NuxtPresetOptions {
   /** Versions for the environment section. */
   versions?: Record<string, string | undefined>
-  /** Base URL for error code documentation. */
+  /** Base URL for error code documentation. Default `https://nuxt.com/docs/errors/`, which redirects to the current version. */
   docsBase?: string
   redact?: string[]
 }
 
-const NUXT_CODE_RE = /^[BE]\d{4}$/i
+const NUXT_CODE_RE = /^(?:NUXT_)?(?<code>[BE]\d{4})$/i
 
 /**
  * Nuxt support: error codes linked to docs, Nuxt/Nitro/Vue internals collapsed,
@@ -36,8 +36,9 @@ export function nuxtPreset(options: NuxtPresetOptions = {}): ReportPreset {
         name: 'nuxt',
         transform(report, ctx) {
           const visit = (node: typeof report) => {
-            if (node.code && NUXT_CODE_RE.test(node.code) && !node.docsUrl) {
-              node.docsUrl = `${docsBase}${node.code.toLowerCase()}`
+            const code = node.code && !node.docsUrl && !node.diagnostic ? NUXT_CODE_RE.exec(node.code)?.groups?.code : undefined
+            if (code) {
+              node.docsUrl = `${docsBase}${code.toLowerCase()}`
             }
             node.causes.forEach(visit)
             node.errors?.forEach(visit)

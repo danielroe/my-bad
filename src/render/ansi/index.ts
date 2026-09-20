@@ -62,7 +62,7 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
 
   const icon = report.kind === 'warning' ? p.yellow('⚠') : p.red('✖')
   const name = report.kind === 'warning' ? p.yellow(p.bold(report.name)) : p.red(p.bold(report.name))
-  const meta = [report.code && p.dim(`[${report.code}]`), report.status && p.dim(`(${report.status})`)].filter(Boolean).join(' ')
+  const meta = [report.code !== report.name && report.code && p.dim(`[${report.code}]`), report.status && p.dim(`(${report.status})`)].filter(Boolean).join(' ')
   const header = depth === 0 ? (ctx.icon ? `${icon} ${name}` : name) : `${p.dim('Caused by:')} ${name}`
   const title = `${header}${meta ? ` ${meta}` : ''}${p.dim(':')} `
   const { head, rest } = clampMessage(report.message, ctx.maxMessageLength)

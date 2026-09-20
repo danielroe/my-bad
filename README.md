@@ -49,6 +49,20 @@ else {
 }
 ```
 
+### Diagnostics
+
+An error that carries its own guidance is read without any configuration. `fix` becomes the report's `hint`, a `docs` URL becomes `docsUrl`, and `sources` (`file:line:column` strings) become app frames with snippets, or a `Sources` section when they cannot be resolved to a readable file. An error named after its own `code` is treated as self-describing: the heading shows the code once, and presets leave its `docsUrl` alone, including when it has none.
+
+```ts
+class Diagnostic extends Error {
+  name = 'NUXT_E1001'
+  code = 'NUXT_E1001'
+  fix = 'Pass a non-empty `name` prop to `<Widget>`.'
+  docs = 'https://nuxt.com/docs/4.x/errors/e1001'
+  sources = ['pages/index.vue:2:16']
+}
+```
+
 `environment` labels where the error happened (`'Server'`, `'Client'`, or whatever your integration calls it) next to the error name.
 
 ### Overlay
@@ -198,6 +212,8 @@ The client script and stylesheet are served from `/__my-bad/client.js` and `/__m
 ## Presets
 
 `my-bad/presets` exports `envPreset`, `vuePreset`, `requestPreset` (alias `h3Preset`), `nitroPreset` and `nuxtPreset`. Presets contribute frame classification, sections (request, headers with redaction, route, environment), component traces and docs links for error codes.
+
+`nuxtPreset` links codes such as `E1001` or `NUXT_E1001` to `https://nuxt.com/docs/errors/e1001`, which redirects to the current version; pass `docsBase` to point elsewhere.
 
 ## 💻 Development
 

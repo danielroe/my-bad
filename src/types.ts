@@ -83,6 +83,11 @@ export interface ErrorReport {
   name: string
   message: string
   code?: string
+  /**
+   * The error named itself after its `code`, so the code is self-describing and
+   * presets must not invent a documentation URL it did not provide.
+   */
+  diagnostic?: boolean
   hint?: string
   docsUrl?: string
   status?: number
