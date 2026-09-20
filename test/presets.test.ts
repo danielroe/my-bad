@@ -67,4 +67,20 @@ describe('presets', () => {
     expect(report.sections.map(section => section.id)).toEqual(['route', 'env'])
     expect(report.sections[0]!.content).toEqual({ path: '/x?y', name: 'x', matched: 'x', layout: 'default', middleware: 'auth' })
   })
+
+  it('nuxt links NUXT_-prefixed codes and respects a docs base', async () => {
+    const report = await createReport(Object.assign(new Error('x'), { code: 'NUXT_E1001' }), { ...base, presets: [nuxtPreset()] })
+    expect(report.docsUrl).toBe('https://nuxt.com/docs/errors/e1001')
+    const custom = await createReport(Object.assign(new Error('x'), { code: 'NUXT_B0001' }), { ...base, presets: [nuxtPreset({ docsBase: 'https://nuxt.com/docs/3.x/errors' })] })
+    expect(custom.docsUrl).toBe('https://nuxt.com/docs/3.x/errors/b0001')
+  })
+
+  it('nuxt keeps a diagnostic’s own docs and invents none when it has one', async () => {
+    const diagnostic = { name: 'NUXT_E1001', code: 'NUXT_E1001', message: 'No `name` was provided.', docs: 'https://nuxt.com/docs/4.x/errors/e1001' }
+    const report = await createReport(diagnostic, { ...base, presets: [nuxtPreset({ docsBase: 'https://example.com/errors' })] })
+    expect(report.docsUrl).toBe('https://nuxt.com/docs/4.x/errors/e1001')
+
+    const opaque = await createReport({ name: 'NUXT_E1001', code: 'NUXT_E1001', message: 'No `name` was provided.' }, { ...base, presets: [nuxtPreset()] })
+    expect(opaque.docsUrl).toBeUndefined()
+  })
 })

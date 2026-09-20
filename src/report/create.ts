@@ -65,6 +65,7 @@ function collapseDuplicateCauses(report: ErrorReport): ErrorReport {
     ...report,
     name: generic && duplicate.name !== 'Error' ? duplicate.name : report.name,
     code: report.code ?? duplicate.code,
+    ...((report.diagnostic ?? duplicate.diagnostic) && { diagnostic: true as const }),
     hint: report.hint ?? duplicate.hint,
     docsUrl: report.docsUrl ?? duplicate.docsUrl,
     status: report.status ?? duplicate.status,
@@ -129,7 +130,15 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   const kind = options.kind ?? (quoted || isCompileInput(input) ? 'compile' : 'error')
   const frames = await buildFrames(quoted ?? input, error, ctx, kind)
 
+  const sources = await buildSourceFrames(error.sources, ctx)
+  if (sources.frames.length) {
+    frames.unshift(...sources.frames)
+  }
+
   const sections: Section[] = []
+  if (sources.unresolved.length) {
+    sections.push({ id: 'sources', title: 'Sources', content: sources.unresolved.join('\n') })
+  }
   if (error.data !== undefined) {
     sections.push({ id: 'data', title: 'Data', content: toSectionContent(error.data, options.maxSectionLength) })
   }
@@ -140,6 +149,9 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     name: quoted?.name ?? error.name,
     message: truncate(quoted ? quoted.message : kind === 'compile' ? stripEmbeddedFrame(error.message) : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
+    ...(error.diagnostic && { diagnostic: true as const }),
+    ...(error.hint && { hint: error.hint }),
+    ...(error.docsUrl && { docsUrl: error.docsUrl }),
     ...(error.status && { status: error.status }),
     frames,
     causes: [],
@@ -186,6 +198,10 @@ interface NormalizedError {
   message: string
   stack?: string
   code?: string
+  diagnostic?: boolean
+  hint?: string
+  docsUrl?: string
+  sources?: string[]
   status?: number
   data?: unknown
   cause?: unknown
@@ -196,11 +212,16 @@ function normalizeInput(input: unknown): NormalizedError {
   if (input instanceof Error || (typeof input === 'object' && input !== null && 'message' in input)) {
     const error = input as Error & Record<string, unknown>
     const status = error.statusCode ?? error.status
+    const code = typeof error.code === 'string' ? error.code : undefined
     return {
       name: typeof error.name === 'string' && error.name ? error.name : 'Error',
       message: stripAnsi(typeof error.message === 'string' ? error.message : String(error.message)),
       stack: typeof error.stack === 'string' ? error.stack : undefined,
-      code: typeof error.code === 'string' ? error.code : undefined,
+      code,
+      diagnostic: !!code && error.name === code,
+      hint: typeof error.fix === 'string' && error.fix ? stripAnsi(error.fix) : undefined,
+      docsUrl: typeof error.docs === 'string' && error.docs ? error.docs : undefined,
+      sources: Array.isArray(error.sources) ? error.sources.filter(source => typeof source === 'string' && source) : undefined,
       status: typeof status === 'number' ? status : undefined,
       data: error.data,
       cause: error.cause,
@@ -240,6 +261,32 @@ async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext
     id: file,
     loc: { file, line: Number(groups.line), column: Number(groups.column) },
   }
+}
+
+/**
+ * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`.
+ * Only entries that parse and can be read become frames; the rest are listed verbatim
+ * so nothing the thrower reported is lost.
+ */
+async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContext): Promise<{ frames: Frame[], unresolved: string[] }> {
+  const frames: Frame[] = []
+  const unresolved: string[] = []
+  for (const source of sources ?? []) {
+    const groups = TRAILING_POSITION_RE.exec(source)?.groups
+    const raw = groups ? normalizeSlashes(groups.file!) : undefined
+    const file = raw ? resolveFile(raw, ctx.options.cwd) : undefined
+    if (!file || await readSource(file, ctx) === undefined) {
+      unresolved.push(source)
+      continue
+    }
+    const frame: Frame = { file, line: Number(groups!.line), column: Number(groups!.column), type: 'app' }
+    if (ctx.options.snippets) {
+      frame.snippet = await loadSnippet(file, frame.line!, ctx)
+    }
+    addDisplayPaths(frame, ctx.options.cwd)
+    frames.push(frame)
+  }
+  return { frames, unresolved }
 }
 
 function isCompileInput(input: unknown): input is CompileErrorInput {

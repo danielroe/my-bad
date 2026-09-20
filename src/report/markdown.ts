@@ -17,7 +17,7 @@ function render(report: ErrorReport, options: MarkdownOptions, level: number): s
   const h = '#'.repeat(Math.min(level, 6))
   const out: string[] = []
   const label = report.kind === 'warning' ? 'Warning' : report.kind === 'compile' ? 'Compile error' : 'Error'
-  out.push(`${h} ${label}: ${report.name}${report.code ? ` [${report.code}]` : ''}`, '')
+  out.push(`${h} ${label}: ${report.name}${report.code && report.code !== report.name ? ` [${report.code}]` : ''}`, '')
   out.push('```', report.message, '```', '')
   if (report.hint) {
     out.push(`> ${report.hint}`, '')

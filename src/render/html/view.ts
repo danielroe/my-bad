@@ -120,11 +120,12 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
   const id = escapeHtml(`mb-${path}-${report.id}`)
   const tag = chrome ? 'h1' : 'h2'
   const docs = safeUrl(report.docsUrl)
+  const selfCoded = report.name === report.code
   const code = report.code
     ? `<span class="mb-code" data-code>${docs ? `<a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer" title="Documentation for ${escapeHtml(report.code)}">${escapeHtml(report.code)}${ICONS.open}<span class="mb-sr-only"> documentation (opens in a new tab)</span></a>` : escapeHtml(report.code)}</span>`
     : ''
   return `<article class="mb-report" data-kind="${escapeHtml(report.kind)}" aria-labelledby="${id}-name ${id}-message">
-  <div class="mb-report-heading"><p class="mb-kicker">${report.kind === 'error' ? '' : `<span class="mb-kind-icon" aria-hidden="true">${ICONS.warning}</span>`}<span class="mb-name" id="${id}-name" data-name>${escapeHtml(report.name)}</span>${report.kind === 'error' ? '' : '<span aria-hidden="true">·</span>'}<span data-kind-label${report.kind === 'error' ? ' class="mb-sr-only"' : ''}>${KIND_LABEL[report.kind]}</span>${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${escapeHtml(report.status)}</span>` : ''}</p>${chrome
+  <div class="mb-report-heading"><p class="mb-kicker">${report.kind === 'error' ? '' : `<span class="mb-kind-icon" aria-hidden="true">${ICONS.warning}</span>`}<span class="mb-name" id="${id}-name" data-name>${escapeHtml(selfCoded ? KIND_LABEL[report.kind] : report.name)}</span>${selfCoded ? '' : `${report.kind === 'error' ? '' : '<span aria-hidden="true">·</span>'}<span data-kind-label${report.kind === 'error' ? ' class="mb-sr-only"' : ''}>${KIND_LABEL[report.kind]}</span>`}${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${escapeHtml(report.status)}</span>` : ''}</p>${chrome
     ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy error</button>
         <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
         <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
