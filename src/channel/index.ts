@@ -24,6 +24,16 @@ export interface OpenRequest {
 
 export type Sink = (event: ChannelEvent) => void | Promise<void>
 
+export interface CallerOptions {
+  /**
+   * Whether the caller may see reports for requests other than its own, and
+   * use privileged actions such as `open`. Default `true`. An untrusted caller
+   * is matched on its `/events` scope, strictly: a report naming a request id
+   * needs that id, not its path.
+   */
+  trusted?: boolean
+}
+
 export interface ChannelOptions {
   /** Number of reports to keep. Default 20. */
   history?: number
@@ -54,9 +64,9 @@ export interface ChannelOptions {
 
 export interface Channel {
   /** Node-style handler. Mount at the channel base path; routes on the path suffix. */
-  handler: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>
+  handler: (req: IncomingMessage, res: ServerResponse, options?: CallerOptions) => Promise<boolean>
   /** Fetch-style handler returning `undefined` for unknown paths. */
-  fetchHandler: (request: Request) => Promise<Response | undefined>
+  fetchHandler: (request: Request, options?: CallerOptions) => Promise<Response | undefined>
   /** Publish the current error. Naming the request it came from (`requestId`, `METHOD /path?query`) sends it only to the pages that request concerns. */
   setError: (report: ErrorReport, requestId?: string, request?: string) => void
   clearError: (id?: string) => void
@@ -83,11 +93,17 @@ function leastAdvanced(live: Map<string, BuildProgress>): BuildProgress | undefi
   return lowest
 }
 
-interface Client {
+interface Viewer {
+  scope: ClientScope
+  trusted: boolean
+}
+
+interface Client extends Viewer {
   send: (chunk: string) => void
   close: () => void
-  scope: ClientScope
 }
+
+const PRIVILEGED = new Set(['open'])
 
 const SSE_HEADERS = {
   'content-type': 'text/event-stream',
@@ -99,11 +115,12 @@ const SSE_HEADERS = {
 export function createChannel(options: ChannelOptions = {}): Channel {
   const max = options.history ?? 20
   const reports = new Map<string, ErrorReport>()
+  const origins = new Map<string, ReportRequest>()
   const live = new Map<string, BuildProgress>()
   let current: ErrorReport | undefined
   let currentRequest: ReportRequest = {}
   const clients = new Set<Client>()
-  const concerned = (client: Client) => concernsClient(client.scope, currentRequest)
+  const concerned = (client: Client) => concernsClient(client.scope, currentRequest, !client.trusted)
   const actions: string[] = []
   if (options.open) {
     actions.push('open')
@@ -114,15 +131,23 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   const helloFrames = new Map<boolean, string>()
 
-  function history(): HistoryEntry[] {
-    return [...reports.values()].map(toHistoryEntry)
+  function concernsViewer(id: string, viewer: Viewer): boolean {
+    return concernsClient(viewer.scope, origins.get(id) ?? {}, !viewer.trusted)
   }
 
-  function remember(report: ErrorReport): void {
+  function history(viewer?: Viewer): HistoryEntry[] {
+    const entries = [...reports.values()]
+    return (viewer ? entries.filter(report => concernsViewer(report.id, viewer)) : entries).map(toHistoryEntry)
+  }
+
+  function remember(report: ErrorReport, request: ReportRequest = {}): void {
     reports.delete(report.id)
     reports.set(report.id, report)
+    origins.set(report.id, request)
     while (reports.size > max) {
-      reports.delete(reports.keys().next().value!)
+      const oldest = reports.keys().next().value!
+      reports.delete(oldest)
+      origins.delete(oldest)
     }
     helloFrames.clear()
   }
@@ -143,14 +168,37 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   function broadcast(event: ChannelEvent, to?: (client: Client) => boolean): void {
     send(encode(event), to)
+    notify(event)
+  }
+
+  function notify(event: ChannelEvent): void {
     if (options.sink) {
       Promise.resolve(options.sink(event)).catch(() => {})
     }
   }
 
+  function sendScoped(build: (history: HistoryEntry[]) => ChannelEvent, to: (client: Client) => boolean = () => true): void {
+    const shared = encode(build(history()))
+    for (const client of clients) {
+      if (!to(client)) {
+        continue
+      }
+      try {
+        client.send(client.trusted ? shared : encode(build(history(client))))
+      }
+      catch {
+        clients.delete(client)
+      }
+    }
+  }
+
   /** The current error is only announced to the pages it concerns; the rest just learn it happened. */
-  function hello(scope: ClientScope): string {
-    const mine = current !== undefined && concernsClient(scope, currentRequest)
+  function hello(client: Client): string {
+    const mine = current !== undefined && concerned(client)
+    if (!client.trusted) {
+      const unprivileged = actions.filter(action => !PRIVILEGED.has(action))
+      return encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions: unprivileged, current: mine ? current : undefined, history: history(client) } })
+    }
     let frame = helloFrames.get(mine)
     if (!frame) {
       frame = encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current: mine ? current : undefined, history: history() } })
@@ -235,15 +283,17 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   const trust = { allowedHosts: options.allowedHosts }
 
-  function historyResponse(id: string): { status: number, body: string } {
-    const report = reports.get(id)
+  /** 404 rather than 403, so the answer does not confirm the id exists. */
+  function historyResponse(id: string, viewer: Viewer): { status: number, body: string } {
+    const report = viewer.trusted || concernsViewer(id, viewer) ? reports.get(id) : undefined
     return { status: report ? 200 : 404, body: report ? JSON.stringify(report) : '{}' }
   }
 
   const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store' }
 
   const channel: Channel = {
-    async handler(req, res) {
+    async handler(req, res, caller) {
+      const trusted = caller?.trusted ?? true
       const url = new URL(req.url ?? '/', 'http://localhost')
       const matched = route(url.pathname)
       if (!matched) {
@@ -260,13 +310,18 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           send: chunk => void res.write(chunk),
           close: () => res.end(),
           scope: scopeFromQuery(url.searchParams),
+          trusted,
         }
         clients.add(client)
-        client.send(hello(client.scope))
+        client.send(hello(client))
         req.on('close', () => clients.delete(client))
         return true
       }
       if (matched === 'open') {
+        if (!trusted) {
+          res.writeHead(403).end()
+          return true
+        }
         if (req.method !== 'POST') {
           res.writeHead(405).end()
           return true
@@ -275,13 +330,14 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         res.writeHead(await openStatus(req.headers['content-type'], body)).end()
         return true
       }
-      const { status, body } = historyResponse(matched.history)
+      const { status, body } = historyResponse(matched.history, { scope: scopeFromQuery(url.searchParams), trusted })
       res.writeHead(status, JSON_HEADERS)
       res.end(body)
       return true
     },
 
-    async fetchHandler(request) {
+    async fetchHandler(request, caller) {
+      const trusted = caller?.trusted ?? true
       const url = new URL(request.url)
       const matched = route(url.pathname)
       if (!matched) {
@@ -299,9 +355,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
               send: chunk => controller.enqueue(encoder.encode(chunk)),
               close: () => controller.close(),
               scope: scopeFromQuery(url.searchParams),
+              trusted,
             }
             clients.add(client)
-            client.send(hello(client.scope))
+            client.send(hello(client))
           },
           cancel() {
             if (client) {
@@ -317,21 +374,26 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         return new Response(stream, { headers: SSE_HEADERS })
       }
       if (matched === 'open') {
+        if (!trusted) {
+          return new Response(null, { status: 403 })
+        }
         if (request.method !== 'POST') {
           return new Response(null, { status: 405 })
         }
         return new Response(null, { status: await openStatus(request.headers.get('content-type'), await request.json().catch(() => undefined)) })
       }
-      const { status, body } = historyResponse(matched.history)
+      const { status, body } = historyResponse(matched.history, { scope: scopeFromQuery(url.searchParams), trusted })
       return new Response(body, { status, headers: JSON_HEADERS })
     },
 
     setError(report, requestId, request) {
-      remember(report)
-      current = report
       currentRequest = { ...(requestId && { requestId }), ...(request && { request }) }
-      broadcast({ type: 'error:set', payload: { report, history: history(), ...currentRequest } }, concerned)
-      send(encode({ type: 'history', payload: { history: history() } }), client => !concerned(client))
+      remember(report, currentRequest)
+      current = report
+      const set = (entries: HistoryEntry[]): ChannelEvent => ({ type: 'error:set', payload: { report, history: entries, ...currentRequest } })
+      sendScoped(set, concerned)
+      notify(set(history()))
+      sendScoped(entries => ({ type: 'history', payload: { history: entries } }), client => !concerned(client))
     },
     clearError(id) {
       if (id && current?.id !== id) {
@@ -345,7 +407,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     warn(report) {
       const warning = { ...report, kind: 'warning' as const }
       remember(warning)
-      broadcast({ type: 'warning', payload: { report: warning, history: history() } })
+      const event = (entries: HistoryEntry[]): ChannelEvent => ({ type: 'warning', payload: { report: warning, history: entries } })
+      sendScoped(event)
+      notify(event(history()))
     },
     log(entry) {
       broadcast({ type: 'log', payload: { timestamp: Date.now(), ...entry } })

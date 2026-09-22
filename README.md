@@ -189,6 +189,14 @@ const channel = createChannel({ open: true, sink: fileSink('.nuxt/my-bad.jsonl')
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))
 // or fetch-style: await channel.fetchHandler(request)
 
+// Callers are trusted by default and may browse every retained report. Pass `{ trusted: false }` for a peer
+// the host cannot vouch for (a connection forwarded into a container, a `--host` binding): the channel still
+// connects and streams, but its `hello.history` and the `history` payloads hold only the reports that concern
+// the page (a report naming a request id is matched by that id alone, never by path), `/history/:id` answers
+// 404 for any other report, and privileged actions such as `open` are neither advertised nor accepted, so the
+// page opens an `editor://` URL on the machine running the browser instead.
+await channel.handler(req, res, { trusted: isLoopback(req) })
+
 channel.setError(report) // pages swap content in place
 channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
 channel.clearError() // pages reload, overlays dismiss

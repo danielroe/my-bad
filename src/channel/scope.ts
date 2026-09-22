@@ -14,12 +14,15 @@ export function scopeFromQuery(params: URLSearchParams): ClientScope {
   }
 }
 
-/** Whether a report from `request` concerns a page. A report with no request (compile error, client error) concerns every page. */
-export function concernsClient(scope: ClientScope, request: ReportRequest): boolean {
+/**
+ * Whether a report from `request` concerns a page. A report with no request (compile error, client error) concerns every page.
+ * Under `strict`, a report naming a request id is matched by that id alone, since a path is guessable and an id is not.
+ */
+export function concernsClient(scope: ClientScope, request: ReportRequest, strict = false): boolean {
   if (!request.requestId && !request.request) {
     return true
   }
-  if (request.requestId && scope.requestId) {
+  if (request.requestId && (scope.requestId || strict)) {
     return request.requestId === scope.requestId
   }
   return request.request !== undefined && scope.path !== undefined && requestPath(request.request) === scope.path

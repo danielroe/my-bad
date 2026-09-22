@@ -18,6 +18,13 @@ describe('concernsClient', () => {
     expect(concernsClient({ requestId: 'a' }, { requestId: 'b' })).toBe(false)
   })
 
+  it('ignores the path fallback for an identified report when strict', () => {
+    expect(concernsClient({ path: '/a' }, { requestId: 'b', request: 'GET /a' }, true)).toBe(false)
+    expect(concernsClient({ requestId: 'b', path: '/a' }, { requestId: 'b', request: 'GET /a' }, true)).toBe(true)
+    expect(concernsClient({ path: '/a' }, { request: 'GET /a' }, true)).toBe(true)
+    expect(concernsClient({ path: '/a' }, {}, true)).toBe(true)
+  })
+
   it('reads the scope a page connects with', () => {
     expect(scopeFromQuery(new URLSearchParams('requestId=a&path=/x%3Fy%3D1'))).toEqual({ requestId: 'a', path: '/x?y=1' })
     expect(scopeFromQuery(new URLSearchParams())).toEqual({ requestId: undefined, path: undefined })

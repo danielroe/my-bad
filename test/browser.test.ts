@@ -251,6 +251,24 @@ describe('browser client', () => {
     }
   }, 30_000)
 
+  it('names its request when fetching a report from the history pager', async () => {
+    channel.setError(await report('first of two'))
+    channel.setError(await report('second of two'))
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.goto(`${origin}/scoped?rid=a`)
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'second of two')
+    channel.setError(await report('for someone else'), 'zzz', 'GET /elsewhere')
+    await waitFor(() => overlay.locator('[data-pager-label]').count(), 1)
+
+    const request = page.waitForRequest(candidate => candidate.url().includes('/__my-bad/history/'))
+    await overlay.locator('[data-action="history"][data-dir="-1"]').click()
+    const params = new URL((await request).url()).searchParams
+    expect(params.get('requestId')).toBe('a')
+    expect(params.get('path')).toBe('/scoped?rid=a')
+    await page.close()
+  }, 30_000)
+
   it('builds a new overlay for an error arriving after a clear', async () => {
     channel.setError(await report('before the clear'))
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
