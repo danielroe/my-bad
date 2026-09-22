@@ -372,7 +372,7 @@ async function navigateHistory(m: Mount, dir: number): Promise<void> {
     return
   }
   try {
-    const res = await fetch(`${m.state.channel}/history/${encodeURIComponent(target.id)}`)
+    const res = await fetch(`${m.state.channel}/history/${encodeURIComponent(target.id)}?${scopeQuery(m)}`)
     if (res.ok) {
       rerender(m, await res.json())
     }
@@ -481,13 +481,17 @@ function updateBadges(m: Mount): void {
   }
 }
 
-/** The channel only sends this page the errors its own request produced, and those from no request at all. */
-function eventsUrl(m: Mount): string {
+function scopeQuery(m: Mount): URLSearchParams {
   const query = new URLSearchParams({ path: `${location.pathname}${location.search}` })
   if (m.state.requestId) {
     query.set('requestId', m.state.requestId)
   }
-  return `${m.state.channel}/events?${query}`
+  return query
+}
+
+/** The channel only sends this page the errors its own request produced, and those from no request at all. */
+function eventsUrl(m: Mount): string {
+  return `${m.state.channel}/events?${scopeQuery(m)}`
 }
 
 function updatePager(m: Mount): void {

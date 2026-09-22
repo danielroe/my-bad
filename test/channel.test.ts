@@ -405,3 +405,125 @@ describe('build progress', () => {
     expect(events.map(event => [event.source, event.percent])).toEqual([['cli', 30], ['cli', 30], ['app', 90], ['app', 100]])
   })
 })
+
+describe('untrusted callers', () => {
+  async function hello(channel: ReturnType<typeof createChannel>, query: string, trusted?: boolean): Promise<any> {
+    const res = await channel.fetchHandler(new Request(`http://localhost/__my-bad/events${query}`), { trusted })
+    const reader = res!.body!.getReader()
+    const { value } = await reader.read()
+    await reader.cancel()
+    return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
+  }
+
+  it('scopes hello history to the caller', async () => {
+    const channel = createChannel()
+    const mine = await createReport(new Error('mine'), { loaders: [], snippets: false })
+    const theirs = await createReport(new Error('theirs'), { loaders: [], snippets: false })
+    channel.setError(mine, 'a', 'GET /about')
+    channel.setError(theirs, 'b', 'GET /contact')
+
+    expect((await hello(channel, '?requestId=a&path=/about', false)).history).toMatchObject([{ id: mine.id }])
+    expect((await hello(channel, '?requestId=c&path=/other', false)).history).toEqual([])
+    expect((await hello(channel, '?requestId=a&path=/about')).history).toMatchObject([{ id: mine.id }, { id: theirs.id }])
+    expect((await hello(channel, '?requestId=a&path=/about', true)).history).toMatchObject([{ id: mine.id }, { id: theirs.id }])
+    channel.close()
+  })
+
+  it('withholds the open action and refuses the endpoint', async () => {
+    const opened: unknown[] = []
+    const channel = createChannel({ open: request => void opened.push(request) })
+    expect((await hello(channel, '?path=/about')).actions).toEqual(['open'])
+    expect((await hello(channel, '?path=/about', false)).actions).toEqual([])
+
+    const post = async (trusted?: boolean): Promise<number> => (await channel.fetchHandler(
+      new Request('http://localhost/__my-bad/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ file: resolve('package.json') }) }),
+      { trusted },
+    ))!.status
+    expect(await post(false)).toBe(403)
+    expect(opened).toEqual([])
+    expect(await post()).toBe(204)
+    expect(opened).toHaveLength(1)
+    channel.close()
+  })
+
+  it('shows a report published with no request to everyone', async () => {
+    const channel = createChannel()
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    channel.setError(report)
+    const warning = await createReport(new Error('warn'), { loaders: [], snippets: false })
+    channel.warn(warning)
+    const scoped = await createReport(new Error('scoped'), { loaders: [], snippets: false })
+    channel.setError(scoped, 'a', 'GET /about')
+
+    expect((await hello(channel, '?requestId=z&path=/nowhere', false)).history).toMatchObject([{ id: report.id }, { id: warning.id }])
+    channel.close()
+  })
+
+  it('requires the request id of a report that names one', async () => {
+    const channel = createChannel()
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    channel.setError(report, 'a', 'GET /admin')
+    const status = async (query: string, trusted?: boolean): Promise<number> =>
+      (await channel.fetchHandler(new Request(`http://localhost/__my-bad/history/${report.id}${query}`), { trusted }))!.status
+
+    const guessed = await hello(channel, '?path=/admin', false)
+    expect(guessed.current).toBeUndefined()
+    expect(guessed.history).toEqual([])
+    expect(await status('?path=/admin', false)).toBe(404)
+
+    const owner = await hello(channel, '?requestId=a&path=/admin', false)
+    expect(owner).toMatchObject({ current: { id: report.id }, history: [{ id: report.id }] })
+    expect(await status('?requestId=a&path=/admin', false)).toBe(200)
+
+    const loopback = await hello(channel, '?path=/admin')
+    expect(loopback).toMatchObject({ current: { id: report.id }, history: [{ id: report.id }] })
+    channel.close()
+  })
+
+  it('answers 404 for a report that does not concern the caller', async () => {
+    const channel = createChannel()
+    const mine = await createReport(new Error('mine'), { loaders: [], snippets: false })
+    const theirs = await createReport(new Error('theirs'), { loaders: [], snippets: false })
+    channel.setError(mine, 'a', 'GET /about')
+    channel.setError(theirs, 'b', 'GET /contact')
+    const get = async (id: string, query: string, trusted?: boolean): Promise<number> =>
+      (await channel.fetchHandler(new Request(`http://localhost/__my-bad/history/${id}${query}`), { trusted }))!.status
+
+    expect(await get(mine.id, '?requestId=a&path=/about', false)).toBe(200)
+    expect(await get(theirs.id, '?requestId=a&path=/about', false)).toBe(404)
+    expect(await get(theirs.id, '?requestId=a&path=/about')).toBe(200)
+    expect(await get('nope', '?requestId=a&path=/about', false)).toBe(404)
+    channel.close()
+  })
+
+  it('scopes the history streamed to untrusted subscribers', async () => {
+    const channel = createChannel()
+    const url = await listen(channel)
+    const first = await createReport(new Error('first'), { loaders: [], snippets: false })
+    const second = await createReport(new Error('second'), { loaders: [], snippets: false })
+
+    const server = createServer(async (req, res) => {
+      if (!(await channel.handler(req, res, { trusted: false }))) {
+        res.writeHead(404).end()
+      }
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address() as { port: number }
+    const untrustedUrl = `http://127.0.0.1:${address.port}/__my-bad`
+
+    const controller = new AbortController()
+    const trusted = readEvents(url, 3, controller.signal, '?requestId=x&path=/x')
+    const untrusted = readEvents(untrustedUrl, 3, controller.signal, '?requestId=a&path=/about')
+    while (channel.clients < 2) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.setError(first, 'a', 'GET /about')
+    channel.setError(second, 'b', 'GET /contact')
+    const [[, , theirHistory], [, , myScoped]] = await Promise.all([trusted, untrusted])
+    controller.abort()
+    server.close()
+
+    expect(theirHistory).toMatchObject({ event: 'history', data: { history: [{ id: first.id }, { id: second.id }] } })
+    expect(myScoped!.data.history).toMatchObject([{ id: first.id }])
+  })
+})
