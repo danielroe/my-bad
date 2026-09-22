@@ -527,3 +527,96 @@ describe('untrusted callers', () => {
     expect(myScoped!.data.history).toMatchObject([{ id: first.id }])
   })
 })
+
+describe('scoped logs', () => {
+  function subscribe(channel: ReturnType<typeof createChannel>, query: string, trusted?: boolean) {
+    const received: Array<{ event: string, data: any }> = []
+    const ready = channel.fetchHandler(new Request(`http://localhost/__my-bad/events${query}`), { trusted }).then((res) => {
+      const reader = res!.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const pump = async (): Promise<void> => {
+        const { value, done } = await reader.read()
+        if (done) {
+          return
+        }
+        buffer += decoder.decode(value, { stream: true })
+        let index: number
+        // eslint-disable-next-line no-cond-assign
+        while ((index = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, index)
+          buffer = buffer.slice(index + 2)
+          const event = /^event: (.+)$/m.exec(block)?.[1]
+          const data = /^data: (.+)$/m.exec(block)?.[1]
+          if (event && data) {
+            received.push({ event, data: JSON.parse(data) })
+          }
+        }
+        return pump()
+      }
+      pump().catch(() => {})
+      return () => reader.cancel().catch(() => {})
+    })
+    return { received, ready }
+  }
+
+  async function logs(channel: ReturnType<typeof createChannel>, query: string, trusted?: boolean): Promise<string[]> {
+    const { received, ready } = subscribe(channel, query, trusted)
+    await ready
+    channel.log({ level: 'info', text: 'unattributed' })
+    channel.log({ level: 'info', text: 'theirs' }, 'b', 'GET /contact')
+    channel.log({ level: 'info', text: 'mine' }, 'a', 'GET /about')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    void (await ready)()
+    return received.filter(event => event.event === 'log').map(event => event.data.text)
+  }
+
+  it('withholds unattributed and foreign logs from an untrusted subscriber', async () => {
+    const channel = createChannel()
+    expect(await logs(channel, '?requestId=a&path=/about', false)).toEqual(['mine'])
+    channel.close()
+  })
+
+  it('sends every log to a trusted subscriber', async () => {
+    const channel = createChannel()
+    expect(await logs(channel, '?requestId=a&path=/about')).toEqual(['unattributed', 'theirs', 'mine'])
+    channel.close()
+  })
+
+  it('will not match an attributed log by guessed path alone', async () => {
+    const channel = createChannel()
+    expect(await logs(channel, '?path=/about', false)).toEqual([])
+    channel.close()
+  })
+
+  it('passes every log to the sink exactly once, with its attribution', async () => {
+    const events: any[] = []
+    const channel = createChannel({ sink: event => void (event.type === 'log' && events.push(event.payload)) })
+    const { ready } = subscribe(channel, '?requestId=a&path=/about', false)
+    await ready
+    channel.log({ level: 'info', text: 'unattributed' })
+    channel.log({ level: 'info', text: 'mine' }, 'a', 'GET /about')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    void (await ready)()
+    channel.close()
+
+    expect(events).toMatchObject([
+      { text: 'unattributed' },
+      { text: 'mine', requestId: 'a', request: 'GET /about' },
+    ])
+    expect(events[0]).not.toHaveProperty('requestId')
+    expect(events).toHaveLength(2)
+  })
+
+  it('leaves the frame a trusted subscriber receives unchanged for an unattributed log', async () => {
+    const channel = createChannel()
+    const { received, ready } = subscribe(channel, '?requestId=a&path=/about')
+    await ready
+    channel.log({ level: 'warn', text: 'careful', timestamp: 5 })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    void (await ready)()
+    channel.close()
+
+    expect(received.filter(event => event.event === 'log').map(event => event.data)).toEqual([{ level: 'warn', text: 'careful', timestamp: 5 }])
+  })
+})
