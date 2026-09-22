@@ -193,7 +193,8 @@ server.on('request', (req, res) => channel.handler(req, res).then(handled => han
 // the host cannot vouch for (a connection forwarded into a container, a `--host` binding): the channel still
 // connects and streams, but its `hello.history` and the `history` payloads hold only the reports that concern
 // the page (a report naming a request id is matched by that id alone, never by path), `/history/:id` answers
-// 404 for any other report, and privileged actions such as `open` are neither advertised nor accepted, so the
+// 404 for any other report, log entries reach it only when attributed to a request that concerns it, and
+// privileged actions such as `open` are neither advertised nor accepted, so the
 // page opens an `editor://` URL on the machine running the browser instead.
 await channel.handler(req, res, { trusted: isLoopback(req) })
 
@@ -201,7 +202,8 @@ channel.setError(report) // pages swap content in place
 channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
 channel.clearError() // pages reload, overlays dismiss
 channel.warn(report) // toast
-channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer
+channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer of trusted callers
+channel.log({ level: 'warn', text: 'careful' }, requestId, `${method} ${url}`) // also streamed to the pages that request concerns
 channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) // progress bar
 ```
 

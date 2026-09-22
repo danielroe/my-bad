@@ -71,7 +71,12 @@ export interface Channel {
   setError: (report: ErrorReport, requestId?: string, request?: string) => void
   clearError: (id?: string) => void
   warn: (report: ErrorReport) => void
-  log: (entry: Omit<LogEntry, 'timestamp'> & { timestamp?: number }) => void
+  /**
+   * Publish a log entry. Naming the request it came from (`requestId`,
+   * `METHOD /path?query`) sends it only to the pages that request concerns;
+   * an unattributed entry reaches trusted callers only.
+   */
+  log: (entry: Omit<LogEntry, 'timestamp'> & { timestamp?: number }, requestId?: string, request?: string) => void
   /** Publish build progress. Updates carrying a `source` are resolved against the other live sources; `percent: 100` retires one. */
   progress: (progress: BuildProgress) => void
   readonly current: ErrorReport | undefined
@@ -411,8 +416,13 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       sendScoped(event)
       notify(event(history()))
     },
-    log(entry) {
-      broadcast({ type: 'log', payload: { timestamp: Date.now(), ...entry } })
+    log(entry, requestId, request) {
+      const origin: ReportRequest = { ...(requestId && { requestId }), ...(request && { request }) }
+      const attributed = origin.requestId !== undefined || origin.request !== undefined
+      broadcast(
+        { type: 'log', payload: { timestamp: Date.now(), ...entry, ...origin } },
+        client => client.trusted || (attributed && concernsClient(client.scope, origin, true)),
+      )
     },
     progress(progress) {
       if (!progress.source) {

@@ -33,7 +33,7 @@ export type ChannelEvent
     | { type: 'history', payload: { history: HistoryEntry[] } }
     | { type: 'error:clear', payload: { id?: string } }
     | { type: 'warning', payload: { report: ErrorReport, history: HistoryEntry[] } }
-    | { type: 'log', payload: LogEntry }
+    | { type: 'log', payload: LogEntry & ReportRequest }
     | { type: 'build', payload: BuildProgress }
 
 export function toHistoryEntry(report: ErrorReport): HistoryEntry {
