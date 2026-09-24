@@ -10,4 +10,11 @@ export default antfu({
     'node/prefer-global/process': 'off',
     'no-console': 'off',
   },
+}, {
+  files: ['test/runtime/**'],
+  rules: {
+    'antfu/no-import-dist': 'off',
+    'antfu/no-top-level-await': 'off',
+    'test/no-import-node-test': 'off',
+  },
 })
