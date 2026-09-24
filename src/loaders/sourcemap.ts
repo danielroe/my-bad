@@ -1,7 +1,8 @@
 import type { Frame, SourceLoader } from '../types'
+import type { SourceMapLookup } from './decode'
 import { readFile } from 'node:fs/promises'
-import { SourceMap } from 'node:module'
 import { dirname, isFilePath, resolvePath, toPath, withoutQuery } from '../report/path'
+import { decodeSourceMap } from './decode'
 
 export interface RawSourceMap {
   version?: number
@@ -46,11 +47,11 @@ export interface MappedPosition {
 
 /**
  * Look up a 1-based generated position in a map. Returns `undefined` unless the
- * map has a segment on that exact generated line: `SourceMap.findEntry` falls
+ * map has a segment on that exact generated line: `findEntry` falls
  * back to the nearest preceding segment, which would map an already-original
  * position a second time.
  */
-export function findOriginal(map: SourceMap, line: number, column: number | undefined): { source: string, line: number, column: number } | undefined {
+export function findOriginal(map: SourceMapLookup, line: number, column: number | undefined): { source: string, line: number, column: number } | undefined {
   const entry = map.findEntry(line - 1, column === undefined ? 0 : Math.max(0, column - 1))
   if (!('originalSource' in entry) || entry.originalSource === undefined || entry.originalLine === undefined || entry.generatedLine !== line - 1) {
     return
@@ -59,7 +60,7 @@ export function findOriginal(map: SourceMap, line: number, column: number | unde
 }
 
 /** Resolve a 1-based generated position through a map to an original file position. */
-export function mapPosition(map: SourceMap, raw: Pick<RawSourceMap, 'sourceRoot' | 'sources' | 'x_google_ignoreList' | 'ignoreList'>, base: string, line: number, column: number | undefined): MappedPosition | undefined {
+export function mapPosition(map: SourceMapLookup, raw: Pick<RawSourceMap, 'sourceRoot' | 'sources' | 'x_google_ignoreList' | 'ignoreList'>, base: string, line: number, column: number | undefined): MappedPosition | undefined {
   const original = findOriginal(map, line, column)
   if (!original) {
     return
@@ -76,21 +77,21 @@ export function mapPosition(map: SourceMap, raw: Pick<RawSourceMap, 'sourceRoot'
 }
 
 interface Loaded {
-  map: SourceMap
+  map: SourceMapLookup
   raw: RawSourceMap
   base: string
 }
 
 /** Decoded maps by raw map object, shared by every loader instance since integrations commonly create loaders per request. */
-const parsed = new WeakMap<RawSourceMap, SourceMap | null>()
+const parsed = new WeakMap<RawSourceMap, SourceMapLookup | null>()
 
-function parseMap(raw: RawSourceMap): SourceMap | undefined {
+function parseMap(raw: RawSourceMap): SourceMapLookup | undefined {
   const existing = parsed.get(raw)
   if (existing !== undefined) {
     return existing ?? undefined
   }
   try {
-    const map = new SourceMap(raw as ConstructorParameters<typeof SourceMap>[0])
+    const map = decodeSourceMap(raw)
     parsed.set(raw, map)
     return map
   }
