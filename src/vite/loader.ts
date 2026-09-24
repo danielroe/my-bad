@@ -1,7 +1,8 @@
 import type { ModuleGraph, ModuleNode, ViteDevServer } from 'vite'
+import type { SourceMapLookup } from '../loaders/decode'
 import type { Frame, SourceLoader } from '../types'
 import { readFile } from 'node:fs/promises'
-import { SourceMap } from 'node:module'
+import { decodeSourceMap } from '../loaders/decode'
 import { parseInlineSourceMap } from '../loaders/fs'
 import { findOriginal } from '../loaders/sourcemap'
 import { dirname, isFilePath, normalizeSlashes, resolvePath, toPath, withoutQuery } from '../report/path'
@@ -39,7 +40,7 @@ function findModule(server: ViteDevServer, file: string): ModuleNode | undefined
  * wrapper lines, so it matches runtime stack positions where `transformResult.map`
  * does not. Prefer it when present.
  */
-function mapOf(mod: ModuleNode): { map: SourceMap, base: string } | undefined {
+function mapOf(mod: ModuleNode): { map: SourceMapLookup, base: string } | undefined {
   const result = mod.ssrTransformResult ?? mod.transformResult
   if (!result) {
     return
@@ -49,7 +50,7 @@ function mapOf(mod: ModuleNode): { map: SourceMap, base: string } | undefined {
     return
   }
   try {
-    return { map: new SourceMap(raw as ConstructorParameters<typeof SourceMap>[0]), base: dirname(mod.file ?? mod.id ?? '/') }
+    return { map: decodeSourceMap(raw), base: dirname(mod.file ?? mod.id ?? '/') }
   }
   catch {}
 }
