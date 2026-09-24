@@ -54,6 +54,7 @@
     "test": "pnpm test:unit && pnpm test:types",
     "test:unit": "vitest",
     "test:knip": "knip",
+    "test:runtime": "node --test test/runtime/runtime.test.mjs",
     "test:versions": "installed-check -d --no-workspaces",
     "test:types": "tsc --noEmit",
     "play": "pnpm build && node playground/dev.ts",

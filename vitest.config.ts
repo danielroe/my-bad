@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   test: {
-    exclude: ['**/node_modules/**', 'test/visual/**'],
+    exclude: ['**/node_modules/**', 'test/runtime/**', 'test/visual/**'],
     globalSetup: ['./test/setup/build.ts'],
     coverage: {
       include: ['src'],
