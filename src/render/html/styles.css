@@ -43,7 +43,7 @@
 :root[data-theme='light'], :host([data-theme='light']) {
   --mb-bg: #ffffff;
   --mb-fg: #202732;
-  --mb-accent-ink: color-mix(in oklab, var(--mb-accent) 56%, #020420);
+  --mb-accent-ink: color-mix(in oklab, var(--mb-accent) 56%, #0a0a0a);
   --mb-fg-muted: color-mix(in oklab, var(--mb-fg) 68%, var(--mb-bg));
   --mb-fg-dim: var(--mb-fg-muted);
   --mb-line: color-mix(in oklab, var(--mb-fg) 10%, transparent);
@@ -55,7 +55,7 @@
   --mb-error: #bd3545;
   --mb-error-bg: color-mix(in srgb, var(--mb-error) 6%, var(--mb-code-bg));
   --mb-code-bg: color-mix(in srgb, var(--mb-bg) 99%, var(--mb-fg));
-  --mb-tk-string: color-mix(in oklab, var(--mb-accent) 55%, #020420);
+  --mb-tk-string: color-mix(in oklab, var(--mb-accent) 55%, #0a0a0a);
   --mb-tk-keyword: #32689b;
   --mb-tk-number: #976012;
   --mb-tk-function: #32689b;

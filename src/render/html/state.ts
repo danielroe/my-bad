@@ -12,7 +12,7 @@ export interface Theme {
   /** Force a colour scheme instead of following the user's preference. */
   scheme?: 'light' | 'dark'
   /**
-   * Extra CSS custom properties set on the root, e.g. `{ '--mb-bg': '#020420' }`.
+   * Extra CSS custom properties set on the root, e.g. `{ '--mb-bg': '#0a0a0a' }`.
    * See `styles.css` for the full list of tokens.
    */
   vars?: Record<string, string>

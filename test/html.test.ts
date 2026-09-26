@@ -30,12 +30,12 @@ function markup(html: string): string {
 
 describe('renderPage', () => {
   it('renders a full document with embedded state', async () => {
-    const html = renderPage(await report(), { cwd: '/proj', channel: '/__my-bad', theme: { name: 'Nuxt', accent: '#00dc82', vars: { '--mb-bg': '#020420', 'bad;}': 'x' } } })
+    const html = renderPage(await report(), { cwd: '/proj', channel: '/__my-bad', theme: { name: 'Nuxt', accent: '#00dc82', vars: { '--mb-bg': '#0a0a0a', 'bad;}': 'x' } } })
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Something &lt;broke&gt;')
     expect(html).toContain('data-action="open" data-file="/proj/src/handler.ts" data-line="3" data-column="9"')
     expect(html).toContain('<span class="tk-keyword">throw</span>')
-    expect(html).toContain(':root{--mb-accent:#00dc82;--mb-bg:#020420}')
+    expect(html).toContain(':root{--mb-accent:#00dc82;--mb-bg:#0a0a0a}')
     expect(html).toContain('Show framework frames <span class="mb-count">(2)</span>')
     expect(html).toMatch(/<script type="application\/json">\{"mode":"page"/)
     expect(html).toContain('data-action="logs"')
