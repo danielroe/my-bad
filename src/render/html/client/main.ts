@@ -588,36 +588,28 @@ function connect(m: Mount): void {
 
 /* Overlay chrome */
 
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
-
-function setMinimized(m: Mount, value: boolean, options: { animate?: boolean, persist?: boolean } = {}): void {
-  const { animate = true, persist = true } = options
+function setMinimized(m: Mount, value: boolean, options: { persist?: boolean } = {}): void {
+  const { persist = true } = options
   if (!m.overlay) {
     return
   }
   if (m.overlay.hasAttribute('data-minimized') === value) {
     return updatePreview(m)
   }
-  const swap = () => {
-    m.overlay!.toggleAttribute('data-minimized', value)
-    if (value) {
-      m.overlay!.querySelector<HTMLElement>('[data-action="expand"]')?.focus({ preventScroll: true })
-    }
-    else {
-      focusHeading(m)
-    }
-    m.overlay!.setAttribute('aria-modal', String(!value))
-    if (persist) {
-      storage(STORAGE.minimized, value ? '1' : '0')
-    }
-    document.documentElement.style.overflow = value ? '' : 'hidden'
-    setHostInert(m, !value && !m.overlay!.hasAttribute('data-hidden'))
-    updatePreview(m)
+  m.overlay.toggleAttribute('data-minimized', value)
+  if (value) {
+    m.overlay.querySelector<HTMLElement>('[data-action="expand"]')?.focus({ preventScroll: true })
   }
-  if (!animate || reducedMotion() || !m.preview || m.preview.hidden === value) {
-    return swap()
+  else {
+    focusHeading(m)
   }
-  zoomPreview(m, value, swap)
+  m.overlay.setAttribute('aria-modal', String(!value))
+  if (persist) {
+    storage(STORAGE.minimized, value ? '1' : '0')
+  }
+  document.documentElement.style.overflow = value ? '' : 'hidden'
+  setHostInert(m, !value && !m.overlay.hasAttribute('data-hidden'))
+  updatePreview(m)
 }
 
 /** While maximised the overlay is a modal dialog, so the page behind must not be focusable. */
@@ -629,42 +621,6 @@ function setHostInert(m: Mount, inert: boolean): void {
   for (const child of document.body.children) {
     if (child !== host && !child.hasAttribute('data-my-bad') && child.tagName !== 'SCRIPT') {
       child.toggleAttribute('inert', inert)
-    }
-  }
-}
-
-/** Scale the page behind uniformly between thumbnail and viewport, which share an aspect ratio. */
-function zoomPreview(m: Mount, minimize: boolean, swap: () => void): void {
-  const preview = m.preview!
-  const overlay = m.overlay!
-  const rect = preview.getBoundingClientRect()
-  const full = `translate(${-rect.left}px, ${-rect.top}px) scale(${innerWidth / rect.width})`
-  const options: KeyframeAnimationOptions = { duration: 320, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'both' }
-  preview.style.transformOrigin = '0 0'
-  preview.setAttribute('data-zooming', '')
-  const done = () => {
-    preview.removeAttribute('data-zooming')
-    preview.style.transformOrigin = ''
-  }
-  if (minimize) {
-    const zoom = preview.animate([{ transform: 'none' }, { transform: full }], options)
-    const fade = overlay.animate([{ opacity: 1 }, { opacity: 0.4 }], options)
-    zoom.onfinish = () => {
-      swap()
-      zoom.cancel()
-      fade.cancel()
-      done()
-      overlay.animate([{ opacity: 0, transform: 'scale(0.9)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'ease-out' })
-    }
-  }
-  else {
-    swap()
-    const zoom = preview.animate([{ transform: full }, { transform: 'none' }], options)
-    const fade = overlay.animate([{ opacity: 0 }, { opacity: 1 }], options)
-    zoom.onfinish = () => {
-      zoom.cancel()
-      fade.cancel()
-      done()
     }
   }
 }
@@ -786,7 +742,7 @@ function setupOverlay(m: Mount): void {
   overlay.setAttribute('data-dock', dock)
   m.preview?.setAttribute('data-dock', dock)
   const minimized = storage(STORAGE.minimized)
-  setMinimized(m, !!m.state.startMinimized || minimized === '1', { animate: false, persist: false })
+  setMinimized(m, !!m.state.startMinimized || minimized === '1', { persist: false })
   setHidden(m, session(hiddenKey(m.state.cwd)) === '1')
 
   draggable(m, overlay, () => overlay.hasAttribute('data-minimized'), () => setMinimized(m, false))

@@ -338,7 +338,6 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
   overflow: hidden;
   background: var(--mb-bg); color: var(--mb-fg);
   font: 15px/1.55 var(--mb-font-sans);
-  transition: inset 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-radius 0.25s ease, opacity 0.2s ease;
 }
 .mb-overlay > .mb-root { overflow: auto; min-height: 0; grid-template-rows: auto 1fr; }
 .mb-overlay .mb-header { position: sticky; }
@@ -355,7 +354,6 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-overlay[data-minimized][data-dock='bottom-left'] { inset: auto auto 16px 16px; }
 .mb-overlay[data-minimized][data-dock='top-right'] { inset: 16px 16px auto auto; }
 .mb-overlay[data-minimized][data-dock='top-left'] { inset: 16px auto auto 16px; }
-.mb-overlay[data-dragging] { transition: none; }
 .mb-overlay[data-minimized] > .mb-root { display: block; overflow: hidden; pointer-events: none; }
 .mb-overlay[data-minimized] .mb-ordered-stack, .mb-overlay[data-minimized] .mb-secondary, .mb-overlay[data-minimized] .mb-causes, .mb-overlay[data-minimized] .mb-single-cause, .mb-overlay[data-minimized] .mb-copy, .mb-overlay[data-minimized] .mb-disclosure, .mb-overlay[data-minimized] .mb-unavailable, .mb-overlay[data-minimized] .mb-header, .mb-overlay[data-minimized] .mb-hint, .mb-overlay[data-minimized] .mb-logs, .mb-overlay[data-minimized] .mb-toasts, .mb-overlay[data-minimized] .mb-progress { display: none; }
 .mb-overlay[data-minimized] .mb-main { padding: 14px 44px 14px 16px; max-width: none; }
@@ -397,8 +395,6 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
   user-select: none;
 }
 .mb-preview[data-dragging] { cursor: grabbing; }
-.mb-preview[data-zooming] { z-index: 2147483002; border-radius: 0; outline: 0; box-shadow: none; }
-.mb-preview[data-zooming] .mb-preview-label, .mb-preview[data-zooming] .mb-preview-close { display: none; }
 .mb-preview[data-dock='bottom-right'] { left: auto; right: 16px; }
 .mb-preview[data-dock='top-right'] { left: auto; right: 16px; bottom: auto; top: 16px; }
 .mb-preview[data-dock='top-left'] { bottom: auto; top: 16px; }
