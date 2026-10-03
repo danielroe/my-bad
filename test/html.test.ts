@@ -347,3 +347,77 @@ describe('history pager', () => {
     expect(html).toContain('data-action="history" data-dir="1">b')
   })
 })
+
+describe('theme before first paint', () => {
+  function bootstrap(html: string): string | undefined {
+    const head = html.slice(0, html.indexOf('</head>'))
+    return /<script>(\(function\(\)\{[^<]*)<\/script>/.exec(head)?.[1]
+  }
+
+  function run(script: string, env: { stored?: string | Error, dark?: boolean | Error }): string | undefined {
+    let theme: string | undefined
+    const localStorage = { getItem: () => {
+      if (env.stored instanceof Error) {
+        throw env.stored
+      }
+      return env.stored ?? null
+    } }
+    const matchMedia = () => {
+      if (env.dark instanceof Error) {
+        throw env.dark
+      }
+      return { matches: env.dark ?? false }
+    }
+    const document = { documentElement: { setAttribute: (_: string, value: string) => (theme = value) } }
+    // eslint-disable-next-line no-new-func
+    new Function('localStorage', 'matchMedia', 'document', script)(localStorage, matchMedia, document)
+    return theme
+  }
+
+  it('applies the remembered scheme from the head, before the stylesheet', async () => {
+    const html = renderPage(await report())
+    const script = bootstrap(html)!
+    expect(html.indexOf(script)).toBeLessThan(html.indexOf('<style>'))
+    expect(run(script, { stored: 'light', dark: true })).toBe('light')
+    expect(run(script, { stored: 'dark' })).toBe('dark')
+  })
+
+  it('follows the system preference when nothing valid is stored or storage is unavailable', async () => {
+    const script = bootstrap(renderPage(await report()))!
+    expect(run(script, { dark: true })).toBe('dark')
+    expect(run(script, { dark: false })).toBe('light')
+    expect(run(script, { stored: 'purple', dark: true })).toBe('dark')
+    expect(run(script, { stored: new Error('SecurityError'), dark: false })).toBe('light')
+    expect(() => run(script, { stored: new Error('SecurityError'), dark: new Error('unsupported') })).not.toThrow()
+  })
+
+  it('leaves a forced scheme and the overlay alone', async () => {
+    const r = await report()
+    expect(bootstrap(renderPage(r, { theme: { scheme: 'dark' } }))).toBeUndefined()
+    expect(renderPage(r, { theme: { scheme: 'dark' } })).toContain('<html lang="en" data-theme="dark">')
+    expect(renderOverlay(r)).not.toContain(bootstrap(renderPage(r)))
+  })
+})
+
+describe('copy location', () => {
+  it('offers the original and compiled position of each frame', async () => {
+    const r = await report()
+    r.frames[0]!.compiled = { file: '/proj/dist/handler.js', line: 9, column: 2, snippet: { start: 9, lines: ['throw x'] } }
+    const html = markup(renderPage(r, { cwd: '/proj' }))
+    expect(html).toContain('data-action="copy-location" data-file="/proj/src/handler.ts" data-line="3" data-column="9" data-compiled-file="/proj/dist/handler.js" data-compiled-line="9" data-compiled-column="2" title="Copy location" aria-label="Copy location"')
+    expect(html).toContain('data-action="open" data-file="/proj/src/handler.ts" data-line="3" data-column="9"')
+  })
+
+  it('offers the generated position of a compiled-only frame', async () => {
+    const r = await report()
+    r.frames = [{ type: 'app', compiled: { file: '/proj/app.vue', line: 8, column: 3, snippet: { start: 8, lines: ['  invalid()'] } } }]
+    expect(markup(renderPage(r))).toContain('data-action="copy-location" data-compiled-file="/proj/app.vue" data-compiled-line="8" data-compiled-column="3"')
+  })
+
+  it('offers the position of frames without a snippet', async () => {
+    const r = await report()
+    r.frames.push({ type: 'app', file: '/proj/src/other.ts', line: 4, function: 'other' })
+    expect(markup(renderPage(r))).toContain('<div class="mb-empty-frame"><span class="mb-function">other</span>')
+    expect(markup(renderPage(r))).toMatch(/mb-empty-frame">.*data-action="copy-location" data-file="\/proj\/src\/other.ts" data-line="4"/)
+  })
+})

@@ -3,6 +3,7 @@ import type { PageState, Theme } from './state'
 import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
 import { clampMessage } from '../../report/message'
 import { escapeHtml, escapeScript } from './escape'
+import { THEME_STORAGE_KEY } from './state'
 import { renderView } from './view'
 
 export type { PageState, Theme } from './state'
@@ -100,6 +101,9 @@ function cssValue(value: string): string {
   return String(value).replace(/[;{}<]/g, '')
 }
 
+/** Applies the remembered or preferred colour scheme before first paint. */
+const THEME_BOOTSTRAP = `<script>(function(){var t;try{t=localStorage.getItem(${escapeScript(JSON.stringify(THEME_STORAGE_KEY))})}catch(e){}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}})()</script>\n`
+
 function stateScript(state: PageState, options: RenderHtmlOptions): string {
   const script = options.assets?.script ? `<script src="${escapeHtml(options.assets.script)}"></script>` : `<script>${getClientScript()}</script>`
   const json = JSON.stringify(state, options.rawStack ? undefined : (key, value) => key === 'rawStack' ? undefined : value)
@@ -134,7 +138,7 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${escapeHtml(title)}</title>
-${options.assets?.styles ? `<link rel="stylesheet" href="${escapeHtml(options.assets.styles)}">\n` : ''}<style>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${sheet(options.assets)}${themeStyles(options.theme, ':root')}</style>
+${scheme ? '' : THEME_BOOTSTRAP}${options.assets?.styles ? `<link rel="stylesheet" href="${escapeHtml(options.assets.styles)}">\n` : ''}<style>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${sheet(options.assets)}${themeStyles(options.theme, ':root')}</style>
 ${options.head ?? ''}
 </head>
 <body>

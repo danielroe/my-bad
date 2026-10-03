@@ -1,5 +1,8 @@
 import type { ErrorReport, HistoryEntry } from '../../types'
 
+/** `localStorage` key holding the colour scheme the user picked. */
+export const THEME_STORAGE_KEY = 'my-bad:theme'
+
 export interface Theme {
   /** Product name shown in the header. */
   name?: string
