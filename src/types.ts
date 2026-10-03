@@ -16,6 +16,9 @@ export interface Token {
  */
 export type Tokenizer = (line: string, lang: string | undefined) => Token[] | undefined
 
+/** A construct that is still open where a snippet starts. */
+export type SnippetContinuation = 'comment' | 'html-comment' | 'template'
+
 export interface Snippet {
   /** 1-based line number of `lines[0]`. */
   start: number

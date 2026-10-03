@@ -3,11 +3,14 @@ import type { SourceMapLookup } from './decode'
 import { readFile } from 'node:fs/promises'
 import { dirname, isFilePath, resolvePath, toPath, withoutQuery } from '../report/path'
 import { decodeSourceMap } from './decode'
+import { withEmbeddedSource } from './embedded'
 
 export interface RawSourceMap {
   version?: number
   mappings: string
   sources: (string | null)[]
+  /** Original contents per entry of `sources`, used for snippets in place of reading the file. */
+  sourcesContent?: (string | null)[]
   sourceRoot?: string
   names?: string[]
   file?: string
@@ -16,17 +19,29 @@ export interface RawSourceMap {
   ignoreList?: number[]
 }
 
+/** A map made of sections, each mapping the generated code from `offset` on. */
+export interface RawIndexSourceMap {
+  version?: number
+  file?: string
+  sections: Array<{ offset: { line: number, column: number }, map: RawSourceMap }>
+}
+
 export interface SourceMapLoaderOptions {
   /**
    * Return the raw sourcemap for a generated file, or a falsy value when the
    * file is unknown. Used to map frames from in-memory transforms (module
    * runners, `vm` evaluation) where no map is reachable from disk.
    */
-  getSourceMap: (file: string) => RawSourceMap | undefined | null | Promise<RawSourceMap | undefined | null>
+  getSourceMap: (file: string) => RawSourceMap | RawIndexSourceMap | undefined | null | Promise<RawSourceMap | RawIndexSourceMap | undefined | null>
   /** Return the generated code for a file, so the compiled snippet can be shown. */
   getCode?: (file: string) => string | undefined | null | Promise<string | undefined | null>
   /** Read original sources from disk for snippets. Default `true`. */
   fs?: boolean
+  /**
+   * Use the map's `sourcesContent` for snippets, without reading the source.
+   * Pass a function to decide per resolved source path. Default `true`.
+   */
+  sourcesContent?: boolean | ((file: string) => boolean)
   /** Directory relative sources in the map resolve against. Defaults to the generated file's directory. */
   base?: (file: string) => string
   /**
@@ -59,8 +74,14 @@ export function findOriginal(map: SourceMapLookup, line: number, column: number 
   return { source: entry.originalSource, line: entry.originalLine + 1, column: (entry.originalColumn ?? 0) + 1 }
 }
 
+type SourceFields = Partial<Pick<RawSourceMap, 'sourceRoot' | 'sources' | 'sourcesContent' | 'x_google_ignoreList' | 'ignoreList'>>
+
 /** Resolve a 1-based generated position through a map to an original file position. */
 export function mapPosition(map: SourceMapLookup, raw: Pick<RawSourceMap, 'sourceRoot' | 'sources' | 'x_google_ignoreList' | 'ignoreList'>, base: string, line: number, column: number | undefined): MappedPosition | undefined {
+  return resolveOriginal(map, raw, base, line, column)?.position
+}
+
+function resolveOriginal(map: SourceMapLookup, raw: SourceFields, base: string, line: number, column: number | undefined): { position: MappedPosition, source: string, index: number } | undefined {
   const original = findOriginal(map, line, column)
   if (!original) {
     return
@@ -68,24 +89,36 @@ export function mapPosition(map: SourceMapLookup, raw: Pick<RawSourceMap, 'sourc
   const root = raw.sourceRoot ? raw.sourceRoot.replace(/\/?$/, '/') : ''
   const ignoreList = raw.ignoreList ?? raw.x_google_ignoreList
   const index = raw.sources?.indexOf(original.source) ?? -1
+  const ignored = index >= 0 ? ignoreList?.includes(index) : map.ignoredSource?.(original.source)
   return {
-    file: resolvePath(base, toPath(`${root}${original.source}`)),
-    line: original.line,
-    column: original.column,
-    ...(index >= 0 && ignoreList?.includes(index) && { ignored: true }),
+    position: {
+      file: resolvePath(base, toPath(`${root}${original.source}`)),
+      line: original.line,
+      column: original.column,
+      ...(ignored && { ignored: true }),
+    },
+    source: original.source,
+    index,
   }
+}
+
+/** The contents a map embeds for one of its sources, ignoring empty placeholders. */
+function embeddedContent(map: SourceMapLookup, raw: Pick<RawSourceMap, 'sourcesContent'>, source: string, index: number): string | undefined {
+  const content = map.sourceContent ? map.sourceContent(source) : index >= 0 ? raw.sourcesContent?.[index] : undefined
+  return typeof content === 'string' && content ? content : undefined
 }
 
 interface Loaded {
   map: SourceMapLookup
-  raw: RawSourceMap
+  /** Top-level source fields; an index map keeps them per section, where the decoded map reads them. */
+  raw: SourceFields
   base: string
 }
 
 /** Decoded maps by raw map object, shared by every loader instance since integrations commonly create loaders per request. */
-const parsed = new WeakMap<RawSourceMap, SourceMapLookup | null>()
+const parsed = new WeakMap<RawSourceMap | RawIndexSourceMap, SourceMapLookup | null>()
 
-function parseMap(raw: RawSourceMap): SourceMapLookup | undefined {
+function parseMap(raw: RawSourceMap | RawIndexSourceMap): SourceMapLookup | undefined {
   const existing = parsed.get(raw)
   if (existing !== undefined) {
     return existing ?? undefined
@@ -100,20 +133,24 @@ function parseMap(raw: RawSourceMap): SourceMapLookup | undefined {
   }
 }
 
-/** Maps frames with sourcemaps supplied by the caller, and reads original sources from disk. */
+/**
+ * Maps frames with sourcemaps supplied by the caller. Snippets come from the
+ * map's `sourcesContent` where it has them, otherwise from disk.
+ */
 export function sourceMapLoader(options: SourceMapLoaderOptions): SourceLoader {
+  const embed = options.sourcesContent ?? true
   const cache = new Map<string, { version: string | undefined, value: Promise<Loaded | undefined> }>()
 
   async function load(file: string): Promise<Loaded | undefined> {
     const raw = await options.getSourceMap(file)
-    if (!raw?.mappings) {
+    if (!raw || ('sections' in raw ? !Array.isArray(raw.sections) || !raw.sections.length : !raw.mappings)) {
       return
     }
     const map = parseMap(raw)
     if (!map) {
       return
     }
-    return { map, raw, base: options.base?.(file) ?? dirname(file) }
+    return { map, raw: 'sections' in raw ? {} : raw, base: options.base?.(file) ?? dirname(file) }
   }
 
   async function loaded(file: string): Promise<Loaded | undefined> {
@@ -141,17 +178,19 @@ export function sourceMapLoader(options: SourceMapLoaderOptions): SourceLoader {
       if (!result) {
         return
       }
-      const mapped = mapPosition(result.map, result.raw, result.base, frame.line, frame.column)
-      if (!mapped) {
+      const resolved = resolveOriginal(result.map, result.raw, result.base, frame.line, frame.column)
+      if (!resolved) {
         return
       }
-      const { ignored, ...position } = mapped
-      return {
+      const { ignored, ...position } = resolved.position
+      const mapped: Frame = {
         ...frame,
         ...position,
         ...(ignored && { type: 'vendor' as const }),
         compiled: frame.compiled ?? { file: frame.file, line: frame.line, column: frame.column },
       }
+      const usable = typeof embed === 'function' ? embed(position.file) : embed
+      return usable ? withEmbeddedSource(mapped, embeddedContent(result.map, result.raw, resolved.source, resolved.index)) : mapped
     },
     read(file: string) {
       const path = withoutQuery(file)

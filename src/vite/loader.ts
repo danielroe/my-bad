@@ -3,6 +3,7 @@ import type { SourceMapLookup } from '../loaders/decode'
 import type { Frame, SourceLoader } from '../types'
 import { readFile } from 'node:fs/promises'
 import { decodeSourceMap } from '../loaders/decode'
+import { withEmbeddedSource } from '../loaders/embedded'
 import { parseInlineSourceMap } from '../loaders/fs'
 import { findOriginal } from '../loaders/sourcemap'
 import { dirname, isFilePath, normalizeSlashes, resolvePath, toPath, withoutQuery } from '../report/path'
@@ -35,24 +36,53 @@ function findModule(server: ViteDevServer, file: string): ModuleNode | undefined
   }
 }
 
+type TransformResult = NonNullable<ModuleNode['transformResult']>
+
+interface DecodedMap {
+  code: string
+  map: TransformResult['map']
+  lookup: SourceMapLookup | undefined
+  /** The map's `sourceRoot`, with a trailing `/`. */
+  root: string
+}
+
+/**
+ * Decoded maps by transform result, shared by every loader instance. The module
+ * runner rewrites `code` in place to append its inline map, so an entry is only
+ * reused while `code` and `map` are the ones it was decoded from.
+ */
+const decoded = new WeakMap<TransformResult, DecodedMap>()
+
 /**
  * The map embedded in the transformed code accounts for the module runner's
  * wrapper lines, so it matches runtime stack positions where `transformResult.map`
  * does not. Prefer it when present.
  */
-function mapOf(mod: ModuleNode): { map: SourceMapLookup, base: string } | undefined {
+function decode(result: TransformResult): DecodedMap {
+  const entry: DecodedMap = { code: result.code, map: result.map, lookup: undefined, root: '' }
+  const raw = (parseInlineSourceMap(result.code) ?? result.map) as { mappings?: string, sections?: unknown[], sourceRoot?: string } | null | undefined
+  if (!raw?.mappings && !(Array.isArray(raw?.sections) && raw.sections.length)) {
+    return entry
+  }
+  try {
+    entry.lookup = decodeSourceMap(raw as Parameters<typeof decodeSourceMap>[0])
+    entry.root = typeof raw.sourceRoot === 'string' && raw.sourceRoot ? raw.sourceRoot.replace(/\/?$/, '/') : ''
+  }
+  catch {}
+  return entry
+}
+
+function mapOf(mod: ModuleNode): { map: SourceMapLookup, root: string, base: string } | undefined {
   const result = mod.ssrTransformResult ?? mod.transformResult
   if (!result) {
     return
   }
-  const raw = parseInlineSourceMap(result.code) ?? (result.map as { mappings?: string } | null | undefined)
-  if (!raw?.mappings) {
-    return
+  let entry = decoded.get(result)
+  if (!entry || entry.code !== result.code || entry.map !== result.map) {
+    entry = decode(result)
+    decoded.set(result, entry)
   }
-  try {
-    return { map: decodeSourceMap(raw), base: dirname(mod.file ?? mod.id ?? '/') }
-  }
-  catch {}
+  return entry.lookup && { map: entry.lookup, root: entry.root, base: dirname(mod.file ?? mod.id ?? '/') }
 }
 
 export interface ViteLoaderOptions {
@@ -61,8 +91,9 @@ export interface ViteLoaderOptions {
 }
 
 /**
- * Maps frames through Vite's module graph (SSR or client transforms) and reads
- * sources from disk or, for virtual modules, from the transformed code.
+ * Maps frames through Vite's module graph (SSR or client transforms). Snippets
+ * come from the map's `sourcesContent`, then from disk or, for virtual modules,
+ * from the transformed code.
  */
 export function viteLoader(server: ViteDevServer, options: ViteLoaderOptions = {}): SourceLoader {
   return {
@@ -84,17 +115,21 @@ export function viteLoader(server: ViteDevServer, options: ViteLoaderOptions = {
         return
       }
       const { source, line, column } = original
-      const file = isFilePath(source) || source.startsWith('file:') ? toPath(source) : source.startsWith('/@fs/') ? source.slice(4) : /^[^./]/.test(source) && !source.includes(':') ? mod.file ?? frame.file : resolvePath(loaded.base, source)
+      const named = `${loaded.root}${source}`
+      const file = isFilePath(named) || named.startsWith('file:') ? toPath(named) : named.startsWith('/@fs/') ? named.slice(4) : /^[^./]/.test(named) && !named.includes(':') ? mod.file ?? frame.file : resolvePath(loaded.base, named)
+      const content = loaded.map.sourceContent?.(source)
       if (withoutQuery(file) === withoutQuery(frame.file) && line === frame.line && column === frame.column) {
+        // Already original: left unmapped, but the map's copy of the source still serves its snippet.
+        withEmbeddedSource(frame, content)
         return
       }
-      return {
+      return withEmbeddedSource({
         ...frame,
         file,
         line,
         column,
         compiled: frame.compiled ?? { file: frame.file, line: frame.line, column: frame.column },
-      }
+      }, content)
     },
     readCompiled(file: string) {
       const mod = findModule(server, file)

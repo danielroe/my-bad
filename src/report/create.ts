@@ -2,6 +2,7 @@ import type { CompiledMarker, CompileErrorInput, ErrorReport, Frame, ReportKind,
 import process from 'node:process'
 import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
+import { embeddedSource } from '../loaders/embedded'
 import { fsLoader } from '../loaders/fs'
 import { stripAnsi } from './ansi'
 import { classifyFrame } from './classify'
@@ -430,7 +431,7 @@ async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[numb
     frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
     if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
       const [snippet, compiled] = await Promise.all([
-        loadSnippet(frame.file, frame.line, ctx),
+        loadSnippet(frame.file, frame.line, ctx, embeddedSource(frame)),
         frame.compiled?.line !== undefined ? loadCompiledSnippet(frame.compiled.file, frame.compiled.line, ctx, frame.compiled.file !== frame.file) : undefined,
       ])
       frame.snippet = snippet
@@ -553,8 +554,8 @@ async function readSourceUncached(file: string, options: ResolvedReportOptions):
   }
 }
 
-async function loadSnippet(file: string, line: number, ctx: BuildContext) {
-  const contents = await readSource(file, ctx)
+async function loadSnippet(file: string, line: number, ctx: BuildContext, embedded?: string) {
+  const contents = embedded !== undefined && lineAt(embedded, line) !== undefined ? embedded : await readSource(file, ctx)
   return contents === undefined ? undefined : withTokens(extractSnippet(contents, line, ctx.options.snippetLines, file), ctx.options)
 }
 
