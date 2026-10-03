@@ -17,7 +17,10 @@ export interface FsLoaderOptions {
   sidecar?: boolean
   /** Parse `sourceMappingURL` comments. Default `true`. */
   inline?: boolean
-  /** Directories the loader may read from, maps included. Paths are canonicalised, so a symlink out of a root is denied. Unrestricted by default. */
+  /**
+   * Directories the loader may read from, maps included. Paths are canonicalised, so a symlink out of a root is denied. Unrestricted by default.
+   * A map's `sourcesContent` is only shown for sources that `roots` and `canRead` allow.
+   */
   roots?: string[]
   /** Further per-file check, applied after `roots`. */
   canRead?: (file: string) => boolean
@@ -174,7 +177,11 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
     }
   }
 
-  const loader = sourceMapLoader({ getSourceMap, base: file => dirname(linked.get(file) ?? file) })
+  const loader = sourceMapLoader({
+    getSourceMap,
+    base: file => dirname(linked.get(file) ?? file),
+    sourcesContent: bounds || canRead ? file => allowed(file) !== undefined : true,
+  })
   const readContents = async (file: string) => {
     const path = withoutQuery(file)
     return isFilePath(path) ? (await readAllowed(path))?.contents : undefined

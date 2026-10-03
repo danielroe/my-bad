@@ -1,5 +1,5 @@
 export { fsLoader, mapPosition, parseInlineSourceMap, passthroughLoader, sourceMapLoader } from './loaders'
-export type { FsLoaderOptions, MappedPosition, RawSourceMap, SourceMapLoaderOptions } from './loaders'
+export type { FsLoaderOptions, MappedPosition, RawIndexSourceMap, RawSourceMap, SourceMapLoaderOptions } from './loaders'
 export { renderAnsi } from './render/ansi'
 export type { RenderAnsiOptions } from './render/ansi'
 export { clientAssets, injectOverlay, renderOverlay, renderPage } from './render/html'
