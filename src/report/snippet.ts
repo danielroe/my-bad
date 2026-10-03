@@ -1,43 +1,112 @@
 import type { Snippet } from '../types'
 import { langFromFile } from './path'
+import { continuationAt } from './tokenize'
 
-export function extractSnippet(contents: string, line: number, context: number, file?: string): Snippet | undefined {
+export interface SnippetBounds {
+  /** 1-based column the snippet is about, kept inside the window when lines are cropped. */
+  column?: number
+  /** Maximum characters of each line. */
+  maxLineLength?: number
+}
+
+export function extractSnippet(contents: string, line: number, context: number, file?: string, bounds: SnippetBounds = {}): Snippet | undefined {
   if (line < 1) {
     return
   }
   const start = Math.max(1, line - context)
-  const lines = linesBetween(contents, start, line + context)
-  if (lines.length <= line - start) {
+  const ranges = rangesBetween(contents, start, line + context)
+  if (ranges.length <= line - start) {
     return
   }
+  const lang = file ? langFromFile(file) : undefined
+  const max = bounds.maxLineLength ?? Infinity
+  if (ranges.some(([from, to]) => to - from > max)) {
+    const offset = windowStart(bounds.column, max)
+    return { start, lines: ranges.map(([from, to]) => cropRange(contents, from, to, offset, max)), lang, offset }
+  }
+  const continues = continuationAt(contents, ranges[0]![0], lang)
   return {
     start,
-    lines,
-    lang: file ? langFromFile(file) : undefined,
+    lines: ranges.map(([from, to]) => contents.slice(from, to)),
+    lang,
+    ...(continues && { continues }),
   }
+}
+
+/** Crop the lines of a snippet that was not read from a file, such as a compiler's code frame. */
+export function cropSnippet(snippet: Snippet, column: number | undefined, max: number): Snippet {
+  if (snippet.offset !== undefined || !snippet.lines.some(text => text.length > max)) {
+    return snippet
+  }
+  const offset = windowStart(column, max)
+  const { tokens: _, ...rest } = snippet
+  return { ...rest, lines: snippet.lines.map(text => cropRange(text, 0, text.length, offset, max)), offset }
+}
+
+/** Where a window of `max` characters starts so that `column` stays clear of its edges. */
+function windowStart(column: number | undefined, max: number): number {
+  const index = column === undefined || !Number.isFinite(column) ? 0 : Math.max(0, Math.floor(column) - 1)
+  return index < max - Math.floor(max / 4) ? 0 : index - Math.floor(max / 2)
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xD800 && code <= 0xDBFF
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xDC00 && code <= 0xDFFF
+}
+
+/**
+ * The window `[offset, offset + max)` of `text.slice(from, to)`. A cut end gives
+ * up its last character to `…`, so every character keeps its column, and a
+ * surrogate split by the cut becomes U+FFFD.
+ */
+function cropRange(text: string, from: number, to: number, offset: number, max: number): string {
+  const length = to - from
+  if (offset === 0 && length <= max) {
+    return text.slice(from, to)
+  }
+  if (length <= offset) {
+    return length > 0 ? '…' : ''
+  }
+  const end = Math.min(to, from + offset + max)
+  let out = text.slice(from + offset, end)
+  if (offset > 0) {
+    out = `…${isLowSurrogate(out.charCodeAt(1)) ? '\uFFFD' : ''}${out.slice(isLowSurrogate(out.charCodeAt(1)) ? 2 : 1)}`
+  }
+  if (end < to) {
+    const last = out.length - 2
+    out = `${out.slice(0, isHighSurrogate(out.charCodeAt(last)) ? last : last + 1)}${isHighSurrogate(out.charCodeAt(last)) ? '\uFFFD' : ''}…`
+  }
+  return out
 }
 
 /** A single 1-based line, or `undefined` past the end of the file. */
 export function lineAt(contents: string, line: number): string | undefined {
-  return line < 1 ? undefined : linesBetween(contents, line, line)[0]
+  if (line < 1) {
+    return
+  }
+  const range = rangesBetween(contents, line, line)[0]
+  return range && contents.slice(range[0], range[1])
 }
 
-/** Lines `from` to `to` (1-based, inclusive) without splitting the whole file. */
-function linesBetween(contents: string, from: number, to: number): string[] {
-  const lines: string[] = []
+/** Offsets of lines `from` to `to` (1-based, inclusive), without a trailing `\r` and without splitting the whole file. */
+function rangesBetween(contents: string, from: number, to: number): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
   let offset = 0
   for (let n = 1; n <= to; n++) {
     const newline = contents.indexOf('\n', offset)
     const end = newline === -1 ? contents.length : newline
     if (n >= from) {
-      lines.push(newline !== -1 && contents.charCodeAt(end - 1) === 13 ? contents.slice(offset, end - 1) : contents.slice(offset, end))
+      ranges.push([offset, newline !== -1 && contents.charCodeAt(end - 1) === 13 ? end - 1 : end])
     }
     if (newline === -1) {
       break
     }
     offset = newline + 1
   }
-  return lines
+  return ranges
 }
 
 const FRAME_LINE_RE = /^(\s*(\d+)\s*\|\s{0,2})(.*)$/

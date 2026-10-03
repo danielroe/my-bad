@@ -216,7 +216,7 @@ export function renderSnippet(snippet: Snippet, line: number, column?: number, l
   for (const [index, text] of snippet.lines.entries()) {
     const n = snippet.start + index
     const active = n === line
-    rows += `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${more && Math.abs(n - line) > 3 ? ' data-context="true"' : ''}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${active ? renderCaret(text, column) : ''}</span></span>`
+    rows += `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${more && Math.abs(n - line) > 3 ? ' data-context="true"' : ''}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${active ? renderCaret(text, column === undefined ? undefined : column - (snippet.offset ?? 0)) : ''}</span></span>`
   }
   const description = `Source${label ? ` of ${label}` : ''}, line ${line} highlighted`
   return `<pre class="mb-snippet"${attr('data-more-context', more)} data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows}</code></pre>`
