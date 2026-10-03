@@ -3,6 +3,7 @@ import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml } from '../escape'
+import { THEME_STORAGE_KEY } from '../state'
 import { ICONS, pagerIndex, renderPager, renderToast, renderView, reportEntries } from '../view'
 
 declare global {
@@ -10,7 +11,7 @@ declare global {
 }
 
 const STORAGE = {
-  theme: 'my-bad:theme',
+  theme: THEME_STORAGE_KEY,
   dock: 'my-bad:overlay:dock',
   minimized: 'my-bad:overlay:minimized',
 }
@@ -149,7 +150,8 @@ function overlayMount(state: PageState, host: HTMLElement): Mount {
 
 function applyTheme(m: Mount): void {
   const forced = m.state.theme?.scheme
-  const stored = storage(STORAGE.theme)
+  const remembered = storage(STORAGE.theme)
+  const stored = remembered === 'light' || remembered === 'dark' ? remembered : undefined
   const scheme = forced ?? stored ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   m.themeTarget.setAttribute('data-theme', scheme)
 }
@@ -243,10 +245,20 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
 
 const labelRestores = new WeakMap<HTMLElement, () => void>()
 
-function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFailed'): () => void {
+/** An icon-only button keeps its size: it swaps its icon and accessible name instead of its text. */
+function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFailed', iconOnly = false): () => void {
   labelRestores.get(button)?.()
   const original = button.innerHTML
-  button.textContent = label
+  const name = button.getAttribute('aria-label')
+  const title = button.getAttribute('title')
+  if (iconOnly) {
+    button.innerHTML = flag === 'copied' ? ICONS.check : ICONS.copy
+    button.setAttribute('aria-label', label)
+    button.title = label
+  }
+  else {
+    button.textContent = label
+  }
   button.dataset[flag] = ''
   const restore = () => {
     if (labelRestores.get(button) !== restore) {
@@ -254,6 +266,10 @@ function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFail
     }
     labelRestores.delete(button)
     button.innerHTML = original
+    if (iconOnly) {
+      restoreAttribute(button, 'aria-label', name)
+      restoreAttribute(button, 'title', title)
+    }
     delete button.dataset.copied
     delete button.dataset.copyFailed
   }
@@ -261,8 +277,17 @@ function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFail
   return restore
 }
 
-function flash(button: HTMLElement, label: string): void {
-  setTimeout(setLabel(button, label, 'copied'), 1200)
+function restoreAttribute(el: HTMLElement, name: string, value: string | null): void {
+  if (value === null) {
+    el.removeAttribute(name)
+  }
+  else {
+    el.setAttribute(name, value)
+  }
+}
+
+function flash(button: HTMLElement, label: string, iconOnly = false): void {
+  setTimeout(setLabel(button, label, 'copied', iconOnly), 1200)
 }
 
 /** In the host document: `execCommand` cannot act on a selection inside a shadow root. */
@@ -328,16 +353,41 @@ async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> 
   const text = what === 'json'
     ? JSON.stringify(report, null, 2)
     : `${what === 'prompt' ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behaviour.\n\n' : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
+  return copyText(m, text, button)
+}
+
+function copyLocation(m: Mount, button: HTMLElement): Promise<void> | undefined {
+  const { dataset } = button
+  const position = (file?: string, line?: string, column?: string) => file && `${file}${line ? `:${line}${column ? `:${column}` : ''}` : ''}`
+  const source = position(dataset.file, dataset.line, dataset.column)
+  const compiled = position(dataset.compiledFile, dataset.compiledLine, dataset.compiledColumn)
+  const text = (button.closest('[data-frame]')?.hasAttribute('data-compiled') ? compiled : undefined) || source || compiled
+  return text ? copyText(m, text, button, 'location') : undefined
+}
+
+/** `what` marks an icon-only button, whose feedback goes into its accessible name and the live region. */
+async function copyText(m: Mount, text: string, button: HTMLElement, what?: string): Promise<void> {
+  const iconOnly = what !== undefined
+  const done = () => {
+    flash(button, iconOnly ? `Copied ${what}` : 'Copied', iconOnly)
+    if (iconOnly) {
+      announce(m, `Copied ${what}: ${text}`)
+    }
+  }
   try {
     await navigator.clipboard.writeText(text)
-    return flash(button, 'Copied')
+    return done()
   }
   catch {}
   if (execCommandCopy(text)) {
     button.focus({ preventScroll: true })
-    return flash(button, 'Copied')
+    return done()
   }
-  const restore = setLabel(button, `Press ${copyShortcut()}`, 'copyFailed')
+  const prompt = `Press ${copyShortcut()}`
+  const restore = setLabel(button, iconOnly ? `${prompt} to copy the ${what}` : prompt, 'copyFailed', iconOnly)
+  if (iconOnly) {
+    announce(m, `${prompt} to copy the ${what}`)
+  }
   await offerManualCopy(text)
   restore()
 }
@@ -862,6 +912,8 @@ function bind(m: Mount): void {
         setTimeout(closeMenus, 1200, m)
         return
       }
+      case 'copy-location':
+        return void copyLocation(m, target)
       case 'open':
         return void open(m, target.dataset.file!, target.dataset.line, target.dataset.column)
       case 'cause': {

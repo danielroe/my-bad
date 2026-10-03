@@ -574,6 +574,85 @@ describe('copy formats', () => {
   })
 })
 
+describe('copy location', () => {
+  async function compiledReport(message: string) {
+    const r = await report(message)
+    r.frames[0]!.compiled = { file: `${proj}/dist/handler.js`, line: 7, column: 11, snippet: { start: 6, lines: ['var a = 1', 'throw new Error()'] } }
+    return r
+  }
+
+  it('copies the position of the view the frame shows and announces it', async () => {
+    channel.setError(await compiledReport('Copy a location'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.assign(window, { testClipboard: '' })
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => Object.assign(window, { testClipboard: text }) } })
+    })
+    await page.goto(origin)
+    const copied = () => page.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
+    const source = page.locator('.mb-source').first()
+    await source.getByRole('button', { name: 'Copy location', exact: true }).click()
+    await waitFor(copied, `${proj}/src/handler.ts:2:3`)
+    await waitFor(() => source.getByRole('button', { name: 'Copied location', exact: true }).count(), 1)
+    await waitFor(async () => (await page.locator('[data-announce]').textContent())?.includes(`${proj}/src/handler.ts:2:3`), true)
+    await waitFor(() => source.getByRole('button', { name: 'Copy location', exact: true }).count(), 1, 4000)
+
+    await source.getByRole('button', { name: 'Compiled', exact: true }).click()
+    await source.getByRole('button', { name: 'Copy location', exact: true }).click()
+    await waitFor(copied, `${proj}/dist/handler.js:7:11`)
+
+    const requests = openRequests.length
+    await source.getByRole('button', { name: 'Open original source in your editor', exact: true }).click()
+    await waitFor(() => openRequests.length, requests + 1)
+    await page.close()
+  })
+
+  it('keeps the icon button compact while offering a keyboard copy', async () => {
+    channel.setError(await compiledReport('Copy a location by hand'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
+        throw new Error('Write permission denied')
+      } } })
+      document.execCommand = () => false
+    })
+    await page.goto(origin)
+    const source = page.locator('.mb-source').first()
+    const button = source.getByRole('button', { name: 'Copy location', exact: true })
+    const width = (await button.boundingBox())!.width
+    await button.click()
+    const prompt = source.getByRole('button', { name: /^Press (?:\u2318C|Ctrl\+C) to copy the location$/ })
+    await waitFor(() => prompt.count(), 1)
+    expect((await prompt.boundingBox())!.width).toBe(width)
+    expect(await page.evaluate(() => document.querySelector<HTMLTextAreaElement>('textarea[data-my-bad]')?.value)).toBe(`${proj}/src/handler.ts:2:3`)
+    await page.keyboard.press('Escape')
+    await waitFor(() => source.getByRole('button', { name: 'Copy location', exact: true }).count(), 1)
+    await page.close()
+  })
+})
+
+describe('theme before first paint', () => {
+  it('applies the remembered scheme without the client script', async () => {
+    const page = await browser.newPage({ colorScheme: 'dark' })
+    await page.addInitScript(() => localStorage.setItem('my-bad:theme', 'light'))
+    await page.route('**/client.js', route => route.abort())
+    await page.goto(`${origin}/page-external`)
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+    await page.close()
+  })
+
+  it('follows the system preference when storage is unavailable', async () => {
+    const page = await browser.newPage({ colorScheme: 'dark' })
+    await page.addInitScript(() => Object.defineProperty(window, 'localStorage', { get: () => {
+      throw new DOMException('denied', 'SecurityError')
+    } }))
+    await page.route('**/client.js', route => route.abort())
+    await page.goto(`${origin}/page-external`)
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+    await page.close()
+  })
+})
+
 describe('accessibility', () => {
   it('has labelled controls, landmarks and keyboard navigation', async () => {
     channel.setError(await report('a11y'))

@@ -235,6 +235,8 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-missing { margin-left: auto; }
 .mb-empty-frame { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; color: var(--mb-fg-muted); }
 .mb-empty-frame .mb-loc { flex: 1; }
+.mb-empty-frame .mb-tool { align-self: center; width: 28px; min-width: 28px; height: 28px; padding: 4px; }
+.mb-empty-frame .mb-tool svg { width: 13px; height: 13px; }
 .mb-frame-reference { padding: 10px 12px; color: var(--mb-fg-muted); font-size: 12px; }
 .mb-source[data-supporting] .mb-line-active { background: var(--mb-surface); border-left-color: var(--mb-fg-muted); }
 .mb-source[data-supporting] .mb-line-active .mb-ln, .mb-source[data-supporting] .mb-caret { color: var(--mb-fg-muted); }
