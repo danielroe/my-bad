@@ -26,6 +26,14 @@ export interface Snippet {
   lang?: string
   /** Pre-computed tokens per line, when a custom tokenizer was configured. */
   tokens?: Token[][]
+  /**
+   * Set when long lines were cropped to a window: the number of characters cut
+   * from the start of every line. Subtract it from a 1-based column to find
+   * that column in `lines`. Cut ends are marked with `…`.
+   */
+  offset?: number
+  /** Block comment, HTML comment or template literal that `lines[0]` starts inside. */
+  continues?: SnippetContinuation
 }
 
 /**
@@ -162,6 +170,18 @@ export interface ReportOptions {
   /** Maximum characters of each report's `rawStack`. Default `50_000`. */
   maxRawStackLength?: number
   snippetLines?: number
+  /**
+   * Maximum snippets across the whole report, causes and related errors
+   * included, counting source, compiled and compiler-provided snippets alike.
+   * Default `100`, also used for `NaN`; fractions round down. Frames past the
+   * budget keep their location without a snippet.
+   */
+  maxSnippets?: number
+  /**
+   * Maximum characters of each snippet line. Longer lines are cropped to a
+   * window around the reported column. Default `500`, also used for `NaN`; fractions round down and values below `2` count as `2`.
+   */
+  maxSnippetLineLength?: number
   /** Skip snippet loading entirely. */
   snippets?: boolean
   /** Arbitrary data for plugins: request, event, Vue instance, route... */
@@ -197,6 +217,8 @@ export interface ResolvedReportOptions {
   maxMessageLength: number
   maxRawStackLength: number
   snippetLines: number
+  maxSnippets: number
+  maxSnippetLineLength: number
   snippets: boolean
   context: Record<string, unknown>
   tokenizer?: Tokenizer

@@ -195,8 +195,9 @@ function renderSnippet(snippet: Snippet, line: number, column: number | undefine
     const number = String(n).padStart(gutter)
     if (n === line) {
       out.push(`${indent}${p.red('›')} ${p.red(p.bold(number))} ${p.dim('│')} ${code}`)
-      if (column !== undefined && column > 0 && column <= codeWidth) {
-        out.push(`${indent}  ${' '.repeat(gutter)} ${p.dim('│')} ${' '.repeat(column - 1)}${p.red('^')}`)
+      const shown = column === undefined ? undefined : column - (snippet.offset ?? 0)
+      if (shown !== undefined && shown > 0 && shown <= codeWidth) {
+        out.push(`${indent}  ${' '.repeat(gutter)} ${p.dim('│')} ${' '.repeat(shown - 1)}${p.red('^')}`)
       }
     }
     else {

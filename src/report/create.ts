@@ -8,9 +8,9 @@ import { stripAnsi } from './ansi'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
 import { hasScheme, isFilePath, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
-import { extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
+import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
-import { tokenizeLine } from './tokenize'
+import { tokenizeSnippet } from './tokenize'
 
 const DEFAULT_LOADERS = [fsLoader()]
 
@@ -29,6 +29,8 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
     maxMessageLength: options.maxMessageLength ?? 10_000,
     maxRawStackLength: options.maxRawStackLength ?? 50_000,
     snippetLines: options.snippetLines ?? 5,
+    maxSnippets: snippetCount(options.maxSnippets),
+    maxSnippetLineLength: lineLength(options.maxSnippetLineLength),
     snippets: options.snippets ?? true,
     context: options.context ?? {},
     tokenizer: options.tokenizer,
@@ -36,10 +38,19 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
   }
 }
 
+function snippetCount(value: number | undefined): number {
+  return value === undefined || Number.isNaN(value) ? 100 : Math.max(0, Math.floor(value))
+}
+
+/** At least 2, which leaves a cut line one character and its `…`. */
+function lineLength(value: number | undefined): number {
+  return value === undefined || Number.isNaN(value) ? 500 : Math.max(2, Math.floor(value))
+}
+
 /** Build a serialisable report from an error, warning, or Vite-style compile error. */
 export async function createReport(input: unknown, options: ReportOptions = {}): Promise<ErrorReport> {
   const resolved = resolveOptions(options)
-  const ctx: BuildContext = { options: resolved, seen: new WeakSet(), sources: new Map(), compiled: new Map(), budget: { frames: resolved.maxMappedFrames } }
+  const ctx: BuildContext = { options: resolved, seen: new WeakSet(), sources: new Map(), compiled: new Map(), budget: { frames: resolved.maxMappedFrames, snippets: resolved.maxSnippets } }
   const report = hoistCompileError(collapseDuplicateCauses(await buildReport(input, ctx, 0)))
   for (const plugin of resolved.plugins) {
     await plugin.transform(report, { input, options: resolved })
@@ -104,13 +115,14 @@ function mergeSections(base: Section[], extra: Section[]): Section[] {
 
 interface Budget {
   frames: number
+  snippets: number
 }
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}… [truncated, ${text.length - max} more characters]`
 }
 
-/** State shared by every node of one report: cycle detection, the frame budget and file reads, which repeat across frames and causes. */
+/** State shared by every node of one report: cycle detection, the frame and snippet budgets and file reads, which repeat across frames and causes. */
 interface BuildContext {
   options: ResolvedReportOptions
   seen: WeakSet<object>
@@ -282,7 +294,7 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
     }
     const frame: Frame = { file, line: Number(groups!.line), column: Number(groups!.column), type: 'app' }
     if (ctx.options.snippets) {
-      frame.snippet = await loadSnippet(file, frame.line!, ctx)
+      setSnippet(frame, await loadSnippet(file, frame.line!, frame.column, ctx))
     }
     addDisplayPaths(frame, ctx.options.cwd)
     frames.push(frame)
@@ -374,12 +386,12 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
           compiled: {
             file,
             ...(loc && { line: loc.line, column: loc.column }),
-            ...(snippet && { snippet: withTokens(snippet, options) }),
+            ...withSnippet(finishSnippet(snippet, loc?.column, ctx)),
           },
         }),
       }
       if (frame.file && frame.line !== undefined && options.snippets) {
-        frame.snippet = await loadSnippet(frame.file, frame.line, ctx)
+        setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
       }
       addDisplayPaths(frame, options.cwd)
       return [frame]
@@ -392,10 +404,16 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
       ...(snippet && { snippet }),
     }
     if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
-      frame.snippet = await loadSnippet(frame.file, frame.line, ctx)
+      setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
     }
     else if (frame.snippet) {
-      frame.snippet = withTokens(frame.snippet, options)
+      const finished = finishSnippet(frame.snippet, frame.column, ctx)
+      if (finished) {
+        frame.snippet = finished
+      }
+      else {
+        delete frame.snippet
+      }
     }
     addDisplayPaths(frame, options.cwd)
     return [frame]
@@ -405,10 +423,60 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
     return []
   }
 
-  return Promise.all(parseRawStackTrace(error.stack).map(trace => buildStackFrame(trace, ctx)))
+  const built = await Promise.all(parseRawStackTrace(error.stack).map(trace => buildStackFrame(trace, ctx)))
+  await attachSnippets(built, ctx)
+  return built.map(({ frame }) => {
+    addDisplayPaths(frame, options.cwd)
+    return frame
+  })
 }
 
-async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[number], ctx: BuildContext): Promise<Frame> {
+interface BuiltFrame {
+  frame: Frame
+  /** Mapped within the frame budget, and so eligible for snippets. */
+  mapped: boolean
+  embedded?: string
+}
+
+interface SnippetRequest {
+  frame: Frame
+  compiled: boolean
+  embedded?: string
+}
+
+/**
+ * Snippets are read in batches no larger than the remaining budget, each read
+ * concurrently and then cut in stack order. The budget goes to the topmost
+ * frames whatever order the reads finish in, and a later batch only runs when
+ * an earlier one had unreadable sources.
+ */
+async function attachSnippets(built: BuiltFrame[], ctx: BuildContext): Promise<void> {
+  if (!ctx.options.snippets) {
+    return
+  }
+  const requests: SnippetRequest[] = built
+    .filter(({ frame, mapped }) => mapped && frame.type === 'app' && frame.file && frame.line !== undefined)
+    .flatMap(({ frame, embedded }) => [{ frame, compiled: false, embedded }, ...(frame.compiled?.line !== undefined ? [{ frame, compiled: true }] : [])])
+  for (let next = 0; next < requests.length && ctx.budget.snippets > 0;) {
+    const batch = requests.slice(next, next + ctx.budget.snippets)
+    next += batch.length
+    const contents = await Promise.all(batch.map(({ frame, compiled, embedded }) => compiled
+      ? readCompiledSource(frame.compiled!.file, ctx, frame.compiled!.file !== frame.file)
+      : embedded !== undefined && lineAt(embedded, frame.line!) !== undefined ? embedded : readSource(frame.file!, ctx)))
+    for (const [index, { frame, compiled }] of batch.entries()) {
+      if (!compiled) {
+        setSnippet(frame, snippetFrom(contents[index], frame.file!, frame.line!, frame.column, ctx))
+        continue
+      }
+      const generated = snippetFrom(contents[index], frame.compiled!.file, frame.compiled!.line!, frame.compiled!.column, ctx)
+      if (generated) {
+        frame.compiled = { ...frame.compiled!, snippet: generated }
+      }
+    }
+  }
+}
+
+async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[number], ctx: BuildContext): Promise<BuiltFrame> {
   const { options, budget } = ctx
   let frame: Frame = {
     ...(trace.source && !trace.isNative && { file: stripCacheQuery(toPath(trace.source)) }),
@@ -429,19 +497,9 @@ async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[numb
     const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
     frame = mapped
     frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
-    if (options.snippets && frame.type === 'app' && frame.file && frame.line !== undefined) {
-      const [snippet, compiled] = await Promise.all([
-        loadSnippet(frame.file, frame.line, ctx, embeddedSource(frame)),
-        frame.compiled?.line !== undefined ? loadCompiledSnippet(frame.compiled.file, frame.compiled.line, ctx, frame.compiled.file !== frame.file) : undefined,
-      ])
-      frame.snippet = snippet
-      if (compiled) {
-        frame.compiled = { ...frame.compiled!, snippet: compiled }
-      }
-    }
+    return { frame, mapped: true, embedded: embeddedSource(frame) }
   }
-  addDisplayPaths(frame, options.cwd)
-  return frame
+  return { frame, mapped: false }
 }
 
 const LEADING_ELLIPSIS = /^\s*(?:…|\.\.\.)/
@@ -554,9 +612,41 @@ async function readSourceUncached(file: string, options: ResolvedReportOptions):
   }
 }
 
-async function loadSnippet(file: string, line: number, ctx: BuildContext, embedded?: string) {
-  const contents = embedded !== undefined && lineAt(embedded, line) !== undefined ? embedded : await readSource(file, ctx)
-  return contents === undefined ? undefined : withTokens(extractSnippet(contents, line, ctx.options.snippetLines, file), ctx.options)
+async function loadSnippet(file: string, line: number, column: number | undefined, ctx: BuildContext): Promise<Snippet | undefined> {
+  return ctx.budget.snippets > 0 ? snippetFrom(await readSource(file, ctx), file, line, column, ctx) : undefined
+}
+
+/** Cut a snippet from file contents, counting it against the report's snippet budget. */
+function snippetFrom(contents: string | undefined, file: string, line: number, column: number | undefined, ctx: BuildContext): Snippet | undefined {
+  if (contents === undefined || ctx.budget.snippets <= 0) {
+    return
+  }
+  const { options } = ctx
+  const snippet = extractSnippet(contents, line, options.snippetLines, file, { column, maxLineLength: options.maxSnippetLineLength })
+  if (!snippet) {
+    return
+  }
+  ctx.budget.snippets--
+  return withTokens(snippet, options)
+}
+
+/** Bound and tokenize a snippet that came with the error, counting it against the snippet budget. */
+function finishSnippet(snippet: Snippet | undefined, column: number | undefined, ctx: BuildContext): Snippet | undefined {
+  if (!snippet || ctx.budget.snippets <= 0) {
+    return
+  }
+  ctx.budget.snippets--
+  return withTokens(cropSnippet(snippet, column, ctx.options.maxSnippetLineLength), ctx.options)
+}
+
+function setSnippet(frame: Frame, snippet: Snippet | undefined): void {
+  if (snippet) {
+    frame.snippet = snippet
+  }
+}
+
+function withSnippet(snippet: Snippet | undefined): { snippet?: Snippet } {
+  return snippet ? { snippet } : {}
 }
 
 /**
@@ -564,17 +654,14 @@ async function loadSnippet(file: string, line: number, ctx: BuildContext, embedd
  * the compiled location is a separate file: when it shares the source path
  * (module runners) the code lives in memory and only `readCompiled` has it.
  */
-async function loadCompiledSnippet(file: string, line: number, ctx: BuildContext, separateFile: boolean) {
+async function readCompiledSource(file: string, ctx: BuildContext, separateFile: boolean): Promise<string | undefined> {
   let pending = ctx.compiled.get(file)
   if (!pending) {
     pending = readCompiledUncached(file, ctx.options)
     ctx.compiled.set(file, pending)
   }
   const contents = await pending
-  if (contents !== undefined) {
-    return withTokens(extractSnippet(contents, line, ctx.options.snippetLines, file), ctx.options)
-  }
-  return separateFile ? loadSnippet(file, line, ctx) : undefined
+  return contents === undefined && separateFile ? readSource(file, ctx) : contents
 }
 
 async function readCompiledUncached(file: string, options: ResolvedReportOptions): Promise<string | undefined> {
@@ -589,12 +676,8 @@ async function readCompiledUncached(file: string, options: ResolvedReportOptions
   }
 }
 
-function withTokens<T extends Snippet | undefined>(snippet: T, options: ResolvedReportOptions): T {
-  if (!snippet || !options.tokenizer) {
-    return snippet
-  }
-  const tokens = snippet.lines.map(line => tokenizeLine(line, snippet.lang, options.tokenizer))
-  return { ...snippet, tokens }
+function withTokens(snippet: Snippet, options: ResolvedReportOptions): Snippet {
+  return options.tokenizer ? { ...snippet, tokens: tokenizeSnippet(snippet, options.tokenizer) } : snippet
 }
 
 function toSectionContent(data: unknown, max: number): Record<string, unknown> | string {
