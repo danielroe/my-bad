@@ -10,7 +10,7 @@
     },
     "packageManager": {
       "name": "pnpm",
-      "version": "12.3.4",
+      "version": "12.9.1",
       "onFail": "download"
     }
   },
@@ -83,14 +83,14 @@
     "@types/node": "26.6.4",
     "@vitest/coverage-v8": "5.0.3",
     "ansivision": "0.4.0",
-    "axe-core": "4.13.0",
+    "axe-core": "4.14.0",
     "consola": "3.4.2",
     "eslint": "10.12.0",
     "fast-check": "4.10.2",
     "installed-check": "11.0.0",
     "knip": "6.39.0",
     "nano-staged": "1.0.2",
-    "pkg-pr-new": "0.0.88",
+    "pkg-pr-new": "0.0.90",
     "playwright": "1.63.0",
     "rolldown": "1.2.12",
     "simple-git-hooks": "2.14.0",
