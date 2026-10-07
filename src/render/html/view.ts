@@ -250,7 +250,7 @@ function renderLogDrawer(): string {
   <div class="mb-logs-head">
     <h2 id="mb-logs-title">Server logs</h2><span class="mb-live" data-live role="status"><span data-live-text>Dev server: connecting</span></span>
     <label class="mb-filter">Level <select data-log-filter><option value="">all</option><option value="warn">warn+</option><option value="error">error</option></select></label>
-    <button class="mb-tool" type="button" data-action="clear-logs" title="Clear logs" aria-label="Clear logs">clear</button>
+    <button class="mb-tool" type="button" data-action="clear-logs" title="Clear logs" aria-label="Clear logs">Clear</button>
     <button class="mb-tool" type="button" data-action="logs" title="Close server logs" aria-label="Close server logs">${ICONS.close}</button>
   </div>
   <div class="mb-log-scroll" role="log" aria-live="off"><ol class="mb-log-list" data-log-list></ol><p class="mb-log-empty" data-log-empty>No logs received yet.</p></div>
