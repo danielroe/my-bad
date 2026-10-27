@@ -3,10 +3,10 @@ import type { Channel, ChannelOptions } from '../channel'
 import type { RenderOverlayOptions, RenderPageOptions } from '../render/html'
 import type { ErrorReport, ReportOptions, ReportPreset, SourceLoader } from '../types'
 import { fileURLToPath } from 'node:url'
-import { fnv1a64Base36 } from 'fnv1a-64'
 import { createChannel } from '../channel'
 import { fsLoader } from '../loaders/fs'
 import { clientAssets, renderOverlay, renderPage } from '../render/html'
+import { assetUrls } from '../render/html/assets'
 import { createReport } from '../report/create'
 import { viteLoader } from './loader'
 
@@ -56,14 +56,6 @@ const CLIENT_ID = 'virtual:my-bad/client'
 const RESOLVED_CLIENT_ID = `\0${CLIENT_ID}`
 /** Browser URL for the virtual module, following Vite's `\0` encoding. */
 const CLIENT_URL = `/@id/__x00__${CLIENT_ID}`
-
-/** Content-hashed URLs so the served client can be cached indefinitely. */
-function assetUrls(base: string): { script: string, styles: string } {
-  return {
-    script: `${base}/client.js?v=${fnv1a64Base36(clientAssets.script)}`,
-    styles: `${base}/client.css?v=${fnv1a64Base36(clientAssets.styles)}`,
-  }
-}
 
 /** Import the client that ships next to this module by absolute path, so the project never resolves `my-bad` itself. */
 function clientSource(): string {

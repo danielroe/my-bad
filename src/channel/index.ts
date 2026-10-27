@@ -6,6 +6,7 @@ import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { json } from 'node:stream/consumers'
+import { ASSET_FILES } from '../render/html/assets'
 import { openInEditor } from './open'
 import { isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
 import { toHistoryEntry } from './protocol'
@@ -113,6 +114,7 @@ interface Client extends Viewer {
 
 const PRIVILEGED = new Set(['open'])
 const MAX_WARNINGS = 100
+const ASSET_KEYS = Object.keys(ASSET_FILES) as Array<keyof typeof ASSET_FILES>
 
 const SSE_HEADERS = {
   'content-type': 'text/event-stream',
@@ -240,9 +242,13 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     return false
   }
 
-  function route(pathname: string): 'events' | 'open' | { history: string } | undefined {
+  function route(pathname: string): 'events' | 'open' | { history: string } | { asset: keyof typeof ASSET_FILES } | undefined {
     if (pathname.endsWith('/events')) {
       return 'events'
+    }
+    const asset = ASSET_KEYS.find(key => pathname.endsWith(`/${ASSET_FILES[key][0]}`))
+    if (asset) {
+      return { asset }
     }
     if (pathname.endsWith('/open')) {
       return 'open'
@@ -301,6 +307,16 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store' }
 
+  /** A `?v=` URL names one build of the asset, so it can be cached for good. */
+  function assetResponse(key: keyof typeof ASSET_FILES, method: string | undefined, url: URL): { status: number, headers?: Record<string, string>, body?: string } {
+    if (method !== 'GET' && method !== 'HEAD') {
+      return { status: 405 }
+    }
+    const [, type, source] = ASSET_FILES[key]
+    const headers = { 'content-type': `${type}; charset=utf-8`, 'cache-control': url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'no-cache' }
+    return { status: 200, headers, body: method === 'HEAD' ? undefined : source() }
+  }
+
   const channel: Channel = {
     async handler(req, res, caller) {
       const trusted = caller?.trusted ?? true
@@ -338,6 +354,11 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         }
         const body = await json(req).catch(() => undefined)
         res.writeHead(await openStatus(req.headers['content-type'], body)).end()
+        return true
+      }
+      if ('asset' in matched) {
+        const { status, headers, body } = assetResponse(matched.asset, req.method, url)
+        res.writeHead(status, headers).end(body)
         return true
       }
       const { status, body } = historyResponse(matched.history, { scope: scopeFromQuery(url.searchParams), trusted })
@@ -391,6 +412,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           return new Response(null, { status: 405 })
         }
         return new Response(null, { status: await openStatus(request.headers.get('content-type'), await request.json().catch(() => undefined)) })
+      }
+      if ('asset' in matched) {
+        const { status, headers, body } = assetResponse(matched.asset, request.method, url)
+        return new Response(body ?? null, { status, headers })
       }
       const { status, body } = historyResponse(matched.history, { scope: scopeFromQuery(url.searchParams), trusted })
       return new Response(body, { status, headers: JSON_HEADERS })

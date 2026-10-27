@@ -36,7 +36,7 @@ try {
   await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'consumer', private: true, type: 'module' }))
   await run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', join(dir, tarball)], { cwd: dir })
   await writeFile(join(dir, 'check.mjs'), `
-import { createReport, renderAnsi, renderOverlay, renderPage, injectOverlay, fsLoader, sourceMapLoader } from 'my-bad'
+import { createReport, renderAnsi, renderBadge, renderOverlay, renderPage, injectOverlay, fsLoader, sourceMapLoader } from 'my-bad'
 import { createChannel, openInEditor } from 'my-bad/channel'
 import { nuxtPreset, vuePreset, envPreset } from 'my-bad/presets'
 import { fileSink } from 'my-bad/sinks'
@@ -47,12 +47,16 @@ const report = await createReport(new Error('packed'), { presets: [nuxtPreset()]
 const page = renderPage(report, { channel: '/__my-bad' })
 const overlay = renderOverlay(report)
 const ansi = renderAnsi(report, { colors: false })
+const badge = renderBadge({ channel: '/__my-bad' })
+const served = await createChannel().fetchHandler(new Request('http://localhost/__my-bad/badge.js'))
 for (const [name, value] of Object.entries({ createChannel, openInEditor, vuePreset, envPreset, fileSink, myBad, useMyBad, viteLoader, installMyBadClient, fsLoader, sourceMapLoader, injectOverlay })) {
   if (typeof value !== 'function') throw new Error(name + ' is not a function')
 }
 if (!page.includes('packed') || !page.includes('<style>') || !page.includes('mb-root')) throw new Error('page is incomplete')
 if (!overlay.startsWith('<my-bad-overlay>')) throw new Error('overlay is incomplete')
 if (!ansi.includes('packed')) throw new Error('ansi is incomplete')
+if (!badge.includes('/__my-bad/badge.js?v=')) throw new Error('badge is incomplete')
+if (!(await served.text()).includes('__MY_BAD_SOURCE__')) throw new Error('channel does not serve the badge')
 console.log('ok', page.length, 'bytes')
 `)
   const { stdout: result } = await run(process.execPath, ['check.mjs'], { cwd: dir })

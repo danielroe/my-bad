@@ -48,3 +48,10 @@ export interface PageState {
   stylesUrl?: string
   version: string
 }
+
+export interface BadgeState {
+  /** The overlay the badge expands into, short of its report. */
+  overlay: Omit<PageState, 'report'>
+  /** URL of the overlay client script. */
+  script: string
+}

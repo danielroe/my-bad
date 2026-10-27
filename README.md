@@ -83,17 +83,38 @@ Use `injectOverlay` rather than `html.replace('</body>', ...)`: the inlined clie
 
 ### Serving the client separately
 
-`renderPage` and `renderOverlay` inline the client script and stylesheet, which makes the output self-contained at the cost of ~60kB per response. Serve `clientAssets` yourself and pass the URLs to keep them out of the HTML and let the browser cache them:
+`renderPage` and `renderOverlay` inline the client script and stylesheet, which makes the output self-contained at the cost of ~60kB per response. The live channel serves them at `{channel}/client.js` and `{channel}/client.css` (or serve `clientAssets` yourself); pass the URLs to keep them out of the HTML and let the browser cache them:
 
 ```ts
-import { clientAssets, renderPage } from 'my-bad'
+import { renderPage } from 'my-bad'
 
-// GET /__my-bad/client.js  -> clientAssets.script (text/javascript)
-// GET /__my-bad/client.css -> clientAssets.styles (text/css)
-renderPage(report, { assets: { script: '/__my-bad/client.js', styles: '/__my-bad/client.css' } })
+renderPage(report, { channel: '/__my-bad', assets: { script: '/__my-bad/client.js', styles: '/__my-bad/client.css' } })
 ```
 
 Theme overrides stay inline, so a shared stylesheet still themes per response.
+
+### Badge
+
+`renderBadge` renders a small loader for every dev page, which shows errors and warnings as they arrive; its ~9kB script comes from the channel at `{channel}/badge.js`. It renders nothing until something concerns the page. An error mounts the overlay, minimised unless `startMinimized: false`, loading it from the channel. Warnings show a small count in the corner the overlay docks to, which expands into the overlay when clicked, and the count stands in for the overlay whenever it is hidden or cleared.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-dark.png">
+  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-light.png" alt="A small pill in the corner of a page reading 2 warnings, followed by the newest one: NUXT_B4025: <NuxtLink> has both to and href" width="470">
+</picture>
+
+```ts
+import { renderBadge } from 'my-bad'
+
+// anywhere in every dev page
+html += renderBadge({ channel: '/__my-bad', requestId })
+
+// in the page, to reload once its error is fixed
+addEventListener('my-bad:error:clear', () => location.reload())
+```
+
+Pass `assets: { script, styles, badge }` to load any of them from your own URLs instead.
+
+It takes the same `theme`, `tag`, `cwd` and `editor` options as the overlay. An overlay rendered into the same page with the same `tag` (an error page using `injectOverlay`, say) is adopted rather than duplicated and shares the badge's connection. The badge closes that connection while the tab is in the background.
 
 ### Theming
 
@@ -185,7 +206,8 @@ const channel = createChannel({ open: true, sink: fileSink('.nuxt/my-bad.jsonl')
 // `*.localhost`, nor listed in `allowedHosts` (the Vite plugin passes `server.allowedHosts`).
 // Requests with neither header (`curl`, editor integrations) are allowed.
 
-// Node: mount at the channel base path
+// Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css` and `badge.js`
+// (immutable when requested with `?v=`, as `renderBadge` does)
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))
 // or fetch-style: await channel.fetchHandler(request)
 

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { clientAssets, createReport, renderOverlay, renderPage } from '../src'
+import { clientAssets, createReport, renderBadge, renderOverlay, renderPage } from '../src'
 import { createChannel } from '../src/channel'
 
 let browser: Browser
@@ -48,6 +48,21 @@ beforeAll(async () => {
     if (req.url === '/client.js' || req.url === '/client.css') {
       res.setHeader('content-type', req.url.endsWith('.js') ? 'text/javascript' : 'text/css')
       res.end(req.url.endsWith('.js') ? clientAssets.script : clientAssets.styles)
+      return
+    }
+    if (req.url === '/badge.js') {
+      res.setHeader('content-type', 'text/javascript')
+      res.end(clientAssets.badge)
+      return
+    }
+    if (req.url?.startsWith('/badge')) {
+      const variant = req.url.slice('/badge'.length)
+      const tag = variant === '-tagged' ? 'nuxt-error-overlay' : undefined
+      const badge = renderBadge({ cwd: proj, channel: '/__my-bad', tag, assets: variant === '-external' ? { ...assets, badge: '/badge.js' } : undefined })
+      const overlay = variant.startsWith('-overlay') ? renderOverlay(channel.current ?? await report('initial'), { cwd: proj, channel: '/__my-bad', assets }) : ''
+      const last = variant === '-overlay-first'
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><head>${last ? '' : badge}</head><body><h1 id="user">User page</h1>${overlay}${last ? badge : ''}</body></html>`)
       return
     }
     const current = channel.current ?? await report('initial')
@@ -391,6 +406,221 @@ describe('browser client', () => {
     })
     await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'external')
     expect(await overlay.locator('.mb-header').evaluate(el => getComputedStyle(el).display)).toBe('flex')
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+})
+
+describe('badge', () => {
+  async function warning(message: string) {
+    return { ...(await report(message)), kind: 'warning' as const }
+  }
+
+  /** Counts the event streams a page opens and closes. */
+  async function open(path: string) {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.addInitScript(() => {
+      const streams = { opened: 0, closed: 0 }
+      Object.assign(window, { streams })
+      window.EventSource = class extends EventSource {
+        constructor(url: string | URL, init?: EventSourceInit) {
+          super(url, init)
+          streams.opened++
+        }
+
+        override close() {
+          streams.closed++
+          super.close()
+        }
+      }
+    })
+    await page.goto(`${origin}${path}`)
+    const streams = () => page.evaluate(() => (window as unknown as { streams: { opened: number, closed: number } }).streams)
+    await waitFor(async () => (await streams()).opened, 1)
+    return { page, errors, streams }
+  }
+
+  function setHidden(page: import('playwright').Page, hidden: boolean) {
+    return page.evaluate((hidden) => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }, hidden)
+  }
+
+  it('renders nothing until a warning arrives, then shows and retires it', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const { page, errors } = await open('/badge-external')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => page.evaluate(() => document.body.childElementCount), 1)
+    expect(await page.locator('my-bad-overlay-badge').count()).toBe(0)
+
+    const careful = await warning('careful now')
+    channel.warn(careful)
+    await waitFor(() => badge.isVisible(), true)
+    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+    expect(await badge.locator('.mb-badge-latest').textContent()).toBe('Error: careful now')
+    expect(await page.getByRole('button', { name: '1 warning Error: careful now' }).getAttribute('title')).toBe('Show 1 warning')
+    await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'Warning: Error: careful now')
+
+    channel.clearWarning(careful.id)
+    await waitFor(() => badge.isVisible(), false)
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('counts warnings published before the page loaded and expands into the overlay over its own stream', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const first = await warning('first warning')
+    channel.warn(first)
+    const { page, errors, streams } = await open('/badge')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => badge.isVisible(), true)
+    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+    expect(await badge.locator('.mb-badge-latest').textContent()).toBe('')
+
+    await badge.click()
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'first warning')
+    expect(await overlay.locator('[data-overlay]').getAttribute('data-minimized')).toBeNull()
+    expect(await overlay.locator('[data-live][data-connected]').count()).toBe(1)
+    await waitFor(() => badge.isVisible(), false)
+
+    const second = await warning('second warning')
+    channel.warn(second)
+    await waitFor(() => overlay.locator('[data-warning-count]').textContent(), '2 warnings')
+    expect(await overlay.locator('[data-toast]').count()).toBe(1)
+
+    channel.clearWarning(first.id)
+    await waitFor(() => overlay.count(), 0)
+    await waitFor(() => badge.isVisible(), true)
+    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+
+    await badge.click()
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'second warning')
+    expect(await page.locator('script[src^="/__my-bad/client.js?v="]').count()).toBe(1)
+    expect(await overlay.count()).toBe(1)
+
+    channel.clearWarning()
+    await waitFor(() => overlay.count(), 0)
+    expect(await badge.isVisible()).toBe(false)
+    expect(await streams()).toEqual({ opened: 1, closed: 0 })
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('mounts the overlay minimised for an error, stands in for it while hidden, and returns when the error clears', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const { page, errors, streams } = await open('/badge-tagged')
+    await page.evaluate(() => addEventListener('my-bad:error:clear', event => ((window as unknown as { cleared: unknown[] }).cleared ??= []).push((event as CustomEvent).detail.id)))
+    const badge = page.locator('nuxt-error-overlay-badge .mb-badge')
+    const overlay = page.locator('nuxt-error-overlay')
+    channel.warn(await warning('beside the error'))
+    await waitFor(() => badge.isVisible(), true)
+
+    const broken = await report('broken everywhere')
+    channel.setError(broken)
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'broken everywhere')
+    expect(await overlay.locator('[data-overlay]').getAttribute('data-minimized')).toBe('')
+    await waitFor(() => badge.isVisible(), false)
+
+    await overlay.locator('[data-action="hide"]').click()
+    await waitFor(() => badge.isVisible(), true)
+    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 error, 1 warning')
+    expect(await overlay.locator('[data-action="restore"]').isVisible()).toBe(false)
+    await badge.click()
+    await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-minimized'), null)
+    expect(await overlay.locator('[data-overlay]').getAttribute('data-hidden')).toBeNull()
+    await waitFor(() => badge.isVisible(), false)
+
+    channel.clearError(broken.id)
+    await waitFor(() => overlay.count(), 0)
+    await waitFor(() => badge.getAttribute('data-kind'), 'warning')
+    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+    expect(await page.evaluate(() => (window as unknown as { cleared: unknown[] }).cleared)).toEqual([broken.id])
+    expect(await streams()).toEqual({ opened: 1, closed: 0 })
+    channel.clearWarning()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('mounts the error that is current when the page connects', async () => {
+    channel.clearWarning()
+    channel.setError(await report('before the page'))
+    const { page, errors } = await open('/badge')
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'before the page')
+    expect(await overlay.locator('[data-overlay]').getAttribute('data-minimized')).toBe('')
+    channel.clearError()
+    await waitFor(() => overlay.count(), 0)
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('shares one stream and one overlay with an overlay rendered into the page, whichever script runs first', async () => {
+    for (const path of ['/badge-overlay', '/badge-overlay-first']) {
+      channel.clearWarning()
+      channel.setError(await report(`already shown ${path}`))
+      const { page, errors, streams } = await open(path)
+      const overlay = page.locator('my-bad-overlay')
+      await waitFor(() => overlay.locator('[data-live][data-connected]').count(), 1)
+      channel.warn(await warning('next to it'))
+      await waitFor(() => overlay.locator('[data-warning-count]').textContent(), '1 warning')
+      await page.waitForTimeout(300)
+      expect(await overlay.count(), path).toBe(1)
+      expect(await page.locator('my-bad-overlay-badge .mb-badge').isVisible(), path).toBe(false)
+
+      channel.clearError()
+      await waitFor(() => overlay.count(), 0)
+      await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').isVisible(), true)
+      expect(await streams(), path).toEqual({ opened: 1, closed: 0 })
+      channel.clearWarning()
+      expect(errors, path).toEqual([])
+      await page.close()
+    }
+  }, 30_000)
+
+  it('closes its stream while the tab is hidden and catches up when it returns', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const stale = await warning('stale warning')
+    channel.warn(stale)
+    const { page, errors, streams } = await open('/badge')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => badge.isVisible(), true)
+
+    await setHidden(page, true)
+    expect(await streams()).toEqual({ opened: 1, closed: 1 })
+    channel.clearWarning(stale.id)
+    channel.warn(await warning('fresh warning'))
+    channel.warn(await warning('another warning'))
+
+    await setHidden(page, false)
+    await waitFor(() => badge.locator('.mb-badge-count').textContent(), '2 warnings')
+    expect((await streams()).opened).toBe(2)
+    channel.clearWarning()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('dismisses an overlay whose error cleared while the tab was hidden', async () => {
+    channel.clearWarning()
+    const missed = await report('fixed in the background')
+    channel.setError(missed)
+    const { page, errors } = await open('/badge')
+    await page.evaluate(() => addEventListener('my-bad:error:clear', event => ((window as unknown as { cleared: unknown[] }).cleared ??= []).push((event as CustomEvent).detail.id)))
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-live][data-connected]').count(), 1)
+
+    await setHidden(page, true)
+    channel.clearError()
+    await setHidden(page, false)
+    await waitFor(() => overlay.count(), 0)
+    expect(await page.evaluate(() => (window as unknown as { cleared: unknown[] }).cleared)).toEqual([missed.id])
     expect(errors).toEqual([])
     await page.close()
   }, 30_000)
