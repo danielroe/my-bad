@@ -54,7 +54,9 @@ describe('nitropack v2 with the error handler replaced', () => {
   afterAll(() => server?.close())
 
   async function request(path: string, accept: string): Promise<Response> {
-    return fetch(`${server.url}${path}`, { headers: { accept, cookie: 'session=secret' } })
+    return fetch(`${server.url}${path}`, {
+      headers: { accept, cookie: 'session=secret' },
+    })
   }
 
   async function report(path: string): Promise<{ status: number, report: ErrorReport }> {
@@ -74,18 +76,45 @@ describe('nitropack v2 with the error handler replaced', () => {
     expect(json).toMatchObject({ name: 'Error', message: 'Widget needs a name', status: 500 })
 
     const [top, second, third] = json.frames
-    expect(top).toMatchObject({ file: `${root}/utils/widget.ts`, line: 3, column: 11, function: 'buildWidget', type: 'app' })
+    expect(top).toMatchObject({
+      file: `${root}/utils/widget.ts`,
+      line: 3,
+      column: 11,
+      function: 'buildWidget',
+      type: 'app',
+    })
     expect(top!.compiled!.file).toBe(`${root}/.nitro/dev/index.mjs`)
     expect(top!.snippet!.lines[top!.line! - top!.snippet!.start]).toContain('throw new Error(\'Widget needs a name\')')
-    expect(second).toMatchObject({ file: `${root}/utils/widget.ts`, line: 9, column: 10, function: 'loadWidget', type: 'app' })
-    expect(third).toMatchObject({ file: `${root}/routes/boom.ts`, line: 5, column: 10, type: 'app' })
+    expect(second).toMatchObject({
+      file: `${root}/utils/widget.ts`,
+      line: 9,
+      column: 10,
+      function: 'loadWidget',
+      type: 'app',
+    })
+    expect(third).toMatchObject({
+      file: `${root}/routes/boom.ts`,
+      line: 5,
+      column: 10,
+      type: 'app',
+    })
     expect(json.frames.filter(frame => frame.type === 'internal').length).toBeGreaterThan(0)
   })
 
   it('maps frames thrown after an await', async () => {
     const { report: json } = await report('/async')
-    expect(json.frames[0]).toMatchObject({ file: `${root}/utils/widget.ts`, line: 3, column: 11, type: 'app' })
-    expect(json.frames[2]).toMatchObject({ file: `${root}/routes/async.ts`, line: 6, column: 10, type: 'app' })
+    expect(json.frames[0]).toMatchObject({
+      file: `${root}/utils/widget.ts`,
+      line: 3,
+      column: 11,
+      type: 'app',
+    })
+    expect(json.frames[2]).toMatchObject({
+      file: `${root}/routes/async.ts`,
+      line: 6,
+      column: 10,
+      type: 'app',
+    })
     expect(json.frames.some(frame => frame.isAsync)).toBe(true)
   })
 
@@ -127,7 +156,9 @@ describe('nitropack v2 with its own dev error handler', () => {
   })
 
   it('still renders its own error page', async () => {
-    const res = await fetch(`${server.url}/boom`, { headers: { accept: 'application/json' } })
+    const res = await fetch(`${server.url}/boom`, {
+      headers: { accept: 'application/json' },
+    })
     expect(res.status).toBe(500)
     expect(await res.json()).toMatchObject({ statusCode: 500, message: 'Widget needs a name' })
   })

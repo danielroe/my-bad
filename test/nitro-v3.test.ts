@@ -56,7 +56,12 @@ describe('nitro v3 dev server', () => {
     expect(status).toBe(500)
     expect(json.message).toBe('Exploded while handling boom')
     const app = json.frames.filter(frame => frame.type === 'app')
-    expect(app[0]).toMatchObject({ file: './utils/explode.ts', line: 2, column: 9, function: 'explode' })
+    expect(app[0]).toMatchObject({
+      file: './utils/explode.ts',
+      line: 2,
+      column: 9,
+      function: 'explode',
+    })
     expect(app[0]!.compiled!.file).toBe('./node_modules/.nitro/dev/index.mjs')
     expect(app[0]!.snippet!.lines[1]).toContain('throw new Error(`Exploded while handling ')
     expect(app[1]).toMatchObject({ file: './utils/explode.ts', line: 6, function: 'detonate' })
@@ -69,7 +74,12 @@ describe('nitro v3 dev server', () => {
   it('maps frames thrown after an await', async () => {
     const { report: json } = await report('/async')
     const app = json.frames.filter(frame => frame.type === 'app')
-    expect(app[0]).toMatchObject({ file: './utils/explode.ts', line: 2, column: 9, function: 'explode' })
+    expect(app[0]).toMatchObject({
+      file: './utils/explode.ts',
+      line: 2,
+      column: 9,
+      function: 'explode',
+    })
     expect(app.at(-1)).toMatchObject({ file: './routes/async.ts', line: 6, column: 10 })
   })
 
@@ -93,7 +103,9 @@ describe('nitro v3 dev server', () => {
   })
 
   it('renders an html page with the channel wired up', async () => {
-    const res = await fetch(`${origin}/boom`, { headers: { accept: 'text/html' } })
+    const res = await fetch(`${origin}/boom`, {
+      headers: { accept: 'text/html' },
+    })
     const html = await res.text()
     expect(res.headers.get('content-type')).toContain('text/html')
     expect(html).toContain('"channel":"/__my-bad"')
@@ -102,7 +114,9 @@ describe('nitro v3 dev server', () => {
 
   it('streams the current report id over sse', async () => {
     const { report: json } = await report('/boom')
-    const res = await fetch(`${origin}/__my-bad/events`, { headers: { accept: 'text/event-stream' } })
+    const res = await fetch(`${origin}/__my-bad/events`, {
+      headers: { accept: 'text/event-stream' },
+    })
     expect(res.headers.get('content-type')).toContain('text/event-stream')
     const reader = res.body!.getReader()
     const decoder = new TextDecoder()

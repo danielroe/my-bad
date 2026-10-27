@@ -46,10 +46,20 @@ function readPackage(dir: string): PackageInfo | undefined {
       return
     }
     const name = JSON.parse(readFileSync(manifest, 'utf8')).name
-    return { dir, name: typeof name === 'string' && name ? name : dir.split('/').pop()! }
+    return {
+      dir,
+      name: typeof name === 'string' && name
+        ? name
+        : dir.split('/').pop()!,
+    }
   }
   catch {
-    return existsSync(manifest) ? { dir, name: dir.split('/').pop()! } : undefined
+    return existsSync(manifest)
+      ? {
+          dir,
+          name: dir.split('/').pop()!,
+        }
+      : undefined
   }
 }
 

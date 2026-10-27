@@ -15,7 +15,11 @@ interface Thrown { name: string, message: string, stack: string, cause?: Thrown 
 async function thrown(variant: 'sidecar' | 'inline', fn: string): Promise<Error> {
   const { stdout } = await promisify(execFile)(process.execPath, [`${fixtures}run.mjs`, variant, fn])
   const revive = (data: Thrown): Error => {
-    const error = new Error(data.message, data.cause ? { cause: revive(data.cause) } : undefined)
+    const error = new Error(data.message, data.cause
+      ? {
+          cause: revive(data.cause),
+        }
+      : undefined)
     error.name = data.name
     error.stack = data.stack
     return error
@@ -31,7 +35,13 @@ describe('createReport', () => {
     expect(report.name).toBe('TypeError')
     expect(report.message).toBe('Widget needs a name')
     const [top, second, third] = report.frames
-    expect(top).toMatchObject({ file: `${fixtures}src/thrower.ts`, line: 4, function: 'Widget', isConstructor: true, type: 'app' })
+    expect(top).toMatchObject({
+      file: `${fixtures}src/thrower.ts`,
+      line: 4,
+      function: 'Widget',
+      isConstructor: true,
+      type: 'app',
+    })
     expect(top!.compiled).toMatchObject({ file: `${fixtures}dist/sidecar/thrower.mjs` })
     expect(top!.snippet).toMatchObject({ start: 1, lang: 'ts' })
     expect(top!.snippet!.lines[3]).toContain('throw new TypeError')
@@ -70,7 +80,9 @@ describe('createReport', () => {
 
   it('strips ANSI escapes from every message', async () => {
     const nested = new Error('\u001B[31mUnexpected token\u001B[39m')
-    const agg = new AggregateError([new Error('\u001B[1mbold\u001B[22m')], '\u001B[33mmany\u001B[39m')
+    const agg = new AggregateError([
+      new Error('\u001B[1mbold\u001B[22m'),
+    ], '\u001B[33mmany\u001B[39m')
     agg.cause = nested
     const report = await createReport(agg, { snippets: false })
     expect(report.message).toBe('many')
@@ -86,8 +98,18 @@ describe('createReport', () => {
     at Array.map (<anonymous>)
     at node:internal/main:3:3
     at internalFn (/proj/src/nuxt.ts:4:4)`
-    const report = await createReport(error, { snippets: false, internal: [/nuxt\.ts/], loaders: [] })
-    expect(report.frames.map(f => f.type)).toEqual(['app', 'vendor', 'native', 'native', 'internal'])
+    const report = await createReport(error, {
+      snippets: false,
+      internal: [/nuxt\.ts/],
+      loaders: [],
+    })
+    expect(report.frames.map(f => f.type)).toEqual([
+      'app',
+      'vendor',
+      'native',
+      'native',
+      'internal',
+    ])
     expect(report.frames[2]!.file).toBeUndefined()
     expect(report.frames[2]!.raw).toContain('Array.map')
   })
@@ -103,8 +125,22 @@ describe('createReport', () => {
     })
     expect(report.kind).toBe('compile')
     expect(report.frames).toHaveLength(1)
-    expect(report.frames[0]).toMatchObject({ file: '/proj/app.vue', line: 3, column: 5, type: 'app' })
-    expect(report.frames[0]!.snippet).toEqual({ start: 1, lines: ['<template>', '  <div>', '    <p', '</template>'], lang: 'vue' })
+    expect(report.frames[0]).toMatchObject({
+      file: '/proj/app.vue',
+      line: 3,
+      column: 5,
+      type: 'app',
+    })
+    expect(report.frames[0]!.snippet).toEqual({
+      start: 1,
+      lines: [
+        '<template>',
+        '  <div>',
+        '    <p',
+        '</template>',
+      ],
+      lang: 'vue',
+    })
   })
 
   it('derives the location of a compile error from its code frame', async () => {
@@ -119,10 +155,18 @@ describe('createReport', () => {
   })
 
   it('picks up status, code and data', async () => {
-    const error = Object.assign(new Error('Not found'), { statusCode: 404, code: 'E404', data: { path: '/x' } })
+    const error = Object.assign(new Error('Not found'), {
+      statusCode: 404,
+      code: 'E404',
+      data: { path: '/x' },
+    })
     const report = await createReport(error, { snippets: false, loaders: [] })
     expect(report).toMatchObject({ status: 404, code: 'E404' })
-    expect(report.sections[0]).toEqual({ id: 'data', title: 'Data', content: { path: '/x' } })
+    expect(report.sections[0]).toEqual({
+      id: 'data',
+      title: 'Data',
+      content: { path: '/x' },
+    })
   })
 
   it('serialises with relative paths', async () => {
@@ -155,7 +199,10 @@ describe('compile error hoisting', () => {
   })
 
   it('leaves errors with app frames alone', async () => {
-    const compile = { message: 'bad', loc: { file: '/proj/a.vue', line: 1, column: 1 } }
+    const compile = {
+      message: 'bad',
+      loc: { file: '/proj/a.vue', line: 1, column: 1 },
+    }
     const wrapper = Object.assign(new Error('outer'), { cause: compile })
     wrapper.stack = 'Error: outer\n    at handler (/proj/server.ts:1:1)'
     const report = await createReport(wrapper, { loaders: [], snippets: false })
@@ -188,7 +235,9 @@ describe('duplicate causes', () => {
   })
 
   it('keeps causes with different messages', async () => {
-    const wrapper = new Error('outer', { cause: new Error('inner') })
+    const wrapper = new Error('outer', {
+      cause: new Error('inner'),
+    })
     const report = await createReport(wrapper, { loaders: [], snippets: false })
     expect(report.causes).toHaveLength(1)
   })
@@ -209,11 +258,23 @@ describe('oxc style compile errors', () => {
     const report = await createReport({ message, plugin: 'vite:oxc', frame: '' }, {
       cwd: '/proj',
       kind: 'compile',
-      loaders: [{ name: 'memory', read: file => file === '/proj/src/broken.ts' ? 'export function greet(name: string): string {\n  return `Hello, ` + name\n}\n' : undefined }],
+      loaders: [
+        {
+          name: 'memory',
+          read: file => file === '/proj/src/broken.ts'
+            ? 'export function greet(name: string): string {\n  return `Hello, ` + name\n}\n'
+            : undefined,
+        },
+      ],
     })
     expect(report.kind).toBe('compile')
     expect(report.message).toBe('Transform failed with 1 error:\n\n[PARSE_ERROR] Unterminated string')
-    expect(report.frames[0]).toMatchObject({ file: '/proj/src/broken.ts', line: 2, column: 24, type: 'app' })
+    expect(report.frames[0]).toMatchObject({
+      file: '/proj/src/broken.ts',
+      line: 2,
+      column: 24,
+      type: 'app',
+    })
     expect(report.frames[0]!.snippet!.lines[1]).toContain('return `Hello')
   })
 })
@@ -238,7 +299,12 @@ describe('rolldown style compile errors', () => {
     const report = await createReport(rolldownError(), { cwd: '/proj', loaders: [], snippets: false })
     expect(report.kind).toBe('compile')
     expect(report.message).toBe('Parse failed with 1 error:\nExpected `,` or `)` but found `!`')
-    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39, type: 'app' })
+    expect(report.frames[0]).toMatchObject({
+      file: '/proj/app/app.vue',
+      line: 8,
+      column: 39,
+      type: 'app',
+    })
     expect(report.frames[0]!.snippet).toMatchObject({ start: 6 })
     expect(report.frames[0]!.snippet!.lines[2]).toBe('      class: _normalizeClass(_ctx.bob !)')
   })
@@ -251,7 +317,10 @@ describe('rolldown style compile errors', () => {
   })
 
   it('leaves numbered prose in ordinary messages alone', async () => {
-    const report = await createReport({ message: 'Request failed\nHTTP 404: not found', loc: { file: '/proj/a.ts', line: 1, column: 1 } }, { cwd: '/proj', loaders: [], snippets: false })
+    const report = await createReport({
+      message: 'Request failed\nHTTP 404: not found',
+      loc: { file: '/proj/a.ts', line: 1, column: 1 },
+    }, { cwd: '/proj', loaders: [], snippets: false })
     expect(report.message).toBe('Request failed\nHTTP 404: not found')
   })
 })
@@ -259,12 +328,22 @@ describe('rolldown style compile errors', () => {
 const sfc = '<script setup lang="ts">\nconst bob = ref<string>()\n</script>\n\n<template>\n  <div :class="bob !">\n    Nuxt Playground\n  </div>\n</template>\n'
 
 function memoryLoader(contents: string, file = '/proj/app/app.vue') {
-  return [{ name: 'memory', read: (path: string) => path === file ? contents : undefined }]
+  return [
+    {
+      name: 'memory',
+      read: (path: string) => path === file
+        ? contents
+        : undefined,
+    },
+  ]
 }
 
 describe('compiled compile errors', () => {
   it('detects a frame that does not match the file on disk', async () => {
-    const report = await createReport(rolldownError(), { cwd: '/proj', loaders: memoryLoader(sfc) })
+    const report = await createReport(rolldownError(), {
+      cwd: '/proj',
+      loaders: memoryLoader(sfc),
+    })
     const [frame] = report.frames
     expect(frame).toMatchObject({ file: '/proj/app/app.vue', type: 'app' })
     expect(frame!.line).toBeUndefined()
@@ -280,7 +359,10 @@ describe('compiled compile errors', () => {
       statusCode: 500,
       stack: 'HTTPError: Server Error\n    at /proj/node_modules/nitropack/dist/runtime/internal/error.mjs:20:11',
       cause: rolldownError(),
-    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(sfc),
+    })
     expect(report.kind).toBe('compile')
     const [frame] = report.frames
     expect(frame!.line).toBeUndefined()
@@ -295,7 +377,10 @@ describe('compiled compile errors', () => {
       id: '/proj/app/app.vue',
       loc: { file: '/proj/app/app.vue', line: 6, column: 3 },
       frame: '5  |  <template>\n6  |    <div :class="bob !">\n   |    ^\n7  |      Nuxt Playground',
-    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(sfc),
+    })
     const [frame] = report.frames
     expect(frame).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 3 })
     expect(frame!.compiled).toBeUndefined()
@@ -308,11 +393,23 @@ describe('compiled compile errors', () => {
       message: 'Illegal \'/\' in tags.',
       plugin: 'vite:vue',
       id: '/proj/app/app.vue',
-      loc: { file: '/proj/app/app.vue', start: { line: 4, column: 4, offset: 40 }, end: { line: 4, column: 4, offset: 40 } },
+      loc: {
+        file: '/proj/app/app.vue',
+        start: { line: 4, column: 4, offset: 40 },
+        end: { line: 4, column: 4, offset: 40 },
+      },
       frame: '2  |    <div\n3  |      does not close\n4  |    </div>\n   |     ^\n5  |  </template>\n6  |  ',
-    }, { cwd: '/proj', loaders: memoryLoader(broken) })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(broken),
+    })
     const [frame] = report.frames
-    expect(frame).toMatchObject({ file: '/proj/app/app.vue', line: 4, column: 4, type: 'app' })
+    expect(frame).toMatchObject({
+      file: '/proj/app/app.vue',
+      line: 4,
+      column: 4,
+      type: 'app',
+    })
     expect(frame!.compiled).toBeUndefined()
     expect(frame!.snippet).toMatchObject({ start: 2 })
   })
@@ -324,8 +421,16 @@ describe('compiled compile errors', () => {
       id: '/proj/app/app.vue',
       loc: { file: '/proj/app/app.vue', line: 7, column: 55 },
       frame: '6  |      <p>a</p>\n7  |      <span>index\n   |      ^\n8  |    </div>',
-    }, { cwd: '/proj', loaders: memoryLoader(source) })
-    expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 7, column: 5, type: 'app' })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(source),
+    })
+    expect(report.frames[0]).toMatchObject({
+      file: '/proj/app/app.vue',
+      line: 7,
+      column: 5,
+      type: 'app',
+    })
     expect(report.frames[0]!.compiled).toBeUndefined()
   })
 
@@ -335,7 +440,10 @@ describe('compiled compile errors', () => {
       id: '/proj/app/app.vue',
       loc: { file: '/proj/app/app.vue', line: 6, column: 3 },
       frame: '5  |  <template>\n6  |  \t<div :class="bob !">\n   |    ^\n7  |    Nuxt Playground',
-    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(sfc),
+    })
     expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 3 })
     expect(report.frames[0]!.compiled).toBeUndefined()
   })
@@ -346,7 +454,10 @@ describe('compiled compile errors', () => {
       id: '/proj/app/app.vue',
       loc: { file: '/proj/app/app.vue', line: 6, column: 3 },
       frame: '5  |  <template>\n6  |    <div :class="bob...\n   |    ^\n7  |      Nuxt Playground',
-    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(sfc),
+    })
     expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 6, column: 3 })
     expect(report.frames[0]!.compiled).toBeUndefined()
   })
@@ -359,7 +470,10 @@ describe('compiled compile errors', () => {
       id: '/proj/app/app.vue',
       loc: { file: '/proj/app/app.vue', line: 8, column: 34 },
       frame: '5  |    ], 64 /* STABLE_FRAGMENT */))\n6  |  }\n7  |  }\n8  |    class: _normalizeClass(_ctx.a !)\n   |                                   ^\n9  |  }, null, 2 /* CLASS */)',
-    }, { cwd: '/proj', loaders: memoryLoader(source) })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(source),
+    })
     const [frame] = report.frames
     expect(frame!.line).toBeUndefined()
     expect(frame!.compiled).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 34 })
@@ -372,7 +486,10 @@ describe('compiled compile errors', () => {
       id: '/proj/app/app.vue',
       loc: { file: '/proj/app/app.vue', line: 7, column: 1 },
       frame: '6  |    })\n7  |  }\n   |  ^\n8  |  </script>',
-    }, { cwd: '/proj', loaders: memoryLoader(sfc) })
+    }, {
+      cwd: '/proj',
+      loaders: memoryLoader(sfc),
+    })
     expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 7 })
     expect(report.frames[0]!.compiled).toBeUndefined()
   })
@@ -384,13 +501,23 @@ describe('compiled compile errors', () => {
   })
 
   it('can be opted out of with compiled: false', async () => {
-    const report = await createReport(rolldownError(), { cwd: '/proj', compiled: false, loaders: memoryLoader(sfc) })
+    const report = await createReport(rolldownError(), {
+      cwd: '/proj',
+      compiled: false,
+      loaders: memoryLoader(sfc),
+    })
     expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
     expect(report.frames[0]!.compiled).toBeUndefined()
   })
 
   it('puts the position and generated frame on frame.compiled', async () => {
-    const report = await createReport(rolldownError(), { cwd: '/proj', kind: 'compile', compiled: true, loaders: [], snippets: false })
+    const report = await createReport(rolldownError(), {
+      cwd: '/proj',
+      kind: 'compile',
+      compiled: true,
+      loaders: [],
+      snippets: false,
+    })
     const [frame] = report.frames
     expect(frame).toMatchObject({ file: '/proj/app/app.vue', type: 'app' })
     expect(frame!.line).toBeUndefined()
@@ -405,7 +532,10 @@ describe('compiled compile errors', () => {
       message: 'Server Error',
       statusCode: 500,
       stack: 'HTTPError: Server Error\n    at /proj/node_modules/nitropack/dist/runtime/internal/error.mjs:20:11',
-      cause: { ...rolldownError(), compiled: true },
+      cause: {
+        ...rolldownError(),
+        compiled: true,
+      },
     }, { cwd: '/proj', loaders: [] })
     expect(report.kind).toBe('compile')
     const [frame] = report.frames
@@ -415,13 +545,23 @@ describe('compiled compile errors', () => {
   })
 
   it('lets a marker on the input override the option', async () => {
-    const report = await createReport({ ...rolldownError(), compiled: false }, { cwd: '/proj', compiled: true, loaders: memoryLoader(sfc) })
+    const report = await createReport({
+      ...rolldownError(),
+      compiled: false,
+    }, {
+      cwd: '/proj',
+      compiled: true,
+      loaders: memoryLoader(sfc),
+    })
     expect(report.frames[0]).toMatchObject({ file: '/proj/app/app.vue', line: 8, column: 39 })
     expect(report.frames[0]!.compiled).toBeUndefined()
   })
 
   it('never renders the marker as report data', async () => {
-    const report = await createReport({ ...rolldownError(), compiled: true }, { cwd: '/proj', loaders: [] })
+    const report = await createReport({
+      ...rolldownError(),
+      compiled: true,
+    }, { cwd: '/proj', loaders: [] })
     expect(JSON.stringify(report)).not.toContain('"compiled":true')
     expect(report.sections).toEqual([])
   })
@@ -438,7 +578,9 @@ describe('compiled compile errors', () => {
     const report = await createReport(rolldownError(), {
       cwd: '/proj',
       kind: 'compile',
-      compiled: { sourceLoc: { line: 6, column: 16 } },
+      compiled: {
+        sourceLoc: { line: 6, column: 16 },
+      },
       loaders: memoryLoader(sfc),
     })
     const [frame] = report.frames
@@ -467,7 +609,12 @@ describe('positions quoted in an error message', () => {
     expect(report.name).toBe('ParseError')
     expect(report.message).toBe('Unexpected token, expected ","')
     expect(report.frames).toHaveLength(1)
-    expect(report.frames[0]).toMatchObject({ file, line: 3, column: 2, type: 'app' })
+    expect(report.frames[0]).toMatchObject({
+      file,
+      line: 3,
+      column: 2,
+      type: 'app',
+    })
     expect(report.frames[0]!.snippet!.lines).toContain('  oops')
   })
 

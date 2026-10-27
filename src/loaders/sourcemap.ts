@@ -67,7 +67,9 @@ export interface MappedPosition {
  * position a second time.
  */
 export function findOriginal(map: SourceMapLookup, line: number, column: number | undefined): { source: string, line: number, column: number } | undefined {
-  const entry = map.findEntry(line - 1, column === undefined ? 0 : Math.max(0, column - 1))
+  const entry = map.findEntry(line - 1, column === undefined
+    ? 0
+    : Math.max(0, column - 1))
   if (!('originalSource' in entry) || entry.originalSource === undefined || entry.originalLine === undefined || entry.generatedLine !== line - 1) {
     return
   }
@@ -86,10 +88,14 @@ function resolveOriginal(map: SourceMapLookup, raw: SourceFields, base: string, 
   if (!original) {
     return
   }
-  const root = raw.sourceRoot ? raw.sourceRoot.replace(/\/?$/, '/') : ''
+  const root = raw.sourceRoot
+    ? raw.sourceRoot.replace(/\/?$/, '/')
+    : ''
   const ignoreList = raw.ignoreList ?? raw.x_google_ignoreList
   const index = raw.sources?.indexOf(original.source) ?? -1
-  const ignored = index >= 0 ? ignoreList?.includes(index) : map.ignoredSource?.(original.source)
+  const ignored = index >= 0
+    ? ignoreList?.includes(index)
+    : map.ignoredSource?.(original.source)
   return {
     position: {
       file: resolvePath(base, toPath(`${root}${original.source}`)),
@@ -104,8 +110,14 @@ function resolveOriginal(map: SourceMapLookup, raw: SourceFields, base: string, 
 
 /** The contents a map embeds for one of its sources, ignoring empty placeholders. */
 function embeddedContent(map: SourceMapLookup, raw: Pick<RawSourceMap, 'sourcesContent'>, source: string, index: number): string | undefined {
-  const content = map.sourceContent ? map.sourceContent(source) : index >= 0 ? raw.sourcesContent?.[index] : undefined
-  return typeof content === 'string' && content ? content : undefined
+  const content = map.sourceContent
+    ? map.sourceContent(source)
+    : index >= 0
+      ? raw.sourcesContent?.[index]
+      : undefined
+  return typeof content === 'string' && content
+    ? content
+    : undefined
 }
 
 interface Loaded {
@@ -143,14 +155,22 @@ export function sourceMapLoader(options: SourceMapLoaderOptions): SourceLoader {
 
   async function load(file: string): Promise<Loaded | undefined> {
     const raw = await options.getSourceMap(file)
-    if (!raw || ('sections' in raw ? !Array.isArray(raw.sections) || !raw.sections.length : !raw.mappings)) {
+    if (!raw || ('sections' in raw
+      ? !Array.isArray(raw.sections) || !raw.sections.length
+      : !raw.mappings)) {
       return
     }
     const map = parseMap(raw)
     if (!map) {
       return
     }
-    return { map, raw: 'sections' in raw ? {} : raw, base: options.base?.(file) ?? dirname(file) }
+    return {
+      map,
+      raw: 'sections' in raw
+        ? {}
+        : raw,
+      base: options.base?.(file) ?? dirname(file),
+    }
   }
 
   async function loaded(file: string): Promise<Loaded | undefined> {
@@ -189,8 +209,12 @@ export function sourceMapLoader(options: SourceMapLoaderOptions): SourceLoader {
         ...(ignored && { type: 'vendor' as const }),
         compiled: frame.compiled ?? { file: frame.file, line: frame.line, column: frame.column },
       }
-      const usable = typeof embed === 'function' ? embed(position.file) : embed
-      return usable ? withEmbeddedSource(mapped, embeddedContent(result.map, result.raw, resolved.source, resolved.index)) : mapped
+      const usable = typeof embed === 'function'
+        ? embed(position.file)
+        : embed
+      return usable
+        ? withEmbeddedSource(mapped, embeddedContent(result.map, result.raw, resolved.source, resolved.index))
+        : mapped
     },
     read(file: string) {
       const path = withoutQuery(file)

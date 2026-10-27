@@ -20,8 +20,24 @@ const maps = {
   sections: {
     version: 3,
     sections: [
-      { offset: { line: 0, column: 0 }, map: { version: 3, sources: ['a.ts'], names: [], mappings: 'AAAA,EAAE;AACA' } },
-      { offset: { line: 2, column: 10 }, map: { version: 3, sources: ['b.ts'], names: [], mappings: 'AAAA,IAAI;EACE' } },
+      {
+        offset: { line: 0, column: 0 },
+        map: {
+          version: 3,
+          sources: ['a.ts'],
+          names: [],
+          mappings: 'AAAA,EAAE;AACA',
+        },
+      },
+      {
+        offset: { line: 2, column: 10 },
+        map: {
+          version: 3,
+          sources: ['b.ts'],
+          names: [],
+          mappings: 'AAAA,IAAI;EACE',
+        },
+      },
     ],
   },
 }

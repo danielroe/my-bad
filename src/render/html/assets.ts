@@ -20,9 +20,21 @@ export const clientAssets: { script: string, styles: string, badge: string } = {
 
 /** Path under a channel base, content type and source of each asset. */
 export const ASSET_FILES: Record<'script' | 'styles' | 'badge', readonly [file: string, type: string, source: () => string]> = {
-  script: ['client.js', 'text/javascript', () => clientAssets.script],
-  styles: ['client.css', 'text/css', () => clientAssets.styles],
-  badge: ['badge.js', 'text/javascript', () => clientAssets.badge],
+  script: [
+    'client.js',
+    'text/javascript',
+    () => clientAssets.script,
+  ],
+  styles: [
+    'client.css',
+    'text/css',
+    () => clientAssets.styles,
+  ],
+  badge: [
+    'badge.js',
+    'text/javascript',
+    () => clientAssets.badge,
+  ],
 }
 
 const hashes = new Map<string, string>()
@@ -39,5 +51,9 @@ export function assetHash(key: keyof typeof ASSET_FILES): string {
 /** Content-hashed URLs of the assets under `base`, so they can be cached indefinitely. */
 export function assetUrls(base: string): { script: string, styles: string, badge: string } {
   const url = (key: keyof typeof ASSET_FILES) => `${base}/${ASSET_FILES[key][0]}?v=${assetHash(key)}`
-  return { script: url('script'), styles: url('styles'), badge: url('badge') }
+  return {
+    script: url('script'),
+    styles: url('styles'),
+    badge: url('badge'),
+  }
 }

@@ -20,7 +20,11 @@ const NUXT_CODE_RE = /^(?:NUXT_)?(?<code>[BE]\d{4})$/i
  */
 export function nuxtPreset(options: NuxtPresetOptions = {}): ReportPreset {
   const docsBase = (options.docsBase ?? 'https://nuxt.com/docs/errors/').replace(/\/?$/, '/')
-  const parts = [vuePreset(), nitroPreset({ redact: options.redact }), envPreset({ versions: options.versions })]
+  const parts = [
+    vuePreset(),
+    nitroPreset({ redact: options.redact }),
+    envPreset({ versions: options.versions }),
+  ]
   return {
     internal: [
       /\/node_modules\/(?:nuxt|@nuxt|nuxt-nightly|@nuxt\/[^/]+|unctx|hookable|ofetch|vue-router)\//,
@@ -36,7 +40,9 @@ export function nuxtPreset(options: NuxtPresetOptions = {}): ReportPreset {
         name: 'nuxt',
         transform(report, ctx) {
           const visit = (node: typeof report) => {
-            const code = node.code && !node.docsUrl && !node.diagnostic ? NUXT_CODE_RE.exec(node.code)?.groups?.code : undefined
+            const code = node.code && !node.docsUrl && !node.diagnostic
+              ? NUXT_CODE_RE.exec(node.code)?.groups?.code
+              : undefined
             if (code) {
               node.docsUrl = `${docsBase}${code.toLowerCase()}`
             }
@@ -63,10 +69,14 @@ export function nuxtPreset(options: NuxtPresetOptions = {}): ReportPreset {
             }
             const middleware = route.meta?.middleware
             if (Array.isArray(middleware) && middleware.length) {
-              content.middleware = middleware.map(item => typeof item === 'string' ? item : (item as { name?: string }).name ?? '[fn]').join(', ')
+              content.middleware = middleware.map(item => typeof item === 'string'
+                ? item
+                : (item as { name?: string }).name ?? '[fn]').join(', ')
             }
             const index = report.sections.findIndex(section => section.id === 'headers' || section.id === 'env')
-            report.sections.splice(index === -1 ? report.sections.length : index, 0, { id: 'route', title: 'Route', content })
+            report.sections.splice(index === -1
+              ? report.sections.length
+              : index, 0, { id: 'route', title: 'Route', content })
           }
         },
       },

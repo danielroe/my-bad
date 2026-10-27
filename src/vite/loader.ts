@@ -59,14 +59,21 @@ const decoded = new WeakMap<TransformResult, DecodedMap>()
  * does not. Prefer it when present.
  */
 function decode(result: TransformResult): DecodedMap {
-  const entry: DecodedMap = { code: result.code, map: result.map, lookup: undefined, root: '' }
+  const entry: DecodedMap = {
+    code: result.code,
+    map: result.map,
+    lookup: undefined,
+    root: '',
+  }
   const raw = (parseInlineSourceMap(result.code) ?? result.map) as { mappings?: string, sections?: unknown[], sourceRoot?: string } | null | undefined
   if (!raw?.mappings && !(Array.isArray(raw?.sections) && raw.sections.length)) {
     return entry
   }
   try {
     entry.lookup = decodeSourceMap(raw as Parameters<typeof decodeSourceMap>[0])
-    entry.root = typeof raw.sourceRoot === 'string' && raw.sourceRoot ? raw.sourceRoot.replace(/\/?$/, '/') : ''
+    entry.root = typeof raw.sourceRoot === 'string' && raw.sourceRoot
+      ? raw.sourceRoot.replace(/\/?$/, '/')
+      : ''
   }
   catch {}
   return entry
@@ -82,7 +89,11 @@ function mapOf(mod: ModuleNode): { map: SourceMapLookup, root: string, base: str
     entry = decode(result)
     decoded.set(result, entry)
   }
-  return entry.lookup && { map: entry.lookup, root: entry.root, base: dirname(mod.file ?? mod.id ?? '/') }
+  return entry.lookup && {
+    map: entry.lookup,
+    root: entry.root,
+    base: dirname(mod.file ?? mod.id ?? '/'),
+  }
 }
 
 export interface ViteLoaderOptions {
@@ -116,7 +127,13 @@ export function viteLoader(server: ViteDevServer, options: ViteLoaderOptions = {
       }
       const { source, line, column } = original
       const named = `${loaded.root}${source}`
-      const file = isFilePath(named) || named.startsWith('file:') ? toPath(named) : named.startsWith('/@fs/') ? named.slice(4) : /^[^./]/.test(named) && !named.includes(':') ? mod.file ?? frame.file : resolvePath(loaded.base, named)
+      const file = isFilePath(named) || named.startsWith('file:')
+        ? toPath(named)
+        : named.startsWith('/@fs/')
+          ? named.slice(4)
+          : /^[^./]/.test(named) && !named.includes(':')
+            ? mod.file ?? frame.file
+            : resolvePath(loaded.base, named)
       const content = loaded.map.sourceContent?.(source)
       if (withoutQuery(file) === withoutQuery(frame.file) && line === frame.line && column === frame.column) {
         // Already original: left unmapped, but the map's copy of the source still serves its snippet.

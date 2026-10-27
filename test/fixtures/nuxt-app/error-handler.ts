@@ -26,7 +26,9 @@ function compileInput(error: unknown, cwd: string): { message: string, id?: stri
   const [id, reason] = (vite.message ?? '').split(/\s+\u2014\s+/)
   return {
     message: reason ?? vite.message ?? 'Transform failed',
-    ...(id?.startsWith('/') && { id: resolve(cwd, `.${id}`) }),
+    ...(id?.startsWith('/') && {
+      id: resolve(cwd, `.${id}`),
+    }),
     ...(vite.hint && { frame: vite.hint }),
     plugin: 'vite',
   }
@@ -59,7 +61,9 @@ function viteEnvironmentSourceMaps(): SourceMapAccessor | undefined {
   return (file) => {
     for (const env of Object.values(envs)) {
       const decoded = env?.runner?.evaluatedModules?.getModuleSourceMapById(file)
-      const map = decoded && 'map' in decoded ? decoded.map : decoded as RawSourceMap | undefined
+      const map = decoded && 'map' in decoded
+        ? decoded.map
+        : decoded as RawSourceMap | undefined
       if (map?.mappings) {
         return map
       }
@@ -89,7 +93,9 @@ async function viteNodeSourceMaps(): Promise<SourceMapAccessor | undefined> {
     // Nuxt 5's runner caches the transformed code but leaves the entry's parsed
     // map unset, so the inline map has to be read back out of the code.
     const code = cache.get?.(file)?.code
-    return typeof code === 'string' ? parseInlineSourceMap(code) : undefined
+    return typeof code === 'string'
+      ? parseInlineSourceMap(code)
+      : undefined
   }
 }
 
@@ -133,9 +139,15 @@ function createSourceMapLoaders(): { loaders: SourceLoader[], usage: SourceMapUs
         },
         async getSourceMap(file) {
           const providers: [SourceMapProvider, SourceMapAccessor | undefined][] = [
-            ['nitroApp.ssrSourceMaps', runtime.ssrSourceMaps()],
+            [
+              'nitroApp.ssrSourceMaps',
+              runtime.ssrSourceMaps(),
+            ],
             ['vite-node-runner', await viteNodeSourceMaps()],
-            ['__nitro_vite_envs__', viteEnvironmentSourceMaps()],
+            [
+              '__nitro_vite_envs__',
+              viteEnvironmentSourceMaps(),
+            ],
           ]
           let map: RawSourceMap | undefined
           for (const [provider, accessor] of providers) {
@@ -210,14 +222,37 @@ export default async function handler(error: unknown, event: unknown, { defaultH
   const cwd = process.cwd()
   const compile = compileInput(error, cwd)
   const { loaders, usage } = createSourceMapLoaders()
-  const plugins = [sourceMapUsagePlugin(usage)]
+  const plugins = [
+    sourceMapUsagePlugin(usage),
+  ]
   const report: ErrorReport = compile
-    ? await createReport(compile, { cwd, kind: 'compile', presets: [nuxtPreset({ versions })], plugins, context: { event }, loaders })
-    : await createReport(error, { cwd, presets: [nuxtPreset({ versions })], plugins, context: { event, instance: captured?.instance }, loaders })
+    ? await createReport(compile, {
+        cwd,
+        kind: 'compile',
+        presets: [
+          nuxtPreset({ versions }),
+        ],
+        plugins,
+        context: { event },
+        loaders,
+      })
+    : await createReport(error, {
+        cwd,
+        presets: [
+          nuxtPreset({ versions }),
+        ],
+        plugins,
+        context: { event, instance: captured?.instance },
+        loaders,
+      })
 
   const accept = String(reqHeaders.accept || '')
   if (accept.includes('application/json') || !accept.includes('text/html')) {
-    return runtime.respond(event, { status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(report) })
+    return runtime.respond(event, {
+      status,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(report),
+    })
   }
 
   const defaultRes = await defaultHandler(error, event, { json: true })
@@ -242,11 +277,17 @@ export default async function handler(error: unknown, event: unknown, { defaultH
   const headers = { ...defaultRes.headers, 'content-type': 'text/html;charset=UTF-8' }
 
   if (!page) {
-    return runtime.respond(event, { status, headers, body: renderPage(report, { cwd }) })
+    return runtime.respond(event, {
+      status,
+      headers,
+      body: renderPage(report, { cwd }),
+    })
   }
 
   return runtime.respond(event, {
-    status: page.status && page.status !== 200 ? page.status : status,
+    status: page.status && page.status !== 200
+      ? page.status
+      : status,
     statusText: page.statusText,
     headers,
     body: injectOverlay(page.html, report, { cwd, startMinimized: status < 500 }),

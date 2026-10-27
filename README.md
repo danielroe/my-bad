@@ -34,15 +34,24 @@ import { nuxtPreset } from 'my-bad/presets'
 
 const report = await createReport(error, {
   cwd: process.cwd(),
-  loaders: [fsLoader()],
-  presets: [nuxtPreset({ versions: { nuxt: '4.0.0' } })],
+  loaders: [
+    fsLoader()
+  ],
+  presets: [
+    nuxtPreset({
+      versions: { nuxt: '4.0.0' }
+    })
+  ],
   context: { event },
 })
 
 console.error(renderAnsi(report))
 
 if (req.headers.accept?.includes('text/html')) {
-  res.end(renderPage(report, { cwd: process.cwd(), channel: '/__my-bad' }))
+  res.end(renderPage(report, {
+    cwd: process.cwd(),
+    channel: '/__my-bad'
+  }))
 }
 else {
   res.end(JSON.stringify(report))
@@ -88,7 +97,10 @@ Use `injectOverlay` rather than `html.replace('</body>', ...)`: the inlined clie
 ```ts
 import { renderPage } from 'my-bad'
 
-renderPage(report, { channel: '/__my-bad', assets: { script: '/__my-bad/client.js', styles: '/__my-bad/client.css' } })
+renderPage(report, {
+  channel: '/__my-bad',
+  assets: { script: '/__my-bad/client.js', styles: '/__my-bad/client.css' }
+})
 ```
 
 Theme overrides stay inline, so a shared stylesheet still themes per response.
@@ -167,7 +179,12 @@ throw Object.assign(error, { compiled: true })
 The same thing is available as an option for the top-level input, where `compiled: { sourceLoc }` also supplies a position you have mapped back to source yourself, to get a source snippet alongside the generated one:
 
 ```ts
-await createReport(error, { kind: 'compile', compiled: { sourceLoc: { line: 6, column: 16 } } })
+await createReport(error, {
+  kind: 'compile',
+  compiled: {
+    sourceLoc: { line: 6, column: 16 }
+  }
+})
 ```
 
 A marker on the error wins over the option, and both win over detection in either direction (`false` opts out entirely, and the file is not read).
@@ -197,7 +214,10 @@ const report = await createReport(error, {
 import { createChannel } from 'my-bad/channel'
 import { fileSink } from 'my-bad/sinks'
 
-const channel = createChannel({ open: true, sink: fileSink('.nuxt/my-bad.jsonl') })
+const channel = createChannel({
+  open: true,
+  sink: fileSink('.nuxt/my-bad.jsonl')
+})
 // `open: true` launches `LAUNCH_EDITOR` / `VISUAL` / `EDITOR` at the frame's line, falling back to the OS default app
 // `open` requests are confined to `root` (default `process.cwd()`; the Vite plugin uses `server.fs.allow`),
 // must name an existing file, and must be `application/json`; pass `root: false` to allow any path
@@ -220,7 +240,9 @@ server.on('request', (req, res) => channel.handler(req, res).then(handled => han
 // 404 for any other report, log entries reach it only when attributed to a request that concerns it, and
 // privileged actions such as `open` are neither advertised nor accepted, so the
 // page opens an `editor://` URL on the machine running the browser instead.
-await channel.handler(req, res, { trusted: isLoopback(req) })
+await channel.handler(req, res, {
+  trusted: isLoopback(req)
+})
 
 channel.setError(report) // pages swap content in place; replaces every open error
 channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
@@ -238,7 +260,11 @@ channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) //
 ```ts
 import { myBad, useMyBad } from 'my-bad/vite'
 
-export default defineConfig({ plugins: [myBad()] })
+export default defineConfig({
+  plugins: [
+    myBad()
+  ]
+})
 ```
 
 The plugin maps frames through Vite's module graph, forwards compile errors from the HMR channel as `kind: 'compile'` reports, mounts the channel at `/__my-bad`, injects a tiny client into `index.html` so a running app shows the overlay, and clears it when the next update succeeds. Use `useMyBad(server)` from your own SSR middleware to build reports and pages with the same configuration.

@@ -55,7 +55,9 @@ function storage(key: string, value?: string | null): string | null {
 
 /** Dismissal is remembered per project, so another project on this origin still shows its errors. */
 function hiddenKey(cwd?: string): string {
-  return `my-bad:overlay:hidden${cwd ? `:${cwd}` : ''}`
+  return `my-bad:overlay:hidden${cwd
+    ? `:${cwd}`
+    : ''}`
 }
 
 function session(key: string, value?: string | null): string | null {
@@ -98,17 +100,26 @@ function mount(): Mount | undefined {
   }
   if (state.mode === 'overlay') {
     const host = (document.currentScript?.previousElementSibling?.previousElementSibling as HTMLElement | null) ?? document.querySelector<HTMLElement>(state.tag ?? 'my-bad-overlay')
-    return host ? overlayMount(state, host) : undefined
+    return host
+      ? overlayMount(state, host)
+      : undefined
   }
   const root = document.querySelector<HTMLElement>('[data-my-bad-root]')
   if (!root) {
     return
   }
-  return { state, error: errorOf(state.report), themeTarget: document.documentElement, root }
+  return {
+    state,
+    error: errorOf(state.report),
+    themeTarget: document.documentElement,
+    root,
+  }
 }
 
 function errorOf(report: ErrorReport | undefined): ErrorReport | undefined {
-  return report?.kind === 'warning' ? undefined : report
+  return report?.kind === 'warning'
+    ? undefined
+    : report
 }
 
 function overlayMount(state: PageState, host: HTMLElement): Mount {
@@ -149,19 +160,33 @@ function overlayMount(state: PageState, host: HTMLElement): Mount {
   preview.innerHTML = `<button type="button" class="mb-preview-toggle" data-action="minimize" title="Show page behind this error" aria-label="Show page behind this error"><iframe class="mb-preview-frame" title="" aria-hidden="true" tabindex="-1" sandbox="" inert></iframe><span class="mb-preview-label">Show page</span></button><button type="button" class="mb-pip-button mb-preview-close" data-action="hide-preview" title="Hide page preview" aria-label="Hide page preview">${ICONS.close}</button>`
   overlay.append(expand, close, root, preview)
   shadow.append(...sheets, overlay, restore)
-  return { state, error: errorOf(state.report), themeTarget: host, root, overlay, restore, preview }
+  return {
+    state,
+    error: errorOf(state.report),
+    themeTarget: host,
+    root,
+    overlay,
+    restore,
+    preview,
+  }
 }
 
 function applyTheme(m: Mount): void {
   const forced = m.state.theme?.scheme
   const remembered = storage(STORAGE.theme)
-  const stored = remembered === 'light' || remembered === 'dark' ? remembered : undefined
-  const scheme = forced ?? stored ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  const stored = remembered === 'light' || remembered === 'dark'
+    ? remembered
+    : undefined
+  const scheme = forced ?? stored ?? (matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light')
   m.themeTarget.setAttribute('data-theme', scheme)
 }
 
 function toggleTheme(m: Mount): void {
-  const next = m.themeTarget.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+  const next = m.themeTarget.getAttribute('data-theme') === 'dark'
+    ? 'light'
+    : 'dark'
   m.themeTarget.setAttribute('data-theme', next)
   storage(STORAGE.theme, next)
 }
@@ -190,7 +215,9 @@ function setLive(m: Mount, value: boolean): void {
 }
 
 function childNodesOf(el: Element | null): ChildNode[] {
-  return el ? [...el.childNodes] : []
+  return el
+    ? [...el.childNodes]
+    : []
 }
 
 /** Pending removal of a dismissed overlay's host. */
@@ -270,7 +297,9 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[], optio
 }
 
 function headline(report: ErrorReport): string {
-  return `${report.kind === 'warning' ? 'Warning' : 'Error'}: ${report.name}: ${report.message}`
+  return `${report.kind === 'warning'
+    ? 'Warning'
+    : 'Error'}: ${report.name}: ${report.message}`
 }
 
 const labelRestores = new WeakMap<HTMLElement, () => void>()
@@ -282,7 +311,9 @@ function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFail
   const name = button.getAttribute('aria-label')
   const title = button.getAttribute('title')
   if (iconOnly) {
-    button.innerHTML = flag === 'copied' ? ICONS.check : ICONS.copy
+    button.innerHTML = flag === 'copied'
+      ? ICONS.check
+      : ICONS.copy
     button.setAttribute('aria-label', label)
     button.title = label
   }
@@ -336,7 +367,9 @@ function selectionTextarea(text: string): HTMLTextAreaElement {
 
 function execCommandCopy(text: string): boolean {
   const selection = document.getSelection()
-  const previous = selection?.rangeCount ? selection.getRangeAt(0) : undefined
+  const previous = selection?.rangeCount
+    ? selection.getRangeAt(0)
+    : undefined
   const area = selectionTextarea(text)
   let copied = false
   try {
@@ -376,30 +409,46 @@ function offerManualCopy(text: string): Promise<void> {
   })
 }
 
-const copyShortcut = () => /mac|iphone|ipad/i.test(navigator.userAgent) ? '\u2318C' : 'Ctrl+C'
+function copyShortcut() {
+  return /mac|iphone|ipad/i.test(navigator.userAgent)
+    ? '\u2318C'
+    : 'Ctrl+C'
+}
 
 async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> {
   const report = reportEntries(m.state.report).find(entry => entry.path === m.selected)?.report ?? m.state.report
   const text = what === 'json'
     ? JSON.stringify(report, null, 2)
-    : `${what === 'prompt' ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behaviour.\n\n' : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
+    : `${what === 'prompt'
+      ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behaviour.\n\n'
+      : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
   return copyText(m, text, button)
 }
 
 function copyLocation(m: Mount, button: HTMLElement): Promise<void> | undefined {
   const { dataset } = button
-  const position = (file?: string, line?: string, column?: string) => file && `${file}${line ? `:${line}${column ? `:${column}` : ''}` : ''}`
+  const position = (file?: string, line?: string, column?: string) => file && `${file}${line
+    ? `:${line}${column
+      ? `:${column}`
+      : ''}`
+    : ''}`
   const source = position(dataset.file, dataset.line, dataset.column)
   const compiled = position(dataset.compiledFile, dataset.compiledLine, dataset.compiledColumn)
-  const text = (button.closest('[data-frame]')?.hasAttribute('data-compiled') ? compiled : undefined) || source || compiled
-  return text ? copyText(m, text, button, 'location') : undefined
+  const text = (button.closest('[data-frame]')?.hasAttribute('data-compiled')
+    ? compiled
+    : undefined) || source || compiled
+  return text
+    ? copyText(m, text, button, 'location')
+    : undefined
 }
 
 /** `what` marks an icon-only button, whose feedback goes into its accessible name and the live region. */
 async function copyText(m: Mount, text: string, button: HTMLElement, what?: string): Promise<void> {
   const iconOnly = what !== undefined
   const done = () => {
-    flash(button, iconOnly ? `Copied ${what}` : 'Copied', iconOnly)
+    flash(button, iconOnly
+      ? `Copied ${what}`
+      : 'Copied', iconOnly)
     if (iconOnly) {
       announce(m, `Copied ${what}: ${text}`)
     }
@@ -414,7 +463,9 @@ async function copyText(m: Mount, text: string, button: HTMLElement, what?: stri
     return done()
   }
   const prompt = `Press ${copyShortcut()}`
-  const restore = setLabel(button, iconOnly ? `${prompt} to copy the ${what}` : prompt, 'copyFailed', iconOnly)
+  const restore = setLabel(button, iconOnly
+    ? `${prompt} to copy the ${what}`
+    : prompt, 'copyFailed', iconOnly)
   if (iconOnly) {
     announce(m, `${prompt} to copy the ${what}`)
   }
@@ -428,7 +479,15 @@ async function open(m: Mount, file: string, line?: string, column?: string): Pro
       const res = await fetch(`${m.state.channel}/open`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ file, line: line ? Number(line) : undefined, column: column ? Number(column) : undefined }),
+        body: JSON.stringify({
+          file,
+          line: line
+            ? Number(line)
+            : undefined,
+          column: column
+            ? Number(column)
+            : undefined,
+        }),
       })
       if (res.ok) {
         return
@@ -438,7 +497,11 @@ async function open(m: Mount, file: string, line?: string, column?: string): Pro
   }
   const scheme = m.state.editor ?? 'vscode'
   const anchor = document.createElement('a')
-  anchor.href = `${scheme}://file/${file.replace(/^\//, '')}${line ? `:${line}` : ''}${column ? `:${column}` : ''}`
+  anchor.href = `${scheme}://file/${file.replace(/^\//, '')}${line
+    ? `:${line}`
+    : ''}${column
+    ? `:${column}`
+    : ''}`
   anchor.hidden = true
   m.root.append(anchor)
   anchor.click()
@@ -562,7 +625,9 @@ function retireWarning(m: Mount, id: string | undefined, before: HistoryEntry[])
   }
   const shown = m.state.report
   if (shown.kind === 'warning' && (id === undefined || shown.id === id)) {
-    const next = id === undefined ? undefined : nextWarning(before, m.state.history ?? [], id)
+    const next = id === undefined
+      ? undefined
+      : nextWarning(before, m.state.history ?? [], id)
     if (m.error) {
       rerender(m, m.error)
     }
@@ -591,10 +656,16 @@ async function showNext(m: Mount, retired: ErrorReport, entry: HistoryEntry): Pr
   }
   if (!m.state.history?.some(other => other.id === entry.id)) {
     const newest = m.state.history?.filter(other => other.kind === 'warning').at(-1)
-    return newest ? showNext(m, retired, newest) : m.overlay ? dismiss(m) : undefined
+    return newest
+      ? showNext(m, retired, newest)
+      : m.overlay
+        ? dismiss(m)
+        : undefined
   }
   if (!report) {
-    return m.overlay ? dismiss(m) : undefined
+    return m.overlay
+      ? dismiss(m)
+      : undefined
   }
   m.root.querySelector(`[data-toast-id="${CSS.escape(report.id)}"]`)?.remove()
   rerender(m, report, undefined, { quiet: true, announcement: `Warning fixed. Next, ${headline(report)}` })
@@ -606,7 +677,9 @@ async function fetchReport(m: Mount, id: string): Promise<ErrorReport | undefine
   }
   try {
     const res = await fetch(`${m.state.channel}/history/${encodeURIComponent(id)}?${scopeQuery(m)}`)
-    return res.ok ? await res.json() : undefined
+    return res.ok
+      ? await res.json()
+      : undefined
   }
   catch {}
 }
@@ -652,7 +725,9 @@ function connect(m: Mount): void {
   window.__MY_BAD_CLIENT__ = true
   const url = new URL(eventsUrl(m), location.href).href
   const shared = window.__MY_BAD_SOURCE__
-  const source: EventTarget & { close: () => void } = shared && new URL(shared.url).pathname === new URL(url).pathname ? shared : new EventSource(url)
+  const source: EventTarget & { close: () => void } = shared && new URL(shared.url).pathname === new URL(url).pathname
+    ? shared
+    : new EventSource(url)
   source.addEventListener('open', () => setLive(m, true))
   source.addEventListener('error', () => setLive(m, false))
   const on = <T extends ChannelEvent['type']>(type: T, handler: (payload: Extract<ChannelEvent, { type: T }>['payload']) => void) => {
@@ -787,8 +862,20 @@ function setMinimized(m: Mount, value: boolean, options: { persist?: boolean } =
 }
 
 const LABELS = {
-  error: { name: 'Error details', hide: 'Hide error overlay', expand: 'Show error details', restore: 'Show error overlay', minimize: ['Minimise (show the page behind)', 'Minimise overlay and show the page behind'] },
-  panel: { name: 'Details', hide: 'Hide overlay', expand: 'Show details', restore: 'Show overlay', minimize: ['Minimise', 'Minimise overlay'] },
+  error: {
+    name: 'Error details',
+    hide: 'Hide error overlay',
+    expand: 'Show error details',
+    restore: 'Show error overlay',
+    minimize: ['Minimise (show the page behind)', 'Minimise overlay and show the page behind'],
+  },
+  panel: {
+    name: 'Details',
+    hide: 'Hide overlay',
+    expand: 'Show details',
+    restore: 'Show overlay',
+    minimize: ['Minimise', 'Minimise overlay'],
+  },
 }
 
 /**
@@ -805,8 +892,13 @@ function applyMode(m: Mount): void {
   const minimized = overlay.hasAttribute('data-minimized')
   overlay.toggleAttribute('data-panel', panel)
   overlay.setAttribute('aria-modal', String(!minimized && !panel))
-  overlay.setAttribute('aria-label', panel && m.state.report.kind === 'warning' ? 'Warning details' : labels.name)
-  for (const [action, label] of [['hide', labels.hide], ['expand', labels.expand]]) {
+  overlay.setAttribute('aria-label', panel && m.state.report.kind === 'warning'
+    ? 'Warning details'
+    : labels.name)
+  for (const [action, label] of [
+    ['hide', labels.hide],
+    ['expand', labels.expand],
+  ]) {
     const button = overlay.querySelector(`.mb-pip-button[data-action="${action}"]`)
     button?.setAttribute('aria-label', label!)
     button?.setAttribute('title', label!)
@@ -818,7 +910,9 @@ function applyMode(m: Mount): void {
     m.restore.textContent = labels.restore
   }
   const toggle = m.preview?.querySelector('[data-action="minimize"]')
-  const page = m.state.report.kind === 'warning' ? 'Show page' : 'Show page behind this error'
+  const page = m.state.report.kind === 'warning'
+    ? 'Show page'
+    : 'Show page behind this error'
   toggle?.setAttribute('title', page)
   toggle?.setAttribute('aria-label', page)
   lockPage(m, !panel && !minimized && !overlay.hasAttribute('data-hidden'))
@@ -880,7 +974,9 @@ function updatePreview(m: Mount): void {
   const base = document.createElement('base')
   base.href = location.href
   clone.querySelector('head')?.prepend(base)
-  const doctype = document.doctype ? `<!DOCTYPE ${document.doctype.name}>` : ''
+  const doctype = document.doctype
+    ? `<!DOCTYPE ${document.doctype.name}>`
+    : ''
   const html = `${doctype}${clone.outerHTML}`
   if (frame && frame.dataset.snapshot !== String(html.length)) {
     frame.srcdoc = html
@@ -946,8 +1042,12 @@ function draggable(m: Mount, el: HTMLElement, enabled: () => boolean, onTap?: ()
     el.removeAttribute('data-dragging')
     el.style.translate = ''
     if (dragged) {
-      const horizontal = event.clientX < innerWidth / 2 ? 'left' : 'right'
-      const vertical = event.clientY < innerHeight / 2 ? 'top' : 'bottom'
+      const horizontal = event.clientX < innerWidth / 2
+        ? 'left'
+        : 'right'
+      const vertical = event.clientY < innerHeight / 2
+        ? 'top'
+        : 'bottom'
       setDock(m, `${vertical}-${horizontal}` as Dock)
     }
     else if (event.type === 'pointerup') {

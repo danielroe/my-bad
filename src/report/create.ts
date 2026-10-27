@@ -12,16 +12,29 @@ import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledF
 import { stringifyValue } from './stringify'
 import { tokenizeSnippet } from './tokenize'
 
-const DEFAULT_LOADERS = [fsLoader()]
+const DEFAULT_LOADERS = [
+  fsLoader(),
+]
 
 export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptions {
   const presets = options.presets ?? []
   return {
-    cwd: options.cwd ?? (typeof process !== 'undefined' && process.cwd ? process.cwd() : '/'),
+    cwd: options.cwd ?? (typeof process !== 'undefined' && process.cwd
+      ? process.cwd()
+      : '/'),
     kind: options.kind,
-    loaders: options.loaders ?? [...presets.flatMap(preset => preset.loaders ?? []), ...DEFAULT_LOADERS],
-    internal: [...presets.flatMap(preset => preset.internal ?? []), ...(options.internal ?? [])],
-    plugins: [...presets.flatMap(preset => preset.plugins ?? []), ...(options.plugins ?? [])],
+    loaders: options.loaders ?? [
+      ...presets.flatMap(preset => preset.loaders ?? []),
+      ...DEFAULT_LOADERS,
+    ],
+    internal: [
+      ...presets.flatMap(preset => preset.internal ?? []),
+      ...(options.internal ?? []),
+    ],
+    plugins: [
+      ...presets.flatMap(preset => preset.plugins ?? []),
+      ...(options.plugins ?? []),
+    ],
     maxCauses: options.maxCauses ?? 10,
     maxErrors: options.maxErrors ?? 20,
     maxMappedFrames: options.maxMappedFrames ?? 200,
@@ -39,18 +52,28 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
 }
 
 function snippetCount(value: number | undefined): number {
-  return value === undefined || Number.isNaN(value) ? 100 : Math.max(0, Math.floor(value))
+  return value === undefined || Number.isNaN(value)
+    ? 100
+    : Math.max(0, Math.floor(value))
 }
 
 /** At least 2, which leaves a cut line one character and its `…`. */
 function lineLength(value: number | undefined): number {
-  return value === undefined || Number.isNaN(value) ? 500 : Math.max(2, Math.floor(value))
+  return value === undefined || Number.isNaN(value)
+    ? 500
+    : Math.max(2, Math.floor(value))
 }
 
 /** Build a serialisable report from an error, warning, or Vite-style compile error. */
 export async function createReport(input: unknown, options: ReportOptions = {}): Promise<ErrorReport> {
   const resolved = resolveOptions(options)
-  const ctx: BuildContext = { options: resolved, seen: new WeakSet(), sources: new Map(), compiled: new Map(), budget: { frames: resolved.maxMappedFrames, snippets: resolved.maxSnippets } }
+  const ctx: BuildContext = {
+    options: resolved,
+    seen: new WeakSet(),
+    sources: new Map(),
+    compiled: new Map(),
+    budget: { frames: resolved.maxMappedFrames, snippets: resolved.maxSnippets },
+  }
   const report = hoistCompileError(collapseDuplicateCauses(await buildReport(input, ctx, 0)))
   for (const plugin of resolved.plugins) {
     await plugin.transform(report, { input, options: resolved })
@@ -68,14 +91,22 @@ function collapseDuplicateCauses(report: ErrorReport): ErrorReport {
   const errors = report.errors?.map(collapseDuplicateCauses)
   const duplicate = causes.find(cause => cause.message === report.message && cause.kind === report.kind)
   if (!duplicate) {
-    return { ...report, causes, ...(errors && { errors }) }
+    return {
+      ...report,
+      causes,
+      ...(errors && { errors }),
+    }
   }
   const hasApp = (frames: ErrorReport['frames']) => frames.some(frame => frame.type === 'app')
-  const frames = hasApp(duplicate.frames) || !report.frames.length ? duplicate.frames : report.frames
+  const frames = hasApp(duplicate.frames) || !report.frames.length
+    ? duplicate.frames
+    : report.frames
   const generic = /^(?:Error|HTTPError|H3Error|FetchError)$/.test(report.name)
   return {
     ...report,
-    name: generic && duplicate.name !== 'Error' ? duplicate.name : report.name,
+    name: generic && duplicate.name !== 'Error'
+      ? duplicate.name
+      : report.name,
     code: report.code ?? duplicate.code,
     ...((report.diagnostic ?? duplicate.diagnostic) && { diagnostic: true as const }),
     hint: report.hint ?? duplicate.hint,
@@ -85,7 +116,10 @@ function collapseDuplicateCauses(report: ErrorReport): ErrorReport {
     frames,
     rawStack: report.rawStack ?? duplicate.rawStack,
     sections: mergeSections(report.sections, duplicate.sections),
-    causes: [...causes.filter(cause => cause !== duplicate), ...duplicate.causes],
+    causes: [
+      ...causes.filter(cause => cause !== duplicate),
+      ...duplicate.causes,
+    ],
     ...(errors && { errors }),
   }
 }
@@ -100,7 +134,10 @@ function hoistCompileError(report: ErrorReport): ErrorReport {
     return report
   }
   const compile = report.causes[index]!
-  const wrapper: ErrorReport = { ...report, causes: report.causes.filter((_, i) => i !== index) }
+  const wrapper: ErrorReport = {
+    ...report,
+    causes: report.causes.filter((_, i) => i !== index),
+  }
   return {
     ...compile,
     status: compile.status ?? report.status,
@@ -110,7 +147,10 @@ function hoistCompileError(report: ErrorReport): ErrorReport {
 }
 
 function mergeSections(base: Section[], extra: Section[]): Section[] {
-  return [...base, ...extra.filter(section => !base.some(existing => existing.id === section.id))]
+  return [
+    ...base,
+    ...extra.filter(section => !base.some(existing => existing.id === section.id)),
+  ]
 }
 
 interface Budget {
@@ -119,7 +159,9 @@ interface Budget {
 }
 
 function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max)}… [truncated, ${text.length - max} more characters]`
+  return text.length <= max
+    ? text
+    : `${text.slice(0, max)}… [truncated, ${text.length - max} more characters]`
 }
 
 /** State shared by every node of one report: cycle detection, the frame and snippet budgets and file reads, which repeat across frames and causes. */
@@ -139,8 +181,12 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     seen.add(input)
   }
 
-  const quoted = options.kind === undefined && !isCompileInput(input) ? await compileInputFromMessage(error, ctx) : undefined
-  const kind = options.kind ?? (quoted || isCompileInput(input) ? 'compile' : 'error')
+  const quoted = options.kind === undefined && !isCompileInput(input)
+    ? await compileInputFromMessage(error, ctx)
+    : undefined
+  const kind = options.kind ?? (quoted || isCompileInput(input)
+    ? 'compile'
+    : 'error')
   const frames = await buildFrames(quoted ?? input, error, ctx, kind)
 
   const sources = await buildSourceFrames(error.sources, ctx)
@@ -150,17 +196,29 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
 
   const sections: Section[] = []
   if (sources.unresolved.length) {
-    sections.push({ id: 'sources', title: 'Sources', content: sources.unresolved.join('\n') })
+    sections.push({
+      id: 'sources',
+      title: 'Sources',
+      content: sources.unresolved.join('\n'),
+    })
   }
   if (error.data !== undefined) {
-    sections.push({ id: 'data', title: 'Data', content: toSectionContent(error.data, options.maxSectionLength) })
+    sections.push({
+      id: 'data',
+      title: 'Data',
+      content: toSectionContent(error.data, options.maxSectionLength),
+    })
   }
 
   const report: ErrorReport = {
     id: '',
     kind,
     name: quoted?.name ?? error.name,
-    message: truncate(quoted ? quoted.message : kind === 'compile' ? stripEmbeddedFrame(error.message) : error.message, options.maxMessageLength),
+    message: truncate(quoted
+      ? quoted.message
+      : kind === 'compile'
+        ? stripEmbeddedFrame(error.message)
+        : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
     ...(error.diagnostic && { diagnostic: true as const }),
     ...(error.hint && { hint: error.hint }),
@@ -169,7 +227,9 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     frames,
     causes: [],
     sections,
-    ...(error.stack && { rawStack: truncate(error.stack, options.maxRawStackLength) }),
+    ...(error.stack && {
+      rawStack: truncate(error.stack, options.maxRawStackLength),
+    }),
     timestamp: Date.now(),
   }
 
@@ -203,7 +263,10 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
 }
 
 function nestedContext(ctx: BuildContext): BuildContext {
-  return { ...ctx, options: { ...ctx.options, kind: undefined, compiled: undefined } }
+  return {
+    ...ctx,
+    options: { ...ctx.options, kind: undefined, compiled: undefined },
+  }
 }
 
 interface NormalizedError {
@@ -225,23 +288,42 @@ function normalizeInput(input: unknown): NormalizedError {
   if (input instanceof Error || (typeof input === 'object' && input !== null && 'message' in input)) {
     const error = input as Error & Record<string, unknown>
     const status = error.statusCode ?? error.status
-    const code = typeof error.code === 'string' ? error.code : undefined
+    const code = typeof error.code === 'string'
+      ? error.code
+      : undefined
     return {
-      name: typeof error.name === 'string' && error.name ? error.name : 'Error',
-      message: stripAnsi(typeof error.message === 'string' ? error.message : String(error.message)),
-      stack: typeof error.stack === 'string' ? error.stack : undefined,
+      name: typeof error.name === 'string' && error.name
+        ? error.name
+        : 'Error',
+      message: stripAnsi(typeof error.message === 'string'
+        ? error.message
+        : String(error.message)),
+      stack: typeof error.stack === 'string'
+        ? error.stack
+        : undefined,
       code,
       diagnostic: !!code && error.name === code,
-      hint: typeof error.fix === 'string' && error.fix ? stripAnsi(error.fix) : undefined,
-      docsUrl: typeof error.docs === 'string' && error.docs ? error.docs : undefined,
-      sources: Array.isArray(error.sources) ? error.sources.filter(source => typeof source === 'string' && source) : undefined,
-      status: typeof status === 'number' ? status : undefined,
+      hint: typeof error.fix === 'string' && error.fix
+        ? stripAnsi(error.fix)
+        : undefined,
+      docsUrl: typeof error.docs === 'string' && error.docs
+        ? error.docs
+        : undefined,
+      sources: Array.isArray(error.sources)
+        ? error.sources.filter(source => typeof source === 'string' && source)
+        : undefined,
+      status: typeof status === 'number'
+        ? status
+        : undefined,
       data: error.data,
       cause: error.cause,
       errors: error.errors,
     }
   }
-  return { name: 'Error', message: stripAnsi(stringifyValue(input, 2)) }
+  return {
+    name: 'Error',
+    message: stripAnsi(stringifyValue(input, 2)),
+  }
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
@@ -267,12 +349,18 @@ async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext
     return
   }
   const head = lines.slice(0, -1).join('\n').trimEnd()
-  const named = error.name === 'Error' ? ERROR_NAME_RE.exec(head)?.groups : undefined
+  const named = error.name === 'Error'
+    ? ERROR_NAME_RE.exec(head)?.groups
+    : undefined
   return {
     message: named?.message ?? head,
     ...(named?.name && { name: named.name }),
     id: file,
-    loc: { file, line: Number(groups.line), column: Number(groups.column) },
+    loc: {
+      file,
+      line: Number(groups.line),
+      column: Number(groups.column),
+    },
   }
 }
 
@@ -286,13 +374,22 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
   const unresolved: string[] = []
   for (const source of sources ?? []) {
     const groups = TRAILING_POSITION_RE.exec(source)?.groups
-    const raw = groups ? normalizeSlashes(groups.file!) : undefined
-    const file = raw ? resolveFile(raw, ctx.options.cwd) : undefined
+    const raw = groups
+      ? normalizeSlashes(groups.file!)
+      : undefined
+    const file = raw
+      ? resolveFile(raw, ctx.options.cwd)
+      : undefined
     if (!file || await readSource(file, ctx) === undefined) {
       unresolved.push(source)
       continue
     }
-    const frame: Frame = { file, line: Number(groups!.line), column: Number(groups!.column), type: 'app' }
+    const frame: Frame = {
+      file,
+      line: Number(groups!.line),
+      column: Number(groups!.column),
+      type: 'app',
+    }
     if (ctx.options.snippets) {
       setSnippet(frame, await loadSnippet(file, frame.line!, frame.column, ctx))
     }
@@ -350,25 +447,40 @@ function mergeFrameLoc(declared: { file?: string, line: number, column: number }
   if (declared && declared.line === frameLoc.line && typeof declared.column === 'number' && (caretLine === undefined || declared.column <= caretLine.length + 1)) {
     return declared
   }
-  return { ...declared, ...frameLoc }
+  return {
+    ...declared,
+    ...frameLoc,
+  }
 }
 
 async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildContext, kind: ReportKind): Promise<Frame[]> {
   const { options } = ctx
   if (kind === 'compile' && isCompileInput(input)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
-    const snippet = typeof input.frame === 'string' && input.frame ? parseCodeFrame(input.frame) : undefined
-    const frameLoc = typeof input.frame === 'string' ? locFromCodeFrame(input.frame) : undefined
+    const snippet = typeof input.frame === 'string' && input.frame
+      ? parseCodeFrame(input.frame)
+      : undefined
+    const frameLoc = typeof input.frame === 'string'
+      ? locFromCodeFrame(input.frame)
+      : undefined
     const declared = compileLoc(input)
-    const loc = snippet && frameLoc ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start]) : declared ?? frameLoc ?? labelled
+    const loc = snippet && frameLoc
+      ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start])
+      : declared ?? frameLoc ?? labelled
     const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
-    const file = rawFile ? resolveFile(rawFile, options.cwd) : undefined
+    const file = rawFile
+      ? resolveFile(rawFile, options.cwd)
+      : undefined
     if (snippet && file) {
       snippet.lang ??= langFromFile(file)
     }
 
     const marker = compiledMarker(input, options)
-    const explicit = marker === false || marker === undefined ? undefined : (typeof marker === 'object' ? marker : {})
+    const explicit = marker === false || marker === undefined
+      ? undefined
+      : (typeof marker === 'object'
+          ? marker
+          : {})
     let generated = explicit !== undefined
     if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
       const contents = await readSource(file, ctx)
@@ -377,10 +489,15 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
 
     if (generated) {
       const source = explicit?.sourceLoc
-      const sourceFile = source?.file ? resolveFile(source.file, options.cwd) : file
+      const sourceFile = source?.file
+        ? resolveFile(source.file, options.cwd)
+        : file
       const frame: Frame = {
         ...(sourceFile && { file: sourceFile }),
-        ...(source && { line: source.line, ...(source.column !== undefined && { column: source.column }) }),
+        ...(source && {
+          line: source.line,
+          ...(source.column !== undefined && { column: source.column }),
+        }),
         type: 'app',
         ...(file && {
           compiled: {
@@ -456,13 +573,22 @@ async function attachSnippets(built: BuiltFrame[], ctx: BuildContext): Promise<v
   }
   const requests: SnippetRequest[] = built
     .filter(({ frame, mapped }) => mapped && frame.type === 'app' && frame.file && frame.line !== undefined)
-    .flatMap(({ frame, embedded }) => [{ frame, compiled: false, embedded }, ...(frame.compiled?.line !== undefined ? [{ frame, compiled: true }] : [])])
+    .flatMap(({ frame, embedded }) => [
+      { frame, compiled: false, embedded },
+      ...(frame.compiled?.line !== undefined
+        ? [
+            { frame, compiled: true },
+          ]
+        : []),
+    ])
   for (let next = 0; next < requests.length && ctx.budget.snippets > 0;) {
     const batch = requests.slice(next, next + ctx.budget.snippets)
     next += batch.length
     const contents = await Promise.all(batch.map(({ frame, compiled, embedded }) => compiled
       ? readCompiledSource(frame.compiled!.file, ctx, frame.compiled!.file !== frame.file)
-      : embedded !== undefined && lineAt(embedded, frame.line!) !== undefined ? embedded : readSource(frame.file!, ctx)))
+      : embedded !== undefined && lineAt(embedded, frame.line!) !== undefined
+        ? embedded
+        : readSource(frame.file!, ctx)))
     for (const [index, { frame, compiled }] of batch.entries()) {
       if (!compiled) {
         setSnippet(frame, snippetFrom(contents[index], frame.file!, frame.line!, frame.column, ctx))
@@ -479,7 +605,9 @@ async function attachSnippets(built: BuiltFrame[], ctx: BuildContext): Promise<v
 async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[number], ctx: BuildContext): Promise<BuiltFrame> {
   const { options, budget } = ctx
   let frame: Frame = {
-    ...(trace.source && !trace.isNative && { file: stripCacheQuery(toPath(trace.source)) }),
+    ...(trace.source && !trace.isNative && {
+      file: stripCacheQuery(toPath(trace.source)),
+    }),
     ...(trace.line !== undefined && { line: trace.line }),
     ...(trace.column !== undefined && { column: trace.column }),
     ...(trace.function && { function: trace.function }),
@@ -496,8 +624,14 @@ async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[numb
     const mapped = await mapFrame(frame, options)
     const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'
     frame = mapped
-    frame.type = forcedVendor ? 'vendor' : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
-    return { frame, mapped: true, embedded: embeddedSource(frame) }
+    frame.type = forcedVendor
+      ? 'vendor'
+      : classifyFrame(frame, options.internal, packageName(frame.file, options.cwd))
+    return {
+      frame,
+      mapped: true,
+      embedded: embeddedSource(frame),
+    }
   }
   return { frame, mapped: false }
 }
@@ -539,7 +673,11 @@ function caretLineMatchesSource(snippet: Snippet, caretLine: number, contents: s
   if (survived.length < 8) {
     return
   }
-  return head && tail ? actual.includes(survived) : head ? actual.endsWith(survived) : actual.startsWith(survived)
+  return head && tail
+    ? actual.includes(survived)
+    : head
+      ? actual.endsWith(survived)
+      : actual.startsWith(survived)
 }
 
 function stripEllipsis(line: string): string {
@@ -547,11 +685,15 @@ function stripEllipsis(line: string): string {
 }
 
 function resolveFile(file: string, cwd: string): string {
-  return stripCacheQuery(toPath(isFilePath(file) || hasScheme(file) ? file : resolvePath(cwd, file)))
+  return stripCacheQuery(toPath(isFilePath(file) || hasScheme(file)
+    ? file
+    : resolvePath(cwd, file)))
 }
 
 function packageName(file: string | undefined, cwd: string): string | undefined {
-  return file ? externalPackage(file, cwd)?.name : undefined
+  return file
+    ? externalPackage(file, cwd)?.name
+    : undefined
 }
 
 /**
@@ -559,11 +701,15 @@ function packageName(file: string | undefined, cwd: string): string | undefined 
  * the browser client, only ever see the resulting strings.
  */
 function addDisplayPaths(frame: Frame, cwd: string): void {
-  const own = frame.file ? externalPackage(frame.file, cwd)?.displayFile : undefined
+  const own = frame.file
+    ? externalPackage(frame.file, cwd)?.displayFile
+    : undefined
   if (own) {
     frame.displayFile = own
   }
-  const compiled = frame.compiled ? externalPackage(frame.compiled.file, cwd)?.displayFile : undefined
+  const compiled = frame.compiled
+    ? externalPackage(frame.compiled.file, cwd)?.displayFile
+    : undefined
   if (compiled) {
     frame.compiled = { ...frame.compiled!, displayFile: compiled }
   }
@@ -613,7 +759,9 @@ async function readSourceUncached(file: string, options: ResolvedReportOptions):
 }
 
 async function loadSnippet(file: string, line: number, column: number | undefined, ctx: BuildContext): Promise<Snippet | undefined> {
-  return ctx.budget.snippets > 0 ? snippetFrom(await readSource(file, ctx), file, line, column, ctx) : undefined
+  return ctx.budget.snippets > 0
+    ? snippetFrom(await readSource(file, ctx), file, line, column, ctx)
+    : undefined
 }
 
 /** Cut a snippet from file contents, counting it against the report's snippet budget. */
@@ -646,7 +794,9 @@ function setSnippet(frame: Frame, snippet: Snippet | undefined): void {
 }
 
 function withSnippet(snippet: Snippet | undefined): { snippet?: Snippet } {
-  return snippet ? { snippet } : {}
+  return snippet
+    ? { snippet }
+    : {}
 }
 
 /**
@@ -661,7 +811,9 @@ async function readCompiledSource(file: string, ctx: BuildContext, separateFile:
     ctx.compiled.set(file, pending)
   }
   const contents = await pending
-  return contents === undefined && separateFile ? readSource(file, ctx) : contents
+  return contents === undefined && separateFile
+    ? readSource(file, ctx)
+    : contents
 }
 
 async function readCompiledUncached(file: string, options: ResolvedReportOptions): Promise<string | undefined> {
@@ -677,7 +829,12 @@ async function readCompiledUncached(file: string, options: ResolvedReportOptions
 }
 
 function withTokens(snippet: Snippet, options: ResolvedReportOptions): Snippet {
-  return options.tokenizer ? { ...snippet, tokens: tokenizeSnippet(snippet, options.tokenizer) } : snippet
+  return options.tokenizer
+    ? {
+        ...snippet,
+        tokens: tokenizeSnippet(snippet, options.tokenizer),
+      }
+    : snippet
 }
 
 function toSectionContent(data: unknown, max: number): Record<string, unknown> | string {

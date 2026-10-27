@@ -6,7 +6,9 @@ const windowsFile = 'C:\\Users\\me\\project\\nuxt.config.ts'
 
 vi.mock('node:fs/promises', async importOriginal => ({
   ...await importOriginal<typeof import('node:fs/promises')>(),
-  readFile: vi.fn(async (file: string) => file === windowsFile ? 'export default {}\n' : undefined),
+  readFile: vi.fn(async (file: string) => file === windowsFile
+    ? 'export default {}\n'
+    : undefined),
 }))
 
 describe('native windows paths', () => {
@@ -38,7 +40,9 @@ describe('native windows paths', () => {
   })
 
   it('reads sources for them from disk', async () => {
-    const loader = sourceMapLoader({ getSourceMap: () => undefined })
+    const loader = sourceMapLoader({
+      getSourceMap: () => undefined,
+    })
     expect(await loader.read!(windowsFile)).toBe('export default {}\n')
   })
 })

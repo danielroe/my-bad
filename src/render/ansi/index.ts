@@ -60,13 +60,25 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const indent = '  '.repeat(depth)
   const width = ctx.width - indent.length
 
-  const icon = report.kind === 'warning' ? p.yellow('⚠') : p.red('✖')
-  const name = report.kind === 'warning' ? p.yellow(p.bold(report.name)) : p.red(p.bold(report.name))
+  const icon = report.kind === 'warning'
+    ? p.yellow('⚠')
+    : p.red('✖')
+  const name = report.kind === 'warning'
+    ? p.yellow(p.bold(report.name))
+    : p.red(p.bold(report.name))
   const meta = [report.code !== report.name && report.code && p.dim(`[${report.code}]`), report.status && p.dim(`(${report.status})`)].filter(Boolean).join(' ')
-  const header = depth === 0 ? (ctx.icon ? `${icon} ${name}` : name) : `${p.dim('Caused by:')} ${name}`
-  const title = `${header}${meta ? ` ${meta}` : ''}${p.dim(':')} `
+  const header = depth === 0
+    ? (ctx.icon
+        ? `${icon} ${name}`
+        : name)
+    : `${p.dim('Caused by:')} ${name}`
+  const title = `${header}${meta
+    ? ` ${meta}`
+    : ''}${p.dim(':')} `
   const { head, rest } = clampMessage(report.message, ctx.maxMessageLength)
-  const messageLines = wrap(rest ? `${head}…` : head, width - 2, '')
+  const messageLines = wrap(rest
+    ? `${head}…`
+    : head, width - 2, '')
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)
   for (const line of messageLines.slice(1)) {
     out.push(`${indent}  ${p.bold(line)}`)
@@ -78,7 +90,9 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   if (report.hint) {
     out.push('')
     for (const [index, line] of wrap(report.hint, width - 4).entries()) {
-      out.push(`${indent}  ${index === 0 ? p.cyan('ℹ') : ' '} ${line}`)
+      out.push(`${indent}  ${index === 0
+        ? p.cyan('ℹ')
+        : ' '} ${line}`)
     }
   }
   if (report.docsUrl) {
@@ -144,7 +158,9 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
 
 /** Skip a cause that only repeats its parent's message, keeping whatever it wraps. */
 function visibleCauses(report: ErrorReport): ErrorReport[] {
-  return report.causes.flatMap(cause => cause.message === report.message && !cause.errors?.length && !cause.omittedErrors ? visibleCauses(cause) : [cause])
+  return report.causes.flatMap(cause => cause.message === report.message && !cause.errors?.length && !cause.omittedErrors
+    ? visibleCauses(cause)
+    : [cause])
 }
 
 function renderFrames(frames: Frame[], ctx: Ctx, indent: string): string[] {
@@ -168,18 +184,44 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
   const { p } = ctx
   const prefix = [frame.isAsync && 'async', frame.isConstructor && 'new'].filter(Boolean).join(' ')
   const fn = frame.function ?? (frame.isEval ? 'eval' : '<anonymous>')
-  const generated = frame.line === undefined && frame.compiled?.line !== undefined ? frame.compiled : undefined
+  const generated = frame.line === undefined && frame.compiled?.line !== undefined
+    ? frame.compiled
+    : undefined
   const location = frame.file
-    ? `${displayPath(frame, ctx.cwd)}${frame.line !== undefined ? `:${frame.line}${frame.column !== undefined ? `:${frame.column}` : ''}` : ''}`
+    ? `${displayPath(frame, ctx.cwd)}${frame.line !== undefined
+      ? `:${frame.line}${frame.column !== undefined
+        ? `:${frame.column}`
+        : ''}`
+      : ''}`
     : frame.raw?.trim().replace(/^at\s+/, '') ?? ''
-  const available = ctx.width - indent.length - 4 - fn.length - (prefix ? prefix.length + 1 : 0)
+  const available = ctx.width - indent.length - 4 - fn.length - (prefix
+    ? prefix.length + 1
+    : 0)
   const shown = truncateMiddle(location, Math.max(20, available))
   const linked = frame.file && isFilePath(frame.file)
-    ? link(frame.file, { cwd: ctx.cwd, line: frame.line, column: frame.column, enabled: ctx.hyperlinks, formatter: () => shown })
+    ? link(frame.file, {
+        cwd: ctx.cwd,
+        line: frame.line,
+        column: frame.column,
+        enabled: ctx.hyperlinks,
+        formatter: () => shown,
+      })
     : shown
-  const note = generated ? ` ${p.dim(`(generated ${generated.line}${generated.column !== undefined ? `:${generated.column}` : ''})`)}` : ''
-  const text = `${p.dim('at')} ${prefix ? `${p.dim(prefix)} ` : ''}${dim ? fn : p.bold(fn)} ${dim ? linked : p.cyan(linked)}${note}`
-  return `${indent}${dim ? p.dim(text) : text}`
+  const note = generated
+    ? ` ${p.dim(`(generated ${generated.line}${generated.column !== undefined
+      ? `:${generated.column}`
+      : ''})`)}`
+    : ''
+  const text = `${p.dim('at')} ${prefix
+    ? `${p.dim(prefix)} `
+    : ''}${dim
+    ? fn
+    : p.bold(fn)} ${dim
+    ? linked
+    : p.cyan(linked)}${note}`
+  return `${indent}${dim
+    ? p.dim(text)
+    : text}`
 }
 
 function renderSnippet(snippet: Snippet, line: number, column: number | undefined, ctx: Ctx, indent: string): string[] {
@@ -191,11 +233,17 @@ function renderSnippet(snippet: Snippet, line: number, column: number | undefine
   const codeWidth = ctx.width - indent.length - gutter - 5
   for (let n = first; n <= last; n++) {
     const raw = snippet.lines[n - snippet.start] ?? ''
-    const code = raw.length > codeWidth ? `${raw.slice(0, codeWidth - 1)}…` : (n === line ? colorTokens(snippet, n - snippet.start, p) : raw)
+    const code = raw.length > codeWidth
+      ? `${raw.slice(0, codeWidth - 1)}…`
+      : (n === line
+          ? colorTokens(snippet, n - snippet.start, p)
+          : raw)
     const number = String(n).padStart(gutter)
     if (n === line) {
       out.push(`${indent}${p.red('›')} ${p.red(p.bold(number))} ${p.dim('│')} ${code}`)
-      const shown = column === undefined ? undefined : column - (snippet.offset ?? 0)
+      const shown = column === undefined
+        ? undefined
+        : column - (snippet.offset ?? 0)
       if (shown !== undefined && shown > 0 && shown <= codeWidth) {
         out.push(`${indent}  ${' '.repeat(gutter)} ${p.dim('│')} ${' '.repeat(shown - 1)}${p.red('^')}`)
       }

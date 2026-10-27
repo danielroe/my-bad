@@ -38,5 +38,11 @@ export type ChannelEvent
     | { type: 'build', payload: BuildProgress }
 
 export function toHistoryEntry(report: ErrorReport): HistoryEntry {
-  return { id: report.id, kind: report.kind, name: report.name, message: report.message, timestamp: report.timestamp }
+  return {
+    id: report.id,
+    kind: report.kind,
+    name: report.name,
+    message: report.message,
+    timestamp: report.timestamp,
+  }
 }

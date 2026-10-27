@@ -3,7 +3,14 @@ import { createReport, renderAnsi, renderOverlay, renderPage, toMarkdown } from 
 
 const SOURCE = 'const props = defineProps()\nconst widget = useWidget()\nawait widget.load()\nexport {}\n'
 
-const loaders = [{ name: 'memory', read: (file: string) => file === '/proj/pages/index.vue' ? SOURCE : undefined }]
+const loaders = [
+  {
+    name: 'memory',
+    read: (file: string) => file === '/proj/pages/index.vue'
+      ? SOURCE
+      : undefined,
+  },
+]
 
 function diagnostic(extra: Record<string, unknown> = {}) {
   return {
@@ -30,12 +37,19 @@ describe('diagnostic errors', () => {
       docsUrl: 'https://nuxt.com/docs/4.x/errors/e1001',
     })
     expect(report.sections.some(section => section.id === 'sources')).toBe(false)
-    expect(report.frames[0]).toMatchObject({ file: '/proj/pages/index.vue', line: 2, column: 16, type: 'app' })
+    expect(report.frames[0]).toMatchObject({
+      file: '/proj/pages/index.vue',
+      line: 2,
+      column: 16,
+      type: 'app',
+    })
     expect(report.frames[0]!.snippet!.lines).toContain('const widget = useWidget()')
   })
 
   it('lists sources that do not resolve to a readable file', async () => {
-    const report = await createReport(diagnostic({ sources: ['/proj/pages/gone.vue:2:1', 'somewhere in the build'] }), { cwd: '/proj', loaders })
+    const report = await createReport(diagnostic({
+      sources: ['/proj/pages/gone.vue:2:1', 'somewhere in the build'],
+    }), { cwd: '/proj', loaders })
     expect(report.frames.every(frame => frame.type !== 'app')).toBe(true)
     expect(report.sections.find(section => section.id === 'sources')).toEqual({
       id: 'sources',

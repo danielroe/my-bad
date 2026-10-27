@@ -29,24 +29,44 @@ describe('workspace-linked framework packages', () => {
   })
 
   it('displays framework frames relative to their package root', async () => {
-    const report = await createReport(errorFrom(stack), { cwd, presets: [nuxtPreset()] })
+    const report = await createReport(errorFrom(stack), {
+      cwd,
+      presets: [
+        nuxtPreset(),
+      ],
+    })
     expect(report.frames[0]!.displayFile).toBe('…/nuxt/dist/app/composables/error.js')
     expect(report.frames[1]!.displayFile).toBeUndefined()
 
-    const ansi = renderAnsi(report, { cwd, colors: false, hyperlinks: false, verbose: true })
+    const ansi = renderAnsi(report, {
+      cwd,
+      colors: false,
+      hyperlinks: false,
+      verbose: true,
+    })
     expect(ansi).toContain('…/nuxt/dist/app/composables/error.js:2:9')
     expect(ansi).not.toContain(root)
   })
 
   it('classifies them as framework internals rather than app code', async () => {
-    const report = await createReport(errorFrom(stack), { cwd, presets: [nuxtPreset()] })
+    const report = await createReport(errorFrom(stack), {
+      cwd,
+      presets: [
+        nuxtPreset(),
+      ],
+    })
     expect(report.frames.map(frame => frame.type)).toEqual(['internal', 'app'])
     expect(report.frames[1]!.snippet).toBeDefined()
     expect(renderAnsi(report, { cwd, colors: false, hyperlinks: false })).toContain('1 framework frame')
   })
 
   it('collapses the throwing frame by function name when the path is unknown', async () => {
-    const report = await createReport(errorFrom('    at createError (virtual:nuxt/error.js:1:1)'), { cwd, presets: [nuxtPreset()] })
+    const report = await createReport(errorFrom('    at createError (virtual:nuxt/error.js:1:1)'), {
+      cwd,
+      presets: [
+        nuxtPreset(),
+      ],
+    })
     expect(report.frames[0]!.type).toBe('internal')
   })
 })

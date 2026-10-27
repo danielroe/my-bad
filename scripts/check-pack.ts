@@ -27,14 +27,25 @@ try {
   }
 
   // `--ignore-scripts` keeps `prepack` from rebuilding a different `dist` than the one checked above.
-  const { stdout } = await run('pnpm', ['pack', '--config.ignore-scripts=true', '--pack-destination', dir], { cwd: root })
+  const { stdout } = await run('pnpm', [
+    'pack',
+    '--config.ignore-scripts=true',
+    '--pack-destination',
+    dir,
+  ], { cwd: root })
   const tarball = (await readdir(dir)).find(file => file.endsWith('.tgz'))
   if (!tarball) {
     throw new Error(`pnpm pack produced no tarball: ${stdout}`)
   }
 
   await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'consumer', private: true, type: 'module' }))
-  await run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', join(dir, tarball)], { cwd: dir })
+  await run('npm', [
+    'install',
+    '--no-audit',
+    '--no-fund',
+    '--ignore-scripts',
+    join(dir, tarball),
+  ], { cwd: dir })
   await writeFile(join(dir, 'check.mjs'), `
 import { createReport, renderAnsi, renderBadge, renderOverlay, renderPage, injectOverlay, fsLoader, sourceMapLoader } from 'my-bad'
 import { createChannel, openInEditor } from 'my-bad/channel'

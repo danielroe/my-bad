@@ -33,7 +33,18 @@ interface Toolchain {
 }
 
 const appDir = fileURLToPath(new URL('./fixtures/nuxt-app/', import.meta.url))
-const sharedFiles = ['app.vue', 'error.vue', 'error-handler.ts', 'nuxt.config.ts', 'composables', 'modules', 'pages', 'plugins', 'runtime', 'server']
+const sharedFiles = [
+  'app.vue',
+  'error.vue',
+  'error-handler.ts',
+  'nuxt.config.ts',
+  'composables',
+  'modules',
+  'pages',
+  'plugins',
+  'runtime',
+  'server',
+]
 
 const cells: Cell[] = [
   { version: 4, nitroViteEnvironment: false },
@@ -50,8 +61,15 @@ async function toolchain(version: 4 | 5): Promise<Toolchain> {
     import(`${root}node_modules/nuxt/schema.js`) as Promise<{ NuxtConfigSchema: { experimental: Record<string, { $resolve?: (value: unknown, get: (key: string) => unknown) => unknown }> } }>,
   ])
   const resolver = schema.NuxtConfigSchema.experimental.nitroViteEnvironment
-  const resolved = await resolver?.$resolve?.(undefined, key => (key === 'builder' ? 'vite' : undefined))
-  return { root, nuxt, vue, nitroViteEnvironment: { supported: !!resolver, default: resolved === true } }
+  const resolved = await resolver?.$resolve?.(undefined, key => (key === 'builder'
+    ? 'vite'
+    : undefined))
+  return {
+    root,
+    nuxt,
+    vue,
+    nitroViteEnvironment: { supported: !!resolver, default: resolved === true },
+  }
 }
 
 const toolchains = new Map<4 | 5, Toolchain>(await Promise.all(([4, 5] as const).map(async version => [version, await toolchain(version)] as const)))
@@ -89,7 +107,9 @@ async function waitFor<T>(check: () => Promise<T | undefined>, timeout: number, 
     }
     await new Promise(resolve => setTimeout(resolve, 500))
   }
-  throw new Error(`timed out waiting for ${label}${last ? `: ${last}` : ''}`)
+  throw new Error(`timed out waiting for ${label}${last
+    ? `: ${last}`
+    : ''}`)
 }
 
 /**
@@ -136,7 +156,10 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
   let url: string
 
   async function report(path: string, init?: RequestInit): Promise<{ status: number, report: ErrorReport }> {
-    const response = await fetch(`${url}${path}`, { ...init, headers: { accept: 'application/json', ...init?.headers } })
+    const response = await fetch(`${url}${path}`, {
+      ...init,
+      headers: { accept: 'application/json', ...init?.headers },
+    })
     return { status: response.status, report: await response.json() as ErrorReport }
   }
 
@@ -154,7 +177,14 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     url = `http://127.0.0.1:${port}`
     // `--host` is pinned because an unpinned dev server resolves `localhost` and binds only the
     // first result, which on a dual-stack runner is `::1`, leaving this IPv4 probe refused.
-    dev = spawn(process.execPath, [`${root}node_modules/nuxt/bin/nuxt.mjs`, 'dev', '--port', String(port), '--host', '127.0.0.1'], {
+    dev = spawn(process.execPath, [
+      `${root}node_modules/nuxt/bin/nuxt.mjs`,
+      'dev',
+      '--port',
+      String(port),
+      '--host',
+      '127.0.0.1',
+    ], {
       cwd: root,
       env: {
         ...devEnv(),
@@ -178,7 +208,9 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     dev.stderr!.on('data', collect)
     let died: string | undefined
     dev.once('exit', (code, signal) => {
-      died = `it exited with code ${code}${signal ? ` (${signal})` : ''}`
+      died = `it exited with code ${code}${signal
+        ? ` (${signal})`
+        : ''}`
     })
     dev.once('error', (error) => {
       died = `it could not be spawned: ${error.message}`
@@ -188,7 +220,9 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     let seen = 'no response'
     const reachable = async () => {
       const response = await fetch(url).catch((error: Error & { cause?: { code?: string } }) => {
-        seen = `${error.message}${error.cause?.code ? ` (${error.cause.code})` : ''}`
+        seen = `${error.message}${error.cause?.code
+          ? ` (${error.cause.code})`
+          : ''}`
         return undefined
       })
       if (!response) {
@@ -241,7 +275,10 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     const { report: result } = await report('/boom')
     const composable = result.frames[0]!
     const raw = /composables[/\\]useBoom\.ts:(\d+):(\d+)/.exec(result.rawStack ?? '')
-    const rawPosition = raw && { line: Number(raw[1]), column: Number(raw[2]) }
+    const rawPosition = raw && {
+      line: Number(raw[1]),
+      column: Number(raw[2]),
+    }
 
     expect([composable.line, composable.column]).toEqual([2, 9])
     expect(rawPosition).toBeTruthy()
@@ -273,7 +310,9 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
   })
 
   it('renders error.vue with the overlay injected', async () => {
-    const response = await fetch(`${url}/boom`, { headers: { accept: 'text/html' } })
+    const response = await fetch(`${url}/boom`, {
+      headers: { accept: 'text/html' },
+    })
     const html = await response.text()
     expect(response.status).toBe(500)
     expect(html).toContain('fixture error page')
@@ -310,7 +349,9 @@ describe.each(cells)('nuxt v$version (nitroViteEnvironment: $nitroViteEnvironmen
     await writeFile(brokenPage, '<template>\n  <div>{{ oops </div>\n</template>\n')
     const result = await waitFor(async () => {
       const { report: candidate } = await report('/broken')
-      return candidate.kind === 'compile' ? candidate : undefined
+      return candidate.kind === 'compile'
+        ? candidate
+        : undefined
     }, 30_000, 'a compile report for pages/broken.vue')
     expect(result.message).toContain('Interpolation end sign was not found')
     expect(result.frames[0]).toMatchObject({ file: brokenPage, line: 2, type: 'app' })

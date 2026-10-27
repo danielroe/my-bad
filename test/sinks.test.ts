@@ -11,7 +11,9 @@ describe('sinks', () => {
     const dir = await mkdtemp(join(tmpdir(), 'my-bad-'))
     const file = join(dir, 'nested', 'events.jsonl')
     const seen: string[] = []
-    const channel = createChannel({ sink: combineSinks(fileSink(file), event => void seen.push(event.type)) })
+    const channel = createChannel({
+      sink: combineSinks(fileSink(file), event => void seen.push(event.type)),
+    })
     const report = await createReport(new Error('x'), { loaders: [], snippets: false })
     channel.setError(report)
     channel.log({ level: 'warn', text: 'careful' })

@@ -9,7 +9,9 @@ export function toPath(source: string): string {
   let rest = source.slice(5).replace(/^\/\//, '')
   if (rest.startsWith('/')) {
     rest = safeDecode(rest)
-    return WINDOWS_DRIVE_RE.test(rest) ? rest.slice(1) : rest
+    return WINDOWS_DRIVE_RE.test(rest)
+      ? rest.slice(1)
+      : rest
   }
   return `//${safeDecode(rest)}`
 }
@@ -38,12 +40,16 @@ export function stripCacheQuery(source: string): string {
     return source
   }
   const params = source.slice(index + 1).split('&').filter(param => !/^(?:t|v|import)(?:=|$)/.test(param))
-  return params.length ? `${source.slice(0, index)}?${params.join('&')}` : source.slice(0, index)
+  return params.length
+    ? `${source.slice(0, index)}?${params.join('&')}`
+    : source.slice(0, index)
 }
 
 export function withoutQuery(source: string): string {
   const index = source.indexOf('?')
-  return index === -1 ? source : source.slice(0, index)
+  return index === -1
+    ? source
+    : source.slice(0, index)
 }
 
 export function normalizeSlashes(path: string): string {
@@ -73,7 +79,9 @@ export interface DisplayTarget {
  */
 export function displayPath(target: string | DisplayTarget, cwd?: string): string {
   if (typeof target !== 'string') {
-    return target.displayFile ?? (target.file ? displayPath(target.file, cwd) : '')
+    return target.displayFile ?? (target.file
+      ? displayPath(target.file, cwd)
+      : '')
   }
   const file = target
   const normalized = normalizeSlashes(file)
@@ -81,13 +89,19 @@ export function displayPath(target: string | DisplayTarget, cwd?: string): strin
   if (index !== -1) {
     return `…/${normalized.slice(index + '/node_modules/'.length)}`
   }
-  return cwd ? relativeToCwd(file, cwd).replace(/^\.\//, '') : file
+  return cwd
+    ? relativeToCwd(file, cwd).replace(/^\.\//, '')
+    : file
 }
 
 export function dirname(path: string): string {
   const normalized = normalizeSlashes(path)
   const index = normalized.lastIndexOf('/')
-  return index <= 0 ? (index === 0 ? '/' : '.') : normalized.slice(0, index)
+  return index <= 0
+    ? (index === 0
+        ? '/'
+        : '.')
+    : normalized.slice(0, index)
 }
 
 export function resolvePath(base: string, target: string): string {
@@ -109,7 +123,9 @@ export function resolvePath(base: string, target: string): string {
 export function extname(path: string): string {
   const base = withoutQuery(normalizeSlashes(path)).split('/').pop() || ''
   const index = base.lastIndexOf('.')
-  return index > 0 ? base.slice(index + 1).toLowerCase() : ''
+  return index > 0
+    ? base.slice(index + 1).toLowerCase()
+    : ''
 }
 
 const LANGS: Record<string, string> = {

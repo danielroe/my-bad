@@ -21,13 +21,19 @@ const errorLike = fc.record({
   code: fc.option(fc.oneof(fc.string(), fc.nat()), { nil: undefined }),
   statusCode: fc.option(fc.oneof(fc.nat(), fc.string()), { nil: undefined }),
   data: fc.option(fc.jsonValue(), { nil: undefined }),
-}, { requiredKeys: ['message'] })
+}, {
+  requiredKeys: ['message'],
+})
 
 const compileLike = fc.record({
   message: fc.string(),
   plugin: fc.option(fc.string(), { nil: undefined }),
   id: fc.option(fc.string(), { nil: undefined }),
-  loc: fc.option(fc.record({ file: fc.option(fc.string(), { nil: undefined }), line: fc.integer({ min: -5, max: 5000 }), column: fc.integer({ min: -5, max: 500 }) }), { nil: undefined }),
+  loc: fc.option(fc.record({
+    file: fc.option(fc.string(), { nil: undefined }),
+    line: fc.integer({ min: -5, max: 5000 }),
+    column: fc.integer({ min: -5, max: 500 }),
+  }), { nil: undefined }),
   frame: fc.option(fc.string(), { nil: undefined }),
 })
 
@@ -79,7 +85,11 @@ describe('fuzz', () => {
 
   it('escaping and highlighting never emit unescaped angle brackets from input', () => {
     fc.assert(fc.property(fc.string(), fc.constantFrom('ts', 'js', 'vue', 'html', 'css', 'json', undefined), (code, lang) => {
-      const out = highlightLine({ start: 1, lines: [code], lang }, 0)
+      const out = highlightLine({
+        start: 1,
+        lines: [code],
+        lang,
+      }, 0)
       const stripped = out.replace(/<\/?span[^>]*>/g, '')
       expect(stripped).not.toMatch(/[<>]/)
       expect(escapeHtml(code)).not.toMatch(/[<>"']/)
@@ -107,7 +117,19 @@ describe('embedded state', () => {
   it('round-trips arbitrary report text through the page', async () => {
     await fc.assert(fc.asyncProperty(fc.string(), fc.string(), async (message, code) => {
       const report = await createReport(new Error(message), options)
-      report.frames = [{ file: '/proj/a.ts', line: 1, column: 1, type: 'app', snippet: { start: 1, lines: [code], lang: 'vue' } }]
+      report.frames = [
+        {
+          file: '/proj/a.ts',
+          line: 1,
+          column: 1,
+          type: 'app',
+          snippet: {
+            start: 1,
+            lines: [code],
+            lang: 'vue',
+          },
+        },
+      ]
       const html = renderPage(report)
       const open = '<script type="application/json">'
       const start = html.indexOf(open) + open.length
@@ -128,7 +150,10 @@ function poison<T>(value: T, payload: string): T {
     return value.map(item => poison(item, payload)) as T
   }
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, poison(item, payload)])) as T
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      key,
+      poison(item, payload),
+    ])) as T
   }
   return value
 }
@@ -156,20 +181,81 @@ describe('escaping', () => {
       function: `fn${index}`,
       line: 1,
       column: 1,
-      snippet: { start: 1, lines: ['const a = 1'], lang: 'ts' },
-      compiled: spec.compiled ? { file: `/proj/f${index}.js`, line: 2, column: 3, snippet: { start: 2, lines: ['var a = 1'] } } : undefined,
+      snippet: {
+        start: 1,
+        lines: ['const a = 1'],
+        lang: 'ts',
+      },
+      compiled: spec.compiled
+        ? {
+            file: `/proj/f${index}.js`,
+            line: 2,
+            column: 3,
+            snippet: {
+              start: 2,
+              lines: ['var a = 1'],
+            },
+          }
+        : undefined,
     }))
     base.hint = 'hint'
     base.code = 'E1'
     base.docsUrl = 'https://example.com'
     base.status = spec.status ? 500 : undefined
-    base.trace = spec.trace ? [{ label: '<App>', file: '/proj/app.vue', line: 1 }] : undefined
-    base.sections = spec.section ? [{ id: 'request', title: 'Request', content: { method: 'GET' } }] : []
-    base.causes = Array.from({ length: spec.causes }, (_, index) => ({ ...base, id: `c${index}`, causes: [], errors: undefined }))
-    base.errors = spec.errors ? Array.from({ length: spec.errors }, (_, index) => ({ ...base, id: `e${index}`, causes: [], errors: undefined })) : undefined
-    const history = spec.history ? [{ id: base.id, kind: 'error' as const, name: 'a', message: 'b', timestamp: 0 }, { id: 'other', kind: 'error' as const, name: 'c', message: 'd', timestamp: 1 }] : undefined
+    base.trace = spec.trace
+      ? [
+          { label: '<App>', file: '/proj/app.vue', line: 1 },
+        ]
+      : undefined
+    base.sections = spec.section
+      ? [
+          {
+            id: 'request',
+            title: 'Request',
+            content: { method: 'GET' },
+          },
+        ]
+      : []
+    base.causes = Array.from({ length: spec.causes }, (_, index) => ({
+      ...base,
+      id: `c${index}`,
+      causes: [],
+      errors: undefined,
+    }))
+    base.errors = spec.errors
+      ? Array.from({ length: spec.errors }, (_, index) => ({
+          ...base,
+          id: `e${index}`,
+          causes: [],
+          errors: undefined,
+        }))
+      : undefined
+    const history = spec.history
+      ? [
+          {
+            id: base.id,
+            kind: 'error' as const,
+            name: 'a',
+            message: 'b',
+            timestamp: 0,
+          },
+          {
+            id: 'other',
+            kind: 'error' as const,
+            name: 'c',
+            message: 'd',
+            timestamp: 1,
+          },
+        ]
+      : undefined
     const report = poison(base, payload)
-    return renderPage(report, { cwd: '/proj', channel: '/__my-bad', environment: payload, history: poison(history, payload), theme: { name: payload, url: payload, scheme: payload as 'dark' } })
+    return renderPage(report, {
+      cwd: '/proj',
+      channel: '/__my-bad',
+      environment: payload,
+      history: poison(history, payload),
+      theme: { name: payload, url: payload, scheme: payload as 'dark' },
+    })
   }
 
   it('escapes every field it renders, whatever the report looks like', async () => {

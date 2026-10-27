@@ -17,7 +17,10 @@ await writeFile(join(proj, 'src/handler.ts'), 'line1\nthrow new Error()\nline3\n
 await writeFile(join(proj, 'caller.ts'), 'start()\nhandler()\nfinish()\n')
 
 const openRequests: unknown[] = []
-const channel = createChannel({ open: request => void openRequests.push(request), root: proj })
+const channel = createChannel({
+  open: request => void openRequests.push(request),
+  root: proj,
+})
 const assets = { script: '/client.js', styles: '/client.css' }
 
 async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000): Promise<void> {
@@ -36,7 +39,15 @@ async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000)
 async function report(message: string) {
   const error = new Error(message)
   error.stack = `Error: ${message}\n    at handler (${proj}/src/handler.ts:2:3)\n    at dep (${proj}/node_modules/dep/index.js:1:1)`
-  return createReport(error, { cwd: proj, loaders: [{ name: 'memory', read: () => 'line1\nthrow new Error()\nline3\n' }] })
+  return createReport(error, {
+    cwd: proj,
+    loaders: [
+      {
+        name: 'memory',
+        read: () => 'line1\nthrow new Error()\nline3\n',
+      },
+    ],
+  })
 }
 
 beforeAll(async () => {
@@ -46,8 +57,12 @@ beforeAll(async () => {
       return
     }
     if (req.url === '/client.js' || req.url === '/client.css') {
-      res.setHeader('content-type', req.url.endsWith('.js') ? 'text/javascript' : 'text/css')
-      res.end(req.url.endsWith('.js') ? clientAssets.script : clientAssets.styles)
+      res.setHeader('content-type', req.url.endsWith('.js')
+        ? 'text/javascript'
+        : 'text/css')
+      res.end(req.url.endsWith('.js')
+        ? clientAssets.script
+        : clientAssets.styles)
       return
     }
     if (req.url === '/badge.js') {
@@ -57,9 +72,20 @@ beforeAll(async () => {
     }
     if (req.url?.startsWith('/badge')) {
       const variant = req.url.slice('/badge'.length)
-      const tag = variant === '-tagged' ? 'nuxt-error-overlay' : undefined
-      const badge = renderBadge({ cwd: proj, channel: '/__my-bad', tag, assets: variant === '-external' ? { ...assets, badge: '/badge.js' } : undefined })
-      const overlay = variant.startsWith('-overlay') ? renderOverlay(channel.current ?? await report('initial'), { cwd: proj, channel: '/__my-bad', assets }) : ''
+      const tag = variant === '-tagged'
+        ? 'nuxt-error-overlay'
+        : undefined
+      const badge = renderBadge({
+        cwd: proj,
+        channel: '/__my-bad',
+        tag,
+        assets: variant === '-external'
+          ? { ...assets, badge: '/badge.js' }
+          : undefined,
+      })
+      const overlay = variant.startsWith('-overlay')
+        ? renderOverlay(channel.current ?? await report('initial'), { cwd: proj, channel: '/__my-bad', assets })
+        : ''
       const last = variant === '-overlay-first'
       res.setHeader('content-type', 'text/html')
       res.end(`<!DOCTYPE html><html><head>${last ? '' : badge}</head><body><h1 id="user">User page</h1>${overlay}${last ? badge : ''}</body></html>`)
@@ -129,7 +155,10 @@ describe('browser client', () => {
     channel.setError(await report('second'))
     await waitFor(() => page.locator('[data-message]').first().textContent(), 'second')
 
-    channel.warn({ ...(await report('careful')), kind: 'warning' })
+    channel.warn({
+      ...(await report('careful')),
+      kind: 'warning',
+    })
     await waitFor(() => page.locator('[data-toast]').count(), 1)
     expect(await page.locator('[data-warning-count]').textContent()).toBe('1 warning')
 
@@ -174,15 +203,23 @@ describe('browser client', () => {
   it('counts warnings already published and drops retired ones', async () => {
     channel.clearWarning()
     channel.setError(await report('with warnings'))
-    const earlier = { ...(await report('earlier warning')), kind: 'warning' as const }
+    const earlier = {
+      ...(await report('earlier warning')),
+      kind: 'warning' as const,
+    }
     channel.warn(earlier)
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     await page.goto(origin)
     const count = page.locator('[data-warning-count]')
     expect(await count.textContent()).toBe('1 warning')
     await waitFor(() => page.locator('[data-live][data-connected]').count(), 1)
 
-    const later = { ...(await report('later warning')), kind: 'warning' as const }
+    const later = {
+      ...(await report('later warning')),
+      kind: 'warning' as const,
+    }
     channel.warn(later)
     await waitFor(() => count.textContent(), '2 warnings')
     await page.click('[data-toast] [data-action="show-toast"]')
@@ -201,7 +238,9 @@ describe('browser client', () => {
   it('shows the build progress label below the bar, clear of the header', async () => {
     for (const path of ['/', '/overlay']) {
       channel.setError(await report(`progress ${path}`))
-      const page = await browser.newPage({ viewport: { width: 1200, height: 760 } })
+      const page = await browser.newPage({
+        viewport: { width: 1200, height: 760 },
+      })
       await page.goto(`${origin}${path}`)
       await waitFor(() => page.locator('[data-message]').first().textContent(), `progress ${path}`)
       channel.progress({ phase: 'build', percent: 40, message: 'Building server' })
@@ -227,7 +266,9 @@ describe('browser client', () => {
 
   it('mounts the overlay in a shadow root and minimises', async () => {
     channel.setError(await report('overlay'))
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     await page.goto(`${origin}/overlay`)
     const overlay = page.locator('my-bad-overlay')
     await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'overlay')
@@ -241,7 +282,9 @@ describe('browser client', () => {
     await preview.locator('[data-action="minimize"]').click()
     await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-minimized'), '')
     await waitFor(() => preview.isVisible(), false)
-    await overlay.locator('[data-overlay]').click({ position: { x: 60, y: 60 } })
+    await overlay.locator('[data-overlay]').click({
+      position: { x: 60, y: 60 },
+    })
     await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-minimized'), null)
     await waitFor(() => preview.isVisible(), true)
     await preview.hover()
@@ -254,7 +297,9 @@ describe('browser client', () => {
     await preview.locator('[data-action="minimize"]').click()
     await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-minimized'), '')
     expect(await page.evaluate(() => localStorage.getItem('my-bad:overlay:minimized'))).toBe('1')
-    await overlay.locator('[data-overlay]').click({ position: { x: 60, y: 60 } })
+    await overlay.locator('[data-overlay]').click({
+      position: { x: 60, y: 60 },
+    })
     await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-minimized'), null)
     await preview.locator('[data-action="minimize"]').click()
     await overlay.locator('[data-action="hide"]').click()
@@ -267,22 +312,33 @@ describe('browser client', () => {
   }, 30_000)
 
   it('keeps warning toasts clear of the page preview', async () => {
-    for (const [width, dock] of [[1200, 'bottom-right'], [500, 'bottom-right'], [500, 'bottom-left']] as const) {
+    for (const [width, dock] of [
+      [1200, 'bottom-right'],
+      [500, 'bottom-right'],
+      [500, 'bottom-left'],
+    ] as const) {
       channel.clearWarning()
       channel.setError(await report(`preview ${width} ${dock}`))
-      const page = await browser.newPage({ viewport: { width, height: 800 } })
+      const page = await browser.newPage({
+        viewport: { width, height: 800 },
+      })
       await page.goto(`${origin}/blank`)
       await page.evaluate(dock => localStorage.setItem('my-bad:overlay:dock', dock), dock)
       await page.goto(`${origin}/overlay`)
       const overlay = page.locator('my-bad-overlay')
       await waitFor(() => overlay.locator('[data-preview]').isVisible(), true)
       await waitFor(() => overlay.locator('[data-live][data-connected]').count(), 1)
-      channel.warn({ ...(await report('under the preview')), kind: 'warning' })
+      channel.warn({
+        ...(await report('under the preview')),
+        kind: 'warning',
+      })
       await waitFor(() => overlay.locator('[data-toast]').count(), 1)
       const hit = await page.evaluate(() => {
         const shadow = document.querySelector('my-bad-overlay')!.shadowRoot!
         const rect = shadow.querySelector('[data-toast] [data-action="show-toast"]')!.getBoundingClientRect()
-        return shadow.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest('[data-toast]') ? 'toast' : shadow.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.className
+        return shadow.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest('[data-toast]')
+          ? 'toast'
+          : shadow.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.className
       })
       expect(hit, `${width} ${dock}`).toBe('toast')
       await page.close()
@@ -293,7 +349,9 @@ describe('browser client', () => {
   it('ignores an error from another request and follows its own', async () => {
     channel.setError(await report('scoped start'))
     const pages = await Promise.all(['a', 'b'].map(async (id) => {
-      const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+      const page = await browser.newPage({
+        viewport: { width: 1200, height: 800 },
+      })
       await page.goto(`${origin}/scoped?rid=${id}`)
       await waitFor(() => page.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'scoped start')
       return page
@@ -327,7 +385,9 @@ describe('browser client', () => {
 
   it('can still be restored after its error clears and the next open error takes its place', async () => {
     channel.setError(await report('for every page'))
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     await page.goto(`${origin}/scoped?rid=a`)
     const overlay = page.locator('my-bad-overlay')
     const message = () => overlay.locator('[data-message]').first().textContent()
@@ -350,7 +410,9 @@ describe('browser client', () => {
   it('names its request when fetching a report from the history pager', async () => {
     channel.setError(await report('first of two'))
     channel.setError(await report('second of two'))
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     await page.goto(`${origin}/scoped?rid=a`)
     const overlay = page.locator('my-bad-overlay')
     await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'second of two')
@@ -367,7 +429,9 @@ describe('browser client', () => {
 
   it('builds a new overlay for an error arriving after a clear', async () => {
     channel.setError(await report('before the clear'))
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     await page.goto(`${origin}/overlay-tagged`)
     const overlay = page.locator('nuxt-error-overlay')
     const message = () => overlay.locator('[data-message]').first().textContent()
@@ -393,7 +457,9 @@ describe('browser client', () => {
 
   it('keeps a startMinimized overlay minimised whatever the user last chose', async () => {
     channel.setError(await report('always minimized'))
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     await page.goto(`${origin}/blank`)
     await page.evaluate(() => localStorage.setItem('my-bad:overlay:minimized', '0'))
     await page.goto(`${origin}/overlay-minimized`)
@@ -408,7 +474,9 @@ describe('browser client', () => {
 
   it('mounts minimised when the user last minimised an overlay, and stays minimised on a new error', async () => {
     channel.setError(await report('remembered'))
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     await page.goto(`${origin}/blank`)
     await page.evaluate(() => localStorage.setItem('my-bad:overlay:minimized', '1'))
     await page.goto(`${origin}/overlay`)
@@ -424,7 +492,9 @@ describe('browser client', () => {
 
   it('mounts and styles itself when the script and stylesheet are served separately', async () => {
     channel.setError(await report('external'))
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
 
@@ -467,12 +537,17 @@ describe('browser client', () => {
 
 describe('badge', () => {
   async function warning(message: string) {
-    return { ...(await report(message)), kind: 'warning' as const }
+    return {
+      ...(await report(message)),
+      kind: 'warning' as const,
+    }
   }
 
   /** Counts the event streams a page opens and closes. */
   async function open(path: string) {
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     await page.addInitScript(() => {
@@ -498,7 +573,10 @@ describe('badge', () => {
 
   function setHidden(page: import('playwright').Page, hidden: boolean) {
     return page.evaluate((hidden) => {
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        get: () => hidden,
+      })
       document.dispatchEvent(new Event('visibilitychange'))
     }, hidden)
   }
@@ -579,13 +657,18 @@ describe('badge', () => {
     await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'only a warning')
     await waitFor(() => dialog.getAttribute('data-minimized'), null)
 
-    const blocked = () => page.evaluate(() => ({ inert: document.querySelector('#user')!.hasAttribute('inert'), overflow: document.documentElement.style.overflow }))
+    const blocked = () => page.evaluate(() => ({
+      inert: document.querySelector('#user')!.hasAttribute('inert'),
+      overflow: document.documentElement.style.overflow,
+    }))
     expect(await dialog.getAttribute('aria-modal')).toBe('false')
     expect(await dialog.getAttribute('aria-label')).toBe('Warning details')
     expect(await blocked()).toEqual({ inert: false, overflow: '' })
     expect(await overlay.locator('[data-preview]').isVisible()).toBe(false)
     expect(await page.evaluate(() => document.elementFromPoint(40, 40)?.id)).toBe('user')
-    const names = () => overlay.locator('button:visible, [role="group"], nav, section, [data-overlay]').evaluateAll(elements => elements.map(el => `${el.getAttribute('aria-label') ?? ''} ${el.getAttribute('title') ?? ''} ${el.localName === 'button' ? el.textContent : ''}`))
+    const names = () => overlay.locator('button:visible, [role="group"], nav, section, [data-overlay]').evaluateAll(elements => elements.map(el => `${el.getAttribute('aria-label') ?? ''} ${el.getAttribute('title') ?? ''} ${el.localName === 'button'
+      ? el.textContent
+      : ''}`))
     expect((await names()).filter(name => /error|behind/i.test(name))).toEqual([])
     for (const action of ['hide', 'expand']) {
       expect(await overlay.locator(`.mb-pip-button[data-action="${action}"]`).getAttribute('aria-label')).not.toMatch(/error/i)
@@ -629,7 +712,9 @@ describe('badge', () => {
 
     await overlay.locator('.mb-pager [data-action="history"][data-dir="-1"]').click()
     await waitFor(message, 'warning 3')
-    await page.locator('#user').click({ position: { x: 10, y: 10 } })
+    await page.locator('#user').click({
+      position: { x: 10, y: 10 },
+    })
     channel.clearWarning(published[2]!.id)
     await waitFor(message, 'warning 4')
     expect(await page.evaluate(() => document.activeElement?.localName)).toBe('body')
@@ -802,15 +887,29 @@ describe('badge', () => {
     for (const order of ['badge first', 'overlay first']) {
       const stale = await report(`fixed before the badge connected, ${order}`)
       channel.setError(stale)
-      const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+      const page = await browser.newPage({
+        viewport: { width: 1200, height: 800 },
+      })
       const errors: string[] = []
       page.on('pageerror', error => errors.push(error.message))
       await page.addInitScript(() => addEventListener('my-bad:error:clear', event => ((window as unknown as { cleared: unknown[] }).cleared ??= []).push((event as CustomEvent).detail.id)))
       const html = (shown: Awaited<ReturnType<typeof report>>) => {
-        const overlay = renderOverlay(shown, { cwd: proj, channel: '/__my-bad', tag: 'nuxt-error-overlay', assets })
-        return `<!DOCTYPE html><html><head>${order === 'badge first' ? badge : ''}</head><body><h1 id="user">User page</h1>${overlay}${order === 'overlay first' ? badge : ''}</body></html>`
+        const overlay = renderOverlay(shown, {
+          cwd: proj,
+          channel: '/__my-bad',
+          tag: 'nuxt-error-overlay',
+          assets,
+        })
+        return `<!DOCTYPE html><html><head>${order === 'badge first'
+          ? badge
+          : ''}</head><body><h1 id="user">User page</h1>${overlay}${order === 'overlay first'
+          ? badge
+          : ''}</body></html>`
       }
-      const pages = { '/stale': html(stale), '/unknown': html(unknown) }
+      const pages = {
+        '/stale': html(stale),
+        '/unknown': html(unknown),
+      }
       await page.route(`${origin}/{stale,unknown}`, route => route.fulfill({ contentType: 'text/html', body: pages[new URL(route.request().url()).pathname as keyof typeof pages] }))
       channel.clearError()
 
@@ -835,8 +934,18 @@ describe('badge', () => {
     const state = (html: string) => JSON.parse(/<script type="application\/json">(.*?)<\/script>/s.exec(html)![1]!)
     const skewed = renderBadge({ cwd: proj, channel: '/__my-bad' }).replace(/\?v=\w+/g, '?v=0ther')
     const badgeState = state(skewed)
-    const html = skewed.replace(/<script type="application\/json">.*?<\/script>/s, `<script type="application/json">${JSON.stringify({ ...badgeState, future: true, overlay: { ...badgeState.overlay, version: '0.0.1', future: { nested: 1 } } })}</script>`)
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const html = skewed.replace(/<script type="application\/json">.*?<\/script>/s, `<script type="application/json">${JSON.stringify({
+      ...badgeState,
+      future: true,
+      overlay: {
+        ...badgeState.overlay,
+        version: '0.0.1',
+        future: { nested: 1 },
+      },
+    })}</script>`)
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     const caching: Record<string, string | null> = {}
@@ -867,7 +976,9 @@ describe('badge', () => {
   it('does not hold up parsing the page while its script loads', async () => {
     channel.clearWarning()
     channel.clearError()
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     let release!: () => void
@@ -889,7 +1000,9 @@ describe('badge', () => {
   it('docks in the corner the host picks, unless the user has moved it', async () => {
     channel.clearWarning()
     channel.clearError()
-    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
     const badge = renderBadge({ cwd: proj, channel: '/__my-bad', dock: 'bottom-left' })
     await page.route(`${origin}/docked`, route => route.fulfill({ contentType: 'text/html', body: `<!DOCTYPE html><html><head>${badge}</head><body><h1 id="user">User page</h1></body></html>` }))
     await page.goto(`${origin}/docked`)
@@ -956,11 +1069,41 @@ describe('source-first inspection', () => {
   it('keeps source in place, scopes context and compiled views, and reveals supporting evidence', async () => {
     const current = await report('Cannot save this widget')
     current.frames[0]!.line = 6
-    current.frames[0]!.snippet = { start: 1, lines: Array.from({ length: 11 }, (_, i) => `const line${i + 1} = ${i + 1}`) }
-    current.frames[0]!.compiled = { file: `${proj}/dist/handler.js`, line: 20, column: 9, snippet: { start: 20, lines: ['throw Error()'] } }
-    current.frames.splice(1, 0, { type: 'app', file: `${proj}/caller.ts`, function: 'caller', line: 2, snippet: { start: 1, lines: ['start()', 'handler()', 'finish()'] } })
-    current.causes = [{ ...current, id: 'inner', message: 'Missing name', frames: [], causes: [] }]
-    current.trace = [{ label: '<Widget>' }]
+    current.frames[0]!.snippet = {
+      start: 1,
+      lines: Array.from({ length: 11 }, (_, i) => `const line${i + 1} = ${i + 1}`),
+    }
+    current.frames[0]!.compiled = {
+      file: `${proj}/dist/handler.js`,
+      line: 20,
+      column: 9,
+      snippet: {
+        start: 20,
+        lines: ['throw Error()'],
+      },
+    }
+    current.frames.splice(1, 0, {
+      type: 'app',
+      file: `${proj}/caller.ts`,
+      function: 'caller',
+      line: 2,
+      snippet: {
+        start: 1,
+        lines: ['start()', 'handler()', 'finish()'],
+      },
+    })
+    current.causes = [
+      {
+        ...current,
+        id: 'inner',
+        message: 'Missing name',
+        frames: [],
+        causes: [],
+      },
+    ]
+    current.trace = [
+      { label: '<Widget>' },
+    ]
     channel.setError(current)
     for (const path of ['/', '/overlay']) {
       const page = await browser.newPage()
@@ -1077,7 +1220,11 @@ describe('copy formats', () => {
     const page = await browser.newPage()
     await page.addInitScript(() => {
       Object.assign(window, { testClipboard: '' })
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => Object.assign(window, { testClipboard: text }) } })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => Object.assign(window, { testClipboard: text }),
+        },
+      })
     })
     await page.goto(origin)
     const copied = () => page.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
@@ -1101,9 +1248,13 @@ describe('copy formats', () => {
     const page = await browser.newPage()
     await page.addInitScript(() => {
       Object.assign(window, { testClipboard: '' })
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
-        throw new Error('Write permission denied')
-      } } })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async () => {
+            throw new Error('Write permission denied')
+          },
+        },
+      })
       document.execCommand = () => {
         Object.assign(window, { testClipboard: (document.activeElement as HTMLTextAreaElement).value })
         return true
@@ -1121,7 +1272,11 @@ describe('copy formats', () => {
     channel.setError(await report('Copy twice'))
     const page = await browser.newPage()
     await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} } })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async () => {},
+        },
+      })
     })
     await page.goto(origin)
     const button = page.getByRole('button', { name: 'Copy error', exact: true })
@@ -1137,9 +1292,13 @@ describe('copy formats', () => {
     channel.setError(await report('Clipboard unavailable'))
     const page = await browser.newPage()
     await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
-        throw new Error('Write permission denied')
-      } } })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async () => {
+            throw new Error('Write permission denied')
+          },
+        },
+      })
       document.execCommand = () => false
     })
     await page.goto(`${origin}/overlay`)
@@ -1160,7 +1319,15 @@ describe('copy formats', () => {
 describe('copy location', () => {
   async function compiledReport(message: string) {
     const r = await report(message)
-    r.frames[0]!.compiled = { file: `${proj}/dist/handler.js`, line: 7, column: 11, snippet: { start: 6, lines: ['var a = 1', 'throw new Error()'] } }
+    r.frames[0]!.compiled = {
+      file: `${proj}/dist/handler.js`,
+      line: 7,
+      column: 11,
+      snippet: {
+        start: 6,
+        lines: ['var a = 1', 'throw new Error()'],
+      },
+    }
     return r
   }
 
@@ -1169,7 +1336,11 @@ describe('copy location', () => {
     const page = await browser.newPage()
     await page.addInitScript(() => {
       Object.assign(window, { testClipboard: '' })
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => Object.assign(window, { testClipboard: text }) } })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => Object.assign(window, { testClipboard: text }),
+        },
+      })
     })
     await page.goto(origin)
     const copied = () => page.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
@@ -1194,9 +1365,13 @@ describe('copy location', () => {
     channel.setError(await compiledReport('Copy a location by hand'))
     const page = await browser.newPage()
     await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {
-        throw new Error('Write permission denied')
-      } } })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async () => {
+            throw new Error('Write permission denied')
+          },
+        },
+      })
       document.execCommand = () => false
     })
     await page.goto(origin)
@@ -1226,9 +1401,11 @@ describe('theme before first paint', () => {
 
   it('follows the system preference when storage is unavailable', async () => {
     const page = await browser.newPage({ colorScheme: 'dark' })
-    await page.addInitScript(() => Object.defineProperty(window, 'localStorage', { get: () => {
-      throw new DOMException('denied', 'SecurityError')
-    } }))
+    await page.addInitScript(() => Object.defineProperty(window, 'localStorage', {
+      get: () => {
+        throw new DOMException('denied', 'SecurityError')
+      },
+    }))
     await page.route('**/client.js', route => route.abort())
     await page.goto(`${origin}/page-external`)
     expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
@@ -1243,7 +1420,9 @@ describe('accessibility', () => {
     await page.goto(origin)
     await waitFor(() => page.locator('[data-message]').first().textContent(), 'a11y')
 
-    const unlabelled = await page.evaluate(() => [...document.querySelectorAll('button')].filter(button => !button.textContent?.trim() && !button.getAttribute('aria-label')).map(button => button.outerHTML.slice(0, 80)))
+    const unlabelled = await page.evaluate(() => [
+      ...document.querySelectorAll('button'),
+    ].filter(button => !button.textContent?.trim() && !button.getAttribute('aria-label')).map(button => button.outerHTML.slice(0, 80)))
     expect(unlabelled).toEqual([])
     expect(await page.locator('main[tabindex="-1"]').count()).toBe(1)
     expect(await page.locator('article[aria-labelledby]').count()).toBeGreaterThan(0)

@@ -8,7 +8,10 @@ export default defineErrorHandler(async (error, event) => {
   const cwd = useRuntimeConfig().cwd as string
   const report = await createReport(error, {
     cwd,
-    presets: [nitroPreset(), envPreset()],
+    presets: [
+      nitroPreset(),
+      envPreset(),
+    ],
     context: { event },
   })
   channel.setError(report)
