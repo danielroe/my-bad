@@ -33,6 +33,7 @@ export type ChannelEvent
     | { type: 'history', payload: { history: HistoryEntry[] } }
     | { type: 'error:clear', payload: { id?: string } }
     | { type: 'warning', payload: { report: ErrorReport, history: HistoryEntry[] } }
+    | { type: 'warning:clear', payload: { id?: string, history: HistoryEntry[] } }
     | { type: 'log', payload: LogEntry & ReportRequest }
     | { type: 'build', payload: BuildProgress }
 

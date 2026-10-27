@@ -156,6 +156,33 @@ describe('browser client', () => {
     await page.close()
   }, 30_000)
 
+  it('counts warnings already published and drops retired ones', async () => {
+    channel.clearWarning()
+    channel.setError(await report('with warnings'))
+    const earlier = { ...(await report('earlier warning')), kind: 'warning' as const }
+    channel.warn(earlier)
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.goto(origin)
+    const count = page.locator('[data-warning-count]')
+    expect(await count.textContent()).toBe('1 warning')
+    await waitFor(() => page.locator('[data-live][data-connected]').count(), 1)
+
+    const later = { ...(await report('later warning')), kind: 'warning' as const }
+    channel.warn(later)
+    await waitFor(() => count.textContent(), '2 warnings')
+    await page.click('[data-toast] [data-action="show-toast"]')
+    await waitFor(() => page.locator('[data-message]').first().textContent(), 'later warning')
+
+    channel.clearWarning(later.id)
+    await waitFor(() => page.locator('[data-message]').first().textContent(), 'with warnings')
+    await waitFor(() => count.textContent(), '1 warning')
+    expect(await page.locator('[data-toast]').count()).toBe(0)
+
+    channel.clearWarning(earlier.id)
+    await waitFor(() => count.isVisible(), false)
+    await page.close()
+  }, 30_000)
+
   it('shows the build progress label below the bar, clear of the header', async () => {
     for (const path of ['/', '/overlay']) {
       channel.setError(await report(`progress ${path}`))
