@@ -266,6 +266,30 @@ describe('browser client', () => {
     await page.close()
   }, 30_000)
 
+  it('keeps warning toasts clear of the page preview', async () => {
+    for (const [width, dock] of [[1200, 'bottom-right'], [500, 'bottom-right'], [500, 'bottom-left']] as const) {
+      channel.clearWarning()
+      channel.setError(await report(`preview ${width} ${dock}`))
+      const page = await browser.newPage({ viewport: { width, height: 800 } })
+      await page.goto(`${origin}/blank`)
+      await page.evaluate(dock => localStorage.setItem('my-bad:overlay:dock', dock), dock)
+      await page.goto(`${origin}/overlay`)
+      const overlay = page.locator('my-bad-overlay')
+      await waitFor(() => overlay.locator('[data-preview]').isVisible(), true)
+      await waitFor(() => overlay.locator('[data-live][data-connected]').count(), 1)
+      channel.warn({ ...(await report('under the preview')), kind: 'warning' })
+      await waitFor(() => overlay.locator('[data-toast]').count(), 1)
+      const hit = await page.evaluate(() => {
+        const shadow = document.querySelector('my-bad-overlay')!.shadowRoot!
+        const rect = shadow.querySelector('[data-toast] [data-action="show-toast"]')!.getBoundingClientRect()
+        return shadow.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest('[data-toast]') ? 'toast' : shadow.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.className
+      })
+      expect(hit, `${width} ${dock}`).toBe('toast')
+      await page.close()
+    }
+    channel.clearWarning()
+  }, 30_000)
+
   it('ignores an error from another request and follows its own', async () => {
     channel.setError(await report('scoped start'))
     const pages = await Promise.all(['a', 'b'].map(async (id) => {

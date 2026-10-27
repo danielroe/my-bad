@@ -747,6 +747,7 @@ function sizePreview(m: Mount): void {
   const scale = Math.min(240 / innerWidth, 0.28)
   m.preview.style.width = `${Math.round(innerWidth * scale)}px`
   m.preview.style.height = `${Math.round(innerHeight * scale)}px`
+  m.overlay?.style.setProperty('--mb-preview-height', m.preview.style.height)
   frame.style.width = `${innerWidth}px`
   frame.style.height = `${innerHeight}px`
   frame.style.transform = `scale(${scale})`

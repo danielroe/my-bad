@@ -365,6 +365,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-preview:hover .mb-preview-close, .mb-preview:focus-within .mb-preview-close { opacity: 1; }
 
 .mb-overlay[data-has-preview] .mb-tools [data-action='minimize'] { display: none; }
+.mb-overlay[data-has-preview][data-dock='bottom-right'] .mb-toasts { bottom: calc(32px + var(--mb-preview-height, 0px)); }
 
 /* Scroll lock while the info dialog is open, in page mode and inside the overlay */
 :root:has(.mb-info[open]) { overflow: hidden; }
@@ -392,6 +393,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
   .mb-kv { grid-template-columns: 1fr; gap: 2px; }
   .mb-kv dt { margin-top: 8px; }
   .mb-toasts { right: 12px; left: 12px; width: auto; bottom: 16px; }
+  .mb-overlay[data-has-preview][data-dock='bottom-left'] .mb-toasts { bottom: calc(32px + var(--mb-preview-height, 0px)); }
   .mb-overlay[data-minimized] { inset: auto 12px 12px 12px; width: auto; }
   .mb-overlay[data-minimized][data-dock='top-left'], .mb-overlay[data-minimized][data-dock='top-right'] { inset: 12px 12px auto 12px; }
   .mb-restore { right: 12px; bottom: 12px; }
