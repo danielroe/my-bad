@@ -24,13 +24,21 @@ interface Badge {
   status: HTMLElement
 }
 
-function readState(): BadgeState | undefined {
-  const holder = document.currentScript?.previousElementSibling
+function readJson<T>(holder: Element | null | undefined): T | undefined {
   if (holder instanceof HTMLScriptElement && holder.type === 'application/json') {
     try {
       return JSON.parse(holder.textContent || '')
     }
     catch {}
+  }
+}
+
+function whenParsed(fn: () => void): void {
+  if (document.readyState === 'loading') {
+    addEventListener('DOMContentLoaded', fn, { once: true })
+  }
+  else {
+    fn()
   }
 }
 
@@ -73,6 +81,9 @@ function start(state: BadgeState): void {
   let latest: ErrorReport | undefined
   let latestTimer: ReturnType<typeof setTimeout> | undefined
   let announcement = ''
+  let greeted = false
+  /** The error of an overlay rendered into the page that cleared before the overlay attached. */
+  let retired: string | undefined
   let attached = false
   let loading = false
   let pending: ErrorReport | undefined
@@ -109,6 +120,10 @@ function start(state: BadgeState): void {
       forward('error:clear', { id: current.id })
       cleared(current.id)
     }
+    else if (!greeted && !payload.current) {
+      whenParsed(() => retireRendered(payload.history ?? []))
+    }
+    greeted = true
     const next = new Set(payload.history?.map(entry => entry.id))
     for (const entry of warnings()) {
       if (!next.has(entry.id)) {
@@ -119,6 +134,21 @@ function start(state: BadgeState): void {
     current = payload.current
     setHistory(payload.history ?? [])
     mountError()
+  }
+
+  /** An overlay rendered into the page for an error the channel has since cleared. A report the channel never had is left alone. */
+  function retireRendered(entries: HistoryEntry[]): void {
+    const report = readJson<PageState>(document.querySelector(tag)?.nextElementSibling)?.report
+    if (!report || report.kind === 'warning' || current || !entries.some(entry => entry.id === report.id)) {
+      return
+    }
+    if (attached) {
+      forward('error:clear', { id: report.id })
+    }
+    else {
+      retired = report.id
+    }
+    cleared(report.id)
   }
 
   function cleared(id: string | undefined): void {
@@ -203,6 +233,10 @@ function start(state: BadgeState): void {
       forward('show', { report: pending, history })
       pending = undefined
     }
+    if (retired) {
+      forward('error:clear', { id: retired })
+      retired = undefined
+    }
   })
 
   async function latestWarning(): Promise<ErrorReport | undefined> {
@@ -236,17 +270,11 @@ function start(state: BadgeState): void {
 
   /** Once the page is parsed, so an overlay rendered into it has had the chance to attach first. */
   function mountError(): void {
-    const mount = () => {
+    whenParsed(() => {
       if (current && !attached && !document.querySelector(tag)) {
         load(current)
       }
-    }
-    if (document.readyState === 'loading') {
-      addEventListener('DOMContentLoaded', mount, { once: true })
-    }
-    else {
-      mount()
-    }
+    })
   }
 
   function load(report: ErrorReport): void {
@@ -352,7 +380,7 @@ function start(state: BadgeState): void {
   }
 }
 
-const state = readState()
+const state = readJson<BadgeState>(document.currentScript?.previousElementSibling)
 if (state?.overlay.channel && typeof EventSource !== 'undefined' && !window.__MY_BAD_CLIENT__ && !window.__MY_BAD_SOURCE__) {
   start(state)
 }

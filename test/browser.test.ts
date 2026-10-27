@@ -614,6 +614,41 @@ describe('badge', () => {
     }
   }, 30_000)
 
+  it('dismisses an overlay rendered into the page whose error cleared before the badge connected', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const badge = renderBadge({ cwd: proj, channel: '/__my-bad', tag: 'nuxt-error-overlay' })
+    const unknown = await report('never published')
+    for (const order of ['badge first', 'overlay first']) {
+      const stale = await report(`fixed before the badge connected, ${order}`)
+      channel.setError(stale)
+      const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+      const errors: string[] = []
+      page.on('pageerror', error => errors.push(error.message))
+      await page.addInitScript(() => addEventListener('my-bad:error:clear', event => ((window as unknown as { cleared: unknown[] }).cleared ??= []).push((event as CustomEvent).detail.id)))
+      const html = (shown: Awaited<ReturnType<typeof report>>) => {
+        const overlay = renderOverlay(shown, { cwd: proj, channel: '/__my-bad', tag: 'nuxt-error-overlay', assets })
+        return `<!DOCTYPE html><html><head>${order === 'badge first' ? badge : ''}</head><body><h1 id="user">User page</h1>${overlay}${order === 'overlay first' ? badge : ''}</body></html>`
+      }
+      const pages = { '/stale': html(stale), '/unknown': html(unknown) }
+      await page.route(`${origin}/{stale,unknown}`, route => route.fulfill({ contentType: 'text/html', body: pages[new URL(route.request().url()).pathname as keyof typeof pages] }))
+      channel.clearError()
+
+      await page.goto(`${origin}/stale`)
+      await waitFor(() => page.locator('nuxt-error-overlay').count(), 0)
+      expect(await page.evaluate(() => (window as unknown as { cleared: unknown[] }).cleared), order).toEqual([stale.id])
+
+      await page.goto(`${origin}/unknown`)
+      const overlay = page.locator('nuxt-error-overlay')
+      await waitFor(() => overlay.locator('[data-live][data-connected]').count(), 1)
+      await page.waitForTimeout(300)
+      expect(await overlay.locator('[data-message]').first().textContent(), order).toBe('never published')
+      expect(await page.evaluate(() => (window as unknown as { cleared?: unknown[] }).cleared), order).toBeUndefined()
+      expect(errors, order).toEqual([])
+      await page.close()
+    }
+  }, 30_000)
+
   it('closes its stream while the tab is hidden and catches up when it returns', async () => {
     channel.clearWarning()
     channel.clearError()
