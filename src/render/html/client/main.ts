@@ -217,8 +217,20 @@ function revive(m: Mount): void {
   activate(m)
 }
 
-function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void {
+interface RerenderOptions {
+  /** Leave focus where it is, unless it was inside the overlay. */
+  quiet?: boolean
+  /** Update the report on screen: quietly, keeping the scroll position and announcing nothing. */
+  inPlace?: boolean
+  /** Announced instead of the report itself. */
+  announcement?: string
+}
+
+function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[], options: RerenderOptions = {}): void {
   const error = m.error
+  const scroll = m.root.scrollTop
+  const root = m.root.getRootNode() as Document | ShadowRoot
+  const focused = [m.root, m.overlay].some(el => el?.contains(root.activeElement))
   revive(m)
   m.error = error
   m.selected = undefined
@@ -249,9 +261,18 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void
   updateBadges(m)
   setLive(m, connected)
   markOverflowingSnippets(m)
-  m.root.scrollTop = 0
-  announce(m, `${report.kind === 'warning' ? 'Warning' : 'Error'}: ${report.name}: ${report.message}`)
-  focusHeading(m)
+  applyMode(m)
+  m.root.scrollTop = options.inPlace ? scroll : 0
+  if (!options.inPlace) {
+    announce(m, options.announcement ?? headline(report))
+  }
+  if (focused || !(options.quiet || options.inPlace)) {
+    focusHeading(m)
+  }
+}
+
+function headline(report: ErrorReport): string {
+  return `${report.kind === 'warning' ? 'Warning' : 'Error'}: ${report.name}: ${report.message}`
 }
 
 const labelRestores = new WeakMap<HTMLElement, () => void>()
@@ -429,16 +450,10 @@ async function open(m: Mount, file: string, line?: string, column?: string): Pro
 async function navigateHistory(m: Mount, dir: number): Promise<void> {
   const history = m.state.history ?? []
   const target = history[pagerIndex(m.state.report, history) + dir]
-  if (!target || !m.state.channel) {
-    return
+  const report = target && await fetchReport(m, target.id)
+  if (report) {
+    rerender(m, report)
   }
-  try {
-    const res = await fetch(`${m.state.channel}/history/${encodeURIComponent(target.id)}?${scopeQuery(m)}`)
-    if (res.ok) {
-      rerender(m, await res.json())
-    }
-  }
-  catch {}
 }
 
 let logCount = 0
@@ -507,7 +522,17 @@ let previewDismissed = false
 const MAX_WARNINGS = 50
 const warnings = new Map<string, ErrorReport>()
 
-function showWarning(m: Mount, report: ErrorReport): void {
+/** A warning republished under an id already counted updates in place, without a new toast. */
+function showWarning(m: Mount, report: ErrorReport, known: boolean): void {
+  if (known) {
+    if (warnings.has(report.id)) {
+      warnings.set(report.id, report)
+    }
+    if (m.state.report.id === report.id) {
+      rerender(m, report, undefined, { inPlace: true })
+    }
+    return updateBadges(m)
+  }
   warnings.delete(report.id)
   warnings.set(report.id, report)
   while (warnings.size > MAX_WARNINGS) {
@@ -524,8 +549,8 @@ function showWarning(m: Mount, report: ErrorReport): void {
   updateBadges(m)
 }
 
-/** Drop a retired warning, or every warning without an id, and step back from it if it is on screen. */
-function retireWarning(m: Mount, id: string | undefined): void {
+/** Drop a retired warning, or every warning without an id. One on screen gives way to the error, or to the next warning. */
+function retireWarning(m: Mount, id: string | undefined, before: HistoryEntry[]): void {
   for (const toast of m.root.querySelectorAll<HTMLElement>('[data-toast]')) {
     if (id === undefined || toast.dataset.toastId === id) {
       toast.remove()
@@ -539,8 +564,12 @@ function retireWarning(m: Mount, id: string | undefined): void {
   }
   const shown = m.state.report
   if (shown.kind === 'warning' && (id === undefined || shown.id === id)) {
+    const next = id === undefined ? undefined : nextWarning(before, m.state.history ?? [], id)
     if (m.error) {
       rerender(m, m.error)
+    }
+    else if (next) {
+      void showNext(m, shown, next)
     }
     else if (m.overlay) {
       dismiss(m)
@@ -548,6 +577,40 @@ function retireWarning(m: Mount, id: string | undefined): void {
   }
   updatePager(m)
   updateBadges(m)
+}
+
+/** The warning after a retired one, or the newest one left when it was the last. */
+function nextWarning(before: HistoryEntry[], after: HistoryEntry[], id: string): HistoryEntry | undefined {
+  const left = after.filter(entry => entry.kind === 'warning')
+  const later = before.slice(before.findIndex(entry => entry.id === id) + 1)
+  return left.find(entry => later.some(other => other.id === entry.id)) ?? left.at(-1)
+}
+
+async function showNext(m: Mount, retired: ErrorReport, entry: HistoryEntry): Promise<void> {
+  const report = warnings.get(entry.id) ?? await fetchReport(m, entry.id)
+  if (m.state.report !== retired) {
+    return
+  }
+  if (!m.state.history?.some(other => other.id === entry.id)) {
+    const newest = m.state.history?.filter(other => other.kind === 'warning').at(-1)
+    return newest ? showNext(m, retired, newest) : m.overlay ? dismiss(m) : undefined
+  }
+  if (!report) {
+    return m.overlay ? dismiss(m) : undefined
+  }
+  m.root.querySelector(`[data-toast-id="${CSS.escape(report.id)}"]`)?.remove()
+  rerender(m, report, undefined, { quiet: true, announcement: `Warning fixed. Next, ${headline(report)}` })
+}
+
+async function fetchReport(m: Mount, id: string): Promise<ErrorReport | undefined> {
+  if (!m.state.channel) {
+    return
+  }
+  try {
+    const res = await fetch(`${m.state.channel}/history/${encodeURIComponent(id)}?${scopeQuery(m)}`)
+    return res.ok ? await res.json() : undefined
+  }
+  catch {}
 }
 
 function updateBadges(m: Mount): void {
@@ -666,12 +729,15 @@ function connect(m: Mount): void {
     }
   })
   on('warning', (payload) => {
+    const known = !!m.state.history?.some(entry => entry.id === payload.report.id)
     m.state.history = payload.history
-    showWarning(m, payload.report)
+    showWarning(m, payload.report, known)
+    updatePager(m)
   })
   on('warning:clear', (payload) => {
+    const before = m.state.history ?? []
     m.state.history = payload.history
-    retireWarning(m, payload.id)
+    retireWarning(m, payload.id, before)
   })
   on('log', payload => appendLog(m, payload))
   shared?.addEventListener('show', (event) => {
@@ -694,7 +760,7 @@ function connect(m: Mount): void {
 function dismiss(m: Mount): void {
   const host = (m.overlay?.getRootNode() as ShadowRoot | undefined)?.host
   m.overlay?.setAttribute('data-hidden', '')
-  setHostInert(m, false)
+  lockPage(m, false)
   m.restore?.remove()
   clearTimeout(dismissal)
   dismissal = setTimeout(() => host?.remove(), 250)
@@ -707,7 +773,7 @@ function setMinimized(m: Mount, value: boolean, options: { persist?: boolean } =
     return
   }
   if (m.overlay.hasAttribute('data-minimized') === value) {
-    return updatePreview(m)
+    return applyMode(m)
   }
   m.overlay.toggleAttribute('data-minimized', value)
   if (value) {
@@ -716,24 +782,66 @@ function setMinimized(m: Mount, value: boolean, options: { persist?: boolean } =
   else {
     focusHeading(m)
   }
-  m.overlay.setAttribute('aria-modal', String(!value))
   if (persist) {
     storage(STORAGE.minimized, value ? '1' : '0')
   }
-  document.documentElement.style.overflow = value ? '' : 'hidden'
-  setHostInert(m, !value && !m.overlay.hasAttribute('data-hidden'))
+  applyMode(m)
+}
+
+const LABELS = {
+  error: { name: 'Error details', hide: 'Hide error overlay', expand: 'Show error details', restore: 'Show error overlay', minimize: ['Minimise (show the page behind)', 'Minimise overlay and show the page behind'] },
+  panel: { name: 'Details', hide: 'Hide overlay', expand: 'Show details', restore: 'Show overlay', minimize: ['Minimise', 'Minimise overlay'] },
+}
+
+/**
+ * With an error, the expanded overlay is a modal dialog over the page. Without one, it is a panel beside the page,
+ * which stays usable.
+ */
+function applyMode(m: Mount): void {
+  const overlay = m.overlay
+  if (!overlay) {
+    return
+  }
+  const panel = !m.error
+  const labels = panel ? LABELS.panel : LABELS.error
+  const minimized = overlay.hasAttribute('data-minimized')
+  overlay.toggleAttribute('data-panel', panel)
+  overlay.setAttribute('aria-modal', String(!minimized && !panel))
+  overlay.setAttribute('aria-label', panel && m.state.report.kind === 'warning' ? 'Warning details' : labels.name)
+  for (const [action, label] of [['hide', labels.hide], ['expand', labels.expand]]) {
+    const button = overlay.querySelector(`.mb-pip-button[data-action="${action}"]`)
+    button?.setAttribute('aria-label', label!)
+    button?.setAttribute('title', label!)
+  }
+  const tool = m.root.querySelector('.mb-tools [data-action="minimize"]')
+  tool?.setAttribute('title', labels.minimize[0]!)
+  tool?.setAttribute('aria-label', labels.minimize[1]!)
+  if (m.restore) {
+    m.restore.textContent = labels.restore
+  }
+  const toggle = m.preview?.querySelector('[data-action="minimize"]')
+  const page = m.state.report.kind === 'warning' ? 'Show page' : 'Show page behind this error'
+  toggle?.setAttribute('title', page)
+  toggle?.setAttribute('aria-label', page)
+  lockPage(m, !panel && !minimized && !overlay.hasAttribute('data-hidden'))
   updatePreview(m)
 }
 
-/** While maximised the overlay is a modal dialog, so the page behind must not be focusable. */
-function setHostInert(m: Mount, inert: boolean): void {
+let locked: boolean | undefined
+
+/** While the modal overlay is up, the page behind must neither scroll nor take focus. */
+function lockPage(m: Mount, lock: boolean): void {
   const host = (m.overlay?.getRootNode() as ShadowRoot | undefined)?.host
-  if (!host) {
+  if (!host || lock === locked) {
     return
   }
+  if (locked !== undefined || lock) {
+    document.documentElement.style.overflow = lock ? 'hidden' : ''
+  }
+  locked = lock
   for (const child of document.body.children) {
     if (child !== host && !child.hasAttribute('data-my-bad') && child.tagName !== 'SCRIPT') {
-      child.toggleAttribute('inert', inert)
+      child.toggleAttribute('inert', lock)
     }
   }
 }
@@ -758,7 +866,7 @@ function updatePreview(m: Mount): void {
   if (!m.preview || !m.overlay) {
     return
   }
-  const show = !m.overlay.hasAttribute('data-minimized') && !m.overlay.hasAttribute('data-hidden') && !previewDismissed
+  const show = !m.overlay.hasAttribute('data-minimized') && !m.overlay.hasAttribute('data-hidden') && !m.overlay.hasAttribute('data-panel') && !previewDismissed
   m.preview.hidden = !show
   m.overlay.toggleAttribute('data-has-preview', show)
   if (!show) {
@@ -790,8 +898,7 @@ function setHidden(m: Mount, value: boolean): void {
   m.overlay.toggleAttribute('inert', value)
   m.restore.hidden = !value
   session(hiddenKey(m.state.cwd), value ? '1' : '0')
-  setHostInert(m, !value && !m.overlay.hasAttribute('data-minimized'))
-  updatePreview(m)
+  applyMode(m)
   notifyBadge(m)
 }
 

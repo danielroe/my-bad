@@ -48,7 +48,7 @@ export function renderView(state: PageState, selected = 'r'): string {
     : `<p class="mb-brand">${lockup}</p>`
   return `<header class="mb-header mb-corners">
   <div class="mb-brand-group">${brand}<span class="mb-header-count">${headerCount(report)}</span></div>
-  <nav class="mb-tools" aria-label="Error page tools">
+  <nav class="mb-tools" aria-label="${report.kind === 'warning' ? 'Tools' : 'Error page tools'}">
     <ul>
       ${renderPager(report, state.history)}
       <li><span class="mb-warning-count" data-warning-count${attr('hidden', !warningCount(state.history))}>${warningLabel(state.history)}</span></li>
@@ -89,10 +89,11 @@ export function renderPager(report: ErrorReport, history?: HistoryEntry[]): stri
     return `<li class="mb-pager" data-pager hidden></li>`
   }
   const index = pagerIndex(report, history)
-  return `<li class="mb-pager" data-pager><span role="group" aria-label="Error history">
-    <button class="mb-tool" type="button" data-action="history" data-dir="-1"${attr('disabled', index <= 0)} title="Previous error" aria-label="Previous error">${ICONS.prev}</button>
+  const [group, noun] = report.kind === 'warning' ? ['History', 'report'] : ['Error history', 'error']
+  return `<li class="mb-pager" data-pager><span role="group" aria-label="${group}">
+    <button class="mb-tool" type="button" data-action="history" data-dir="-1"${attr('disabled', index <= 0)} title="Previous ${noun}" aria-label="Previous ${noun}">${ICONS.prev}</button>
     <span data-pager-label>${index + 1} of ${history.length}</span>
-    <button class="mb-tool" type="button" data-action="history" data-dir="1"${attr('disabled', index >= history.length - 1)} title="Next error" aria-label="Next error">${ICONS.next}</button>
+    <button class="mb-tool" type="button" data-action="history" data-dir="1"${attr('disabled', index >= history.length - 1)} title="Next ${noun}" aria-label="Next ${noun}">${ICONS.next}</button>
   </span></li>`
 }
 
@@ -136,7 +137,7 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
     : ''
   return `<article class="mb-report" data-kind="${escapeHtml(report.kind)}" aria-labelledby="${id}-name ${id}-message">
   <div class="mb-report-heading"><p class="mb-kicker">${report.kind === 'error' ? '' : `<span class="mb-kind-icon" aria-hidden="true">${ICONS.warning}</span>`}<span class="mb-name" id="${id}-name" data-name>${escapeHtml(selfCoded ? KIND_LABEL[report.kind] : report.name)}</span>${selfCoded ? '' : `${report.kind === 'error' ? '' : '<span aria-hidden="true">·</span>'}<span data-kind-label${report.kind === 'error' ? ' class="mb-sr-only"' : ''}>${KIND_LABEL[report.kind]}</span>`}${state.environment ? `<span>·</span><span>${escapeHtml(state.environment)}</span>` : ''}${code}${report.status ? `<span data-status>HTTP ${escapeHtml(report.status)}</span>` : ''}</p>${chrome
-    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy error</button>
+    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy ${report.kind === 'warning' ? 'warning' : 'error'}</button>
         <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
         <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
           <li><button type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy as Markdown</button></li>
@@ -173,7 +174,7 @@ function renderTrace(report: ErrorReport, state: PageState): string {
 
 function renderFrames(frames: Frame[], state: PageState, parent: string): string {
   if (!frames.length)
-    return '<p class="mb-unavailable">No stack trace was provided. The error message and request context are still available to copy.</p>'
+    return `<p class="mb-unavailable">No stack trace was provided. The ${state.report.kind === 'warning' ? 'warning' : 'error'} message and request context are still available to copy.</p>`
   const origin = Math.max(0, frames.findIndex(frame => frame.type === 'app' && (frame.snippet || frame.compiled?.snippet)))
   const framework = frames.filter(frame => frame.type !== 'app').length
   const frameRow = (frame: Frame, index: number) => index === origin
@@ -209,7 +210,7 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
   const copy = renderCopyLocation(frame, generated)
   if (supporting && !source && !generated)
     return `<div class="mb-empty-frame"><span class="mb-function">${escapeHtml(frame.function ?? '<anonymous>')}</span>${location(frame)}${copy}</div>`
-  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)} aria-label="${supporting ? 'Stack frame' : 'Error source'}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function ? `<span class="mb-function"${attr('title', frame.function)}>${escapeHtml(frame.function)}</span>` : ''}<span data-location-source>${location(frame)}</span>${generated ? `<span data-location-compiled>${location(frame.compiled!)}</span>` : ''}</div><div class="mb-source-actions">${source && generated ? '<span class="mb-switch" role="group" aria-label="Code view"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>' : ''}<button type="button" class="mb-tool" data-action="context" aria-label="More context" title="More context" aria-expanded="false">${ICONS.context}</button>${copy}${frame.file ? `<button type="button" class="mb-tool" data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)} title="Open original source in your editor" aria-label="Open original source in your editor">${ICONS.open}</button>` : ''}</div></div>${generated ? `<p class="mb-compiled-note">Compiled JavaScript${frame.compiled!.file === frame.file ? ' (in memory)' : ''} · Editor opens the original source location.</p>` : ''}<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>${generated ? `<div data-snippet-compiled${attr('hidden', source)}>${snippet(true)}</div>` : ''}</section>`
+  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)} aria-label="${supporting ? 'Stack frame' : `${state.report.kind === 'warning' ? 'Warning' : 'Error'} source`}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function ? `<span class="mb-function"${attr('title', frame.function)}>${escapeHtml(frame.function)}</span>` : ''}<span data-location-source>${location(frame)}</span>${generated ? `<span data-location-compiled>${location(frame.compiled!)}</span>` : ''}</div><div class="mb-source-actions">${source && generated ? '<span class="mb-switch" role="group" aria-label="Code view"><button type="button" data-action="toggle-compiled" data-switch="source" aria-pressed="true">Source</button><button type="button" data-action="toggle-compiled" data-switch="compiled" aria-pressed="false">Compiled</button></span>' : ''}<button type="button" class="mb-tool" data-action="context" aria-label="More context" title="More context" aria-expanded="false">${ICONS.context}</button>${copy}${frame.file ? `<button type="button" class="mb-tool" data-action="open"${attr('data-file', frame.file)}${attr('data-line', frame.line)}${attr('data-column', frame.column)} title="Open original source in your editor" aria-label="Open original source in your editor">${ICONS.open}</button>` : ''}</div></div>${generated ? `<p class="mb-compiled-note">Compiled JavaScript${frame.compiled!.file === frame.file ? ' (in memory)' : ''} · Editor opens the original source location.</p>` : ''}<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>${generated ? `<div data-snippet-compiled${attr('hidden', source)}>${snippet(true)}</div>` : ''}</section>`
 }
 
 function positionAttrs(prefix: string, target: Pick<Frame, 'file' | 'line' | 'column'> | undefined): string {

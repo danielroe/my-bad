@@ -38,6 +38,7 @@ const themes = [
 let browser: Browser
 let pageHtml: (theme: typeof themes[number]) => string
 let overlayHtml: (theme: typeof themes[number]) => string
+let warningOverlayHtml: (theme: typeof themes[number]) => string
 
 beforeAll(async () => {
   browser = await chromium.launch()
@@ -57,6 +58,8 @@ beforeAll(async () => {
   report.sections.push({ id: 'request', title: 'Request', content: { method: 'GET', url: '/widgets' } })
   report.causes.push({ ...report, id: 'cause', message: 'Inner failure', causes: [], trace: undefined, hint: undefined })
   pageHtml = theme => renderPage(report, { cwd: '/proj', channel: '/__my-bad', theme: theme.theme ? { ...theme.theme, scheme: theme.scheme } : { scheme: theme.scheme } })
+  const warning = { ...report, id: 'warning', kind: 'warning' as const, name: 'NUXT_B4025', code: undefined, status: undefined, causes: [] }
+  warningOverlayHtml = theme => `<!DOCTYPE html><html lang="en"><head><title>Host</title></head><body><main><h1>Host page</h1><a id="host-link" href="#">Host link</a></main>${renderOverlay(warning, { cwd: '/proj', channel: '/__my-bad', theme: theme.theme ? { ...theme.theme, scheme: theme.scheme } : { scheme: theme.scheme } })}</body></html>`
   overlayHtml = theme => `<!DOCTYPE html><html lang="en"><head><title>Host</title></head><body><h1>Host page</h1>${renderOverlay(report, { cwd: '/proj', channel: '/__my-bad', theme: theme.theme ? { ...theme.theme, scheme: theme.scheme } : { scheme: theme.scheme } })}</body></html>`
 }, 30_000)
 
@@ -456,11 +459,12 @@ describe.each(themes)('badge, theme: $name', (theme) => {
   async function openBadge(): Promise<Page> {
     const context = await browser.newContext({ colorScheme: theme.scheme, viewport: { width: 1280, height: 900 } })
     const page = await context.newPage()
-    const hello = { version: '0', actions: [], history: [{ id: 'w', kind: 'warning', name: 'NUXT_B4025', message: 'Extraneous attribute on <Widget>', timestamp: 0 }] }
+    const warning = { id: 'w', kind: 'warning', name: 'NUXT_B4025', message: 'Extraneous attribute on <Widget>', timestamp: 0 }
+    const hello = { version: '0', actions: [], history: [] }
     await page.route('http://a11y.test/**', (route) => {
       const url = route.request().url()
       if (url.includes('/__my-bad/events')) {
-        return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: `event: hello\ndata: ${JSON.stringify(hello)}\n\nevent: warning\ndata: ${JSON.stringify({ report: { ...hello.history[0], frames: [], causes: [], sections: [] }, history: hello.history })}\n\n` })
+        return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: `event: hello\ndata: ${JSON.stringify(hello)}\n\nevent: warning\ndata: ${JSON.stringify({ report: { ...warning, frames: [], causes: [], sections: [] }, history: [warning] })}\n\n` })
       }
       if (url.includes('/__my-bad/badge.js')) {
         return route.fulfill({ status: 200, contentType: 'text/javascript', body: clientAssets.badge })
@@ -488,4 +492,34 @@ describe.each(themes)('badge, theme: $name', (theme) => {
     expect(results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')).toEqual([])
     await page.context().close()
   }, 30_000)
+})
+
+describe.each(themes)('warning panel, theme: $name', (theme) => {
+  it('leaves the page usable, with no serious axe violations or contrast failures', async () => {
+    const page = await open(warningOverlayHtml(theme), theme.scheme)
+    const dialog = page.locator('my-bad-overlay').locator('[data-overlay]')
+    expect(await dialog.getAttribute('aria-modal')).toBe('false')
+    expect(await page.evaluate(() => document.querySelector('#host-link')!.closest('[inert]'))).toBeNull()
+    const samples = await sampleContrast(page)
+    const failures = samples.filter(sample => sample.role === 'text' ? sample.ratio < (largeText(sample) ? 3 : 4.5) : sample.ratio < 3)
+    expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
+    await page.addScriptTag({ content: axeSource })
+    const results = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (context: unknown, options: unknown) => Promise<{ violations: Array<{ id: string, impact: string, nodes: Array<{ target: string[] }> }> }> } }).axe
+      return axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] } })
+    })
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')
+    expect(serious.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target.join(' ')).slice(0, 5) }))).toEqual([])
+    const reached: string[] = []
+    for (let i = 0; i < 40 && !reached.includes('host-link'); i++) {
+      await page.keyboard.press('Tab')
+      reached.push(await page.evaluate(() => document.activeElement?.id ?? ''))
+    }
+    expect(reached).toContain('host-link')
+    expect(await page.evaluate(() => {
+      const rect = document.querySelector('#host-link')!.getBoundingClientRect()
+      return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.id
+    })).toBe('host-link')
+    await page.context().close()
+  }, 60_000)
 })

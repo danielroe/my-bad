@@ -29,6 +29,7 @@
   --mb-warning: #f5c542;
   --mb-error: #f28795;
   --mb-error-bg: color-mix(in srgb, var(--mb-error) 12%, var(--mb-code-bg));
+  --mb-warning-bg: color-mix(in srgb, var(--mb-warning) 10%, var(--mb-code-bg));
   --mb-code-bg: color-mix(in srgb, var(--mb-bg) 90%, #000);
   --mb-shadow: 0 24px 64px -24px rgb(0 0 0 / 0.6), 0 0 0 1px var(--mb-line);
 
@@ -58,6 +59,7 @@
   --mb-warning: #92400e;
   --mb-error: #bd3545;
   --mb-error-bg: color-mix(in srgb, var(--mb-error) 6%, var(--mb-code-bg));
+  --mb-warning-bg: color-mix(in srgb, var(--mb-warning) 6%, var(--mb-code-bg));
   --mb-code-bg: color-mix(in srgb, var(--mb-bg) 99%, var(--mb-fg));
   --mb-tk-string: color-mix(in oklab, var(--mb-accent) 55%, #0a0a0a);
   --mb-tk-keyword: #32689b;

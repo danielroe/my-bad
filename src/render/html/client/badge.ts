@@ -184,11 +184,15 @@ function start(state: BadgeState): void {
       case 'warning:clear':
         setHistory(payload.history)
         break
-      case 'warning':
+      case 'warning': {
+        const known = history.some(entry => entry.id === payload.report.id)
         reports.set(payload.report.id, payload.report)
         setHistory(payload.history)
-        announce(payload.report)
+        if (!known) {
+          announce(payload.report)
+        }
         break
+      }
     }
     forward(type, payload)
     render()

@@ -95,7 +95,7 @@ Theme overrides stay inline, so a shared stylesheet still themes per response.
 
 ### Badge
 
-`renderBadge` renders a small loader for every dev page, which shows errors and warnings as they arrive; its ~9kB script comes from the channel at `{channel}/badge.js`. It renders nothing until something concerns the page. An error mounts the overlay, minimised unless `startMinimized: false`, loading it from the channel. Warnings show a small count in the corner the overlay docks to, which expands into the overlay when clicked, and the count stands in for the overlay whenever it is hidden or cleared.
+`renderBadge` renders a small loader for every dev page, which shows errors and warnings as they arrive; its ~9kB script comes from the channel at `{channel}/badge.js`. It renders nothing until something concerns the page. An error mounts the overlay, minimised unless `startMinimized: false`, loading it from the channel. Warnings show a small count in the corner the overlay docks to, which expands into a panel beside the page when clicked; with no error to show, the panel leaves the page usable, and moves on to the next warning as each one is retired. The count stands in for the overlay whenever it is hidden or cleared.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-dark.png">

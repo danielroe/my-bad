@@ -30,7 +30,7 @@ test.describe('README assets', () => {
       { id: 'b', kind: 'warning', name: 'NUXT_B4025', message: '<NuxtLink> has both `to` and `href`', timestamp: 0 },
     ]
     const latest = { ...history[1], frames: [], causes: [], sections: [] }
-    const events = `event: hello\ndata: ${JSON.stringify({ version: '0', actions: [], history })}\n\nevent: warning\ndata: ${JSON.stringify({ report: latest, history })}\n\n`
+    const events = `event: hello\ndata: ${JSON.stringify({ version: '0', actions: [], history: history.slice(0, 1) })}\n\nevent: warning\ndata: ${JSON.stringify({ report: latest, history })}\n\n`
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>html{color-scheme:light dark}body{margin:0;background:Canvas}</style>${renderBadge({ channel: '/__my-bad' })}</head><body></body></html>`
     await page.route('http://my-bad.test/**', (route) => {
       const url = route.request().url()
