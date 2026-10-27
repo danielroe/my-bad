@@ -3,7 +3,7 @@ export type { FsLoaderOptions, MappedPosition, RawIndexSourceMap, RawSourceMap, 
 export { renderAnsi } from './render/ansi'
 export type { RenderAnsiOptions } from './render/ansi'
 export { clientAssets, injectOverlay, renderBadge, renderOverlay, renderPage } from './render/html'
-export type { ClientAssets, PageState, RenderBadgeOptions, RenderOverlayOptions, RenderPageOptions, Theme } from './render/html'
+export type { ClientAssets, Dock, PageState, RenderBadgeOptions, RenderOverlayOptions, RenderPageOptions, Theme } from './render/html'
 export { createReport, resolveOptions } from './report/create'
 export { toMarkdown } from './report/markdown'
 export type { MarkdownOptions } from './report/markdown'

@@ -354,7 +354,7 @@ function start(state: BadgeState): void {
     const { button } = badge
     button.hidden = false
     button.dataset.kind = kind
-    button.dataset.dock = storage('my-bad:overlay:dock') ?? 'bottom-right'
+    button.dataset.dock = storage('my-bad:overlay:dock') ?? overlay.dock ?? 'bottom-right'
     button.firstElementChild!.outerHTML = ICONS[kind]
     badge.count.textContent = summary
     badge.latest.textContent = detail

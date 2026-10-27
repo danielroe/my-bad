@@ -864,6 +864,52 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('does not hold up parsing the page while its script loads', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    let release!: () => void
+    const held = new Promise<void>(resolve => (release = resolve))
+    await page.route(`${origin}/__my-bad/badge.js*`, async (route) => {
+      await held
+      await route.continue()
+    })
+    await page.goto(`${origin}/badge`, { waitUntil: 'commit' })
+    await waitFor(() => page.evaluate(() => !!document.querySelector('#user')), true)
+    release()
+    channel.warn(await warning('after a deferred load'))
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').isVisible(), true)
+    channel.clearWarning()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('docks in the corner the host picks, unless the user has moved it', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const badge = renderBadge({ cwd: proj, channel: '/__my-bad', dock: 'bottom-left' })
+    await page.route(`${origin}/docked`, route => route.fulfill({ contentType: 'text/html', body: `<!DOCTYPE html><html><head>${badge}</head><body><h1 id="user">User page</h1></body></html>` }))
+    await page.goto(`${origin}/docked`)
+    channel.warn(await warning('docked'))
+    const pill = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => pill.isVisible(), true)
+    expect((await pill.boundingBox())!.x).toBeLessThan(600)
+    await pill.click()
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-dock'), 'bottom-left')
+    expect((await overlay.locator('[data-overlay]').boundingBox())!.x).toBeLessThan(600)
+
+    await page.evaluate(() => localStorage.setItem('my-bad:overlay:dock', 'top-right'))
+    await page.reload()
+    await waitFor(() => pill.isVisible(), true)
+    expect(await pill.getAttribute('data-dock')).toBe('top-right')
+    channel.clearWarning()
+    await page.close()
+  }, 30_000)
+
   it('closes its stream while the tab is hidden and catches up when it returns', async () => {
     channel.clearWarning()
     channel.clearError()

@@ -116,7 +116,7 @@ Pass `assets: { script, styles, badge }` to load any of them from your own URLs 
 
 The channel serves its own build of the scripts and stylesheet: requested with that build's `?v=` hash they are cached for good, and with any other hash they are served uncached. A page rendered by a different version of `my-bad` than the one owning the channel (a framework whose CLI owns it, say) therefore still loads a matching badge and overlay. A channel from a version without `badge.js` responds 404, so pass `assets` when the channel's version is out of your hands.
 
-It takes the same `theme`, `tag`, `cwd` and `editor` options as the overlay. An overlay rendered into the same page with the same `tag` (an error page using `injectOverlay`, say) is adopted rather than duplicated and shares the badge's connection. The badge closes that connection while the tab is in the background.
+It takes the same `theme`, `tag`, `cwd`, `editor` and `dock` options as the overlay; `dock` picks the corner (`bottom-right` by default) that the badge and the minimised overlay start in, until the user moves them. An overlay rendered into the same page with the same `tag` (an error page using `injectOverlay`, say) is adopted rather than duplicated and shares the badge's connection. The badge closes that connection while the tab is in the background.
 
 ### Theming
 

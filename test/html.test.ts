@@ -119,7 +119,8 @@ describe('renderBadge', () => {
     expect(state.overlay.styles).toContain('--mb-accent:#00dc82')
     expect(state.overlay.styles).not.toContain('.mb-root')
     expect(html).not.toContain('<nuxt-error-overlay')
-    expect(html).toMatch(/<script src="\/__my-bad\/badge\.js\?v=\w+"><\/script>$/)
+    expect(html).toMatch(/<script defer src="\/__my-bad\/badge\.js\?v=\w+"><\/script>$/)
+    expect(JSON.parse(stateJson(renderBadge({ channel: '/__my-bad', dock: 'top-left' }))).overlay.dock).toBe('top-left')
     expect(html.length).toBeLessThan(1000)
   })
 
@@ -128,7 +129,7 @@ describe('renderBadge', () => {
     const state = JSON.parse(stateJson(html))
     expect(state.script).toBe('/assets/client.js')
     expect(state.overlay.stylesUrl).toMatch(/^\/__my-bad\/client\.css\?v=/)
-    expect(html).toContain('<script src="/assets/badge.js"></script>')
+    expect(html).toContain('<script defer src="/assets/badge.js"></script>')
   })
 
   it('rejects invalid tag names', () => {

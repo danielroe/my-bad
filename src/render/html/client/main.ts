@@ -1,6 +1,6 @@
 import type { ChannelEvent } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
-import type { PageState } from '../state'
+import type { Dock, PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
@@ -15,8 +15,6 @@ const STORAGE = {
   dock: 'my-bad:overlay:dock',
   minimized: 'my-bad:overlay:minimized',
 }
-
-type Dock = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
 
 const EXPAND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>'
 
@@ -969,7 +967,7 @@ function draggable(m: Mount, el: HTMLElement, enabled: () => boolean, onTap?: ()
 
 function setupOverlay(m: Mount): void {
   const overlay = m.overlay!
-  const dock = (storage(STORAGE.dock) as Dock | null) ?? 'bottom-right'
+  const dock = (storage(STORAGE.dock) as Dock | null) ?? m.state.dock ?? 'bottom-right'
   overlay.setAttribute('data-dock', dock)
   m.preview?.setAttribute('data-dock', dock)
   const minimized = storage(STORAGE.minimized)

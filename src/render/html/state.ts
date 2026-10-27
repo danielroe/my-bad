@@ -23,6 +23,8 @@ export interface Theme {
   css?: string
 }
 
+export type Dock = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+
 export interface PageState {
   environment?: string
   mode: 'page' | 'overlay'
@@ -34,6 +36,8 @@ export interface PageState {
   theme?: Theme
   /** Mount minimised regardless of the user's remembered preference. */
   startMinimized?: boolean
+  /** Corner the overlay docks to until the user moves it. */
+  dock?: Dock
   /** Custom element tag name hosting the overlay. */
   tag?: string
   /** URL scheme used to open files when the channel has no `open` action. */

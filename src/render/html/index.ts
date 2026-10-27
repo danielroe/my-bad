@@ -1,5 +1,5 @@
 import type { ErrorReport, HistoryEntry } from '../../types'
-import type { BadgeState, PageState, Theme } from './state'
+import type { BadgeState, Dock, PageState, Theme } from './state'
 import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
 import { clampMessage } from '../../report/message'
 import { assetUrls } from './assets'
@@ -8,7 +8,7 @@ import { THEME_STORAGE_KEY } from './state'
 import { renderView } from './view'
 
 export { clientAssets } from './assets'
-export type { PageState, Theme } from './state'
+export type { Dock, PageState, Theme } from './state'
 
 export interface ClientAssets {
   /** URL serving `clientAssets.script`. */
@@ -61,6 +61,8 @@ export interface RenderPageOptions extends RenderHtmlOptions {
 export interface RenderOverlayOptions extends RenderHtmlOptions {
   /** Mount minimised regardless of the user's remembered preference, which can otherwise only mount minimised, never expanded. */
   startMinimized?: boolean
+  /** Corner the minimised overlay, and the badge, dock to until the user moves them. Default `bottom-right`. */
+  dock?: Dock
   /** Custom element tag name. Default `my-bad-overlay`. */
   tag?: string
 }
@@ -167,6 +169,7 @@ function overlayState(options: RenderOverlayOptions): Omit<PageState, 'report'> 
   return {
     ...baseState(options, 'overlay'),
     startMinimized: options.startMinimized,
+    dock: options.dock,
     tag,
     styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n:host{all:initial;display:contents}`,
     stylesUrl: options.assets?.styles,
@@ -185,7 +188,7 @@ export function renderBadge(options: RenderBadgeOptions): string {
   const styles = options.assets?.styles ?? served.styles
   const badge = options.assets?.badge ?? served.badge
   const state: BadgeState = { overlay: overlayState({ ...options, startMinimized: options.startMinimized ?? true, assets: { script, styles } }), script }
-  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script src="${escapeHtml(badge)}"></script>`
+  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script defer src="${escapeHtml(badge)}"></script>`
 }
 
 /** Insert the overlay before `</body>`, or append it. Avoids `String.replace`, whose `$` patterns would corrupt the inlined script. */
