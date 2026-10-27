@@ -51,7 +51,7 @@ export function renderView(state: PageState, selected = 'r'): string {
   <nav class="mb-tools" aria-label="Error page tools">
     <ul>
       ${renderPager(report, state.history)}
-      <li><span class="mb-warning-count" data-warning-count hidden></span></li>
+      <li><span class="mb-warning-count" data-warning-count${attr('hidden', !warningCount(state.history))}>${warningLabel(state.history)}</span></li>
 
       <li><button class="mb-tool" type="button" data-action="theme" title="Toggle colour scheme" aria-label="Toggle colour scheme">${ICONS.theme}</button></li>
       ${state.mode === 'overlay' ? `<li><button class="mb-tool" type="button" data-action="minimize" title="Minimise (show the page behind)" aria-label="Minimise overlay and show the page behind">${ICONS.minimize}</button></li>` : ''}
@@ -68,6 +68,15 @@ export function renderView(state: PageState, selected = 'r'): string {
 ${live ? renderLogDrawer() : ''}
 ${report.sections.length ? renderInfoDialog(report.sections) : ''}
 <section class="mb-toasts" data-toasts aria-live="polite" aria-label="Warnings"></section>`
+}
+
+export function warningCount(history: HistoryEntry[] | undefined): number {
+  return history?.filter(entry => entry.kind === 'warning').length ?? 0
+}
+
+export function warningLabel(history: HistoryEntry[] | undefined): string {
+  const count = warningCount(history)
+  return count ? `${count} warning${count === 1 ? '' : 's'}` : ''
 }
 
 /** Position of the shown report in the history, falling back to the first entry when the history has dropped it. */

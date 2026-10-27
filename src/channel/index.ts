@@ -35,7 +35,7 @@ export interface CallerOptions {
 }
 
 export interface ChannelOptions {
-  /** Number of reports to keep. Default 20. */
+  /** Number of errors to keep. Default 20. Warnings are kept until retired, up to the 100 most recent. */
   history?: number
   /**
    * Handle "open in editor" requests. `true` uses the built-in `openInEditor`
@@ -70,7 +70,10 @@ export interface Channel {
   /** Publish the current error. Naming the request it came from (`requestId`, `METHOD /path?query`) sends it only to the pages that request concerns. */
   setError: (report: ErrorReport, requestId?: string, request?: string) => void
   clearError: (id?: string) => void
+  /** Publish a warning. It stays in the history until retired with `clearWarning`. */
   warn: (report: ErrorReport) => void
+  /** Retire the warning published with this report id, or every warning without one. Pages drop it from their count and toasts. */
+  clearWarning: (id?: string) => void
   /**
    * Publish a log entry. Naming the request it came from (`requestId`,
    * `METHOD /path?query`) sends it only to the pages that request concerns;
@@ -109,6 +112,7 @@ interface Client extends Viewer {
 }
 
 const PRIVILEGED = new Set(['open'])
+const MAX_WARNINGS = 100
 
 const SSE_HEADERS = {
   'content-type': 'text/event-stream',
@@ -149,10 +153,11 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     reports.delete(report.id)
     reports.set(report.id, report)
     origins.set(report.id, request)
-    while (reports.size > max) {
-      const oldest = reports.keys().next().value!
-      reports.delete(oldest)
-      origins.delete(oldest)
+    const warning = report.kind === 'warning'
+    const same = [...reports.values()].filter(entry => (entry.kind === 'warning') === warning)
+    for (const oldest of same.slice(0, Math.max(0, same.length - (warning ? MAX_WARNINGS : max)))) {
+      reports.delete(oldest.id)
+      origins.delete(oldest.id)
     }
     helloFrames.clear()
   }
@@ -413,6 +418,22 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       const warning = { ...report, kind: 'warning' as const }
       remember(warning)
       const event = (entries: HistoryEntry[]): ChannelEvent => ({ type: 'warning', payload: { report: warning, history: entries } })
+      sendScoped(event)
+      notify(event(history()))
+    },
+    clearWarning(id) {
+      const named = id === undefined ? undefined : reports.get(id)
+      if (named && named.kind !== 'warning') {
+        return
+      }
+      for (const report of [...reports.values()]) {
+        if (report.kind === 'warning' && (id === undefined || report.id === id)) {
+          reports.delete(report.id)
+          origins.delete(report.id)
+        }
+      }
+      helloFrames.clear()
+      const event = (entries: HistoryEntry[]): ChannelEvent => ({ type: 'warning:clear', payload: { ...(id !== undefined && { id }), history: entries } })
       sendScoped(event)
       notify(event(history()))
     },

@@ -201,7 +201,8 @@ await channel.handler(req, res, { trusted: isLoopback(req) })
 channel.setError(report) // pages swap content in place
 channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
 channel.clearError() // pages reload, overlays dismiss
-channel.warn(report) // toast
+channel.warn(report) // toast, and counted in the header until retired
+channel.clearWarning(report.id) // retire it: pages drop it from their count and toasts (no id retires every warning)
 channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer of trusted callers
 channel.log({ level: 'warn', text: 'careful' }, requestId, `${method} ${url}`) // also streamed to the pages that request concerns
 channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) // progress bar

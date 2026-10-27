@@ -4,7 +4,7 @@ import type { PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
-import { ICONS, pagerIndex, renderPager, renderToast, renderView, reportEntries } from '../view'
+import { ICONS, pagerIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -25,6 +25,8 @@ const actions = new Set<string>()
 
 interface Mount {
   state: PageState
+  /** The error to return to when a warning shown in its place is retired. */
+  error?: ErrorReport
   selected?: string
   /** Element that receives `data-theme`. */
   themeTarget: Element
@@ -104,7 +106,11 @@ function mount(): Mount | undefined {
   if (!root) {
     return
   }
-  return { state, themeTarget: document.documentElement, root }
+  return { state, error: errorOf(state.report), themeTarget: document.documentElement, root }
+}
+
+function errorOf(report: ErrorReport | undefined): ErrorReport | undefined {
+  return report?.kind === 'warning' ? undefined : report
 }
 
 function overlayMount(state: PageState, host: HTMLElement): Mount {
@@ -145,7 +151,7 @@ function overlayMount(state: PageState, host: HTMLElement): Mount {
   preview.innerHTML = `<button type="button" class="mb-preview-toggle" data-action="minimize" title="Show page behind this error" aria-label="Show page behind this error"><iframe class="mb-preview-frame" title="" aria-hidden="true" tabindex="-1" sandbox="" inert></iframe><span class="mb-preview-label">Show page</span></button><button type="button" class="mb-pip-button mb-preview-close" data-action="hide-preview" title="Hide page preview" aria-label="Hide page preview">${ICONS.close}</button>`
   overlay.append(expand, close, root, preview)
   shadow.append(...sheets, overlay, restore)
-  return { state, themeTarget: host, root, overlay, restore, preview }
+  return { state, error: errorOf(state.report), themeTarget: host, root, overlay, restore, preview }
 }
 
 function applyTheme(m: Mount): void {
@@ -209,7 +215,9 @@ function revive(m: Mount): void {
 }
 
 function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[]): void {
+  const error = m.error
   revive(m)
+  m.error = error
   m.selected = undefined
   m.state.report = report
   if (history) {
@@ -495,12 +503,8 @@ let previewDismissed = false
 
 const MAX_WARNINGS = 50
 const warnings = new Map<string, ErrorReport>()
-let warningCount = 0
 
 function showWarning(m: Mount, report: ErrorReport): void {
-  if (!warnings.has(report.id)) {
-    warningCount++
-  }
   warnings.delete(report.id)
   warnings.set(report.id, report)
   while (warnings.size > MAX_WARNINGS) {
@@ -517,12 +521,37 @@ function showWarning(m: Mount, report: ErrorReport): void {
   updateBadges(m)
 }
 
-/** Re-apply counters that the server-rendered markup emits in their empty state. */
+/** Drop a retired warning, or every warning without an id, and step back from it if it is on screen. */
+function retireWarning(m: Mount, id: string | undefined): void {
+  for (const toast of m.root.querySelectorAll<HTMLElement>('[data-toast]')) {
+    if (id === undefined || toast.dataset.toastId === id) {
+      toast.remove()
+    }
+  }
+  if (id === undefined) {
+    warnings.clear()
+  }
+  else {
+    warnings.delete(id)
+  }
+  const shown = m.state.report
+  if (shown.kind === 'warning' && (id === undefined || shown.id === id)) {
+    if (m.error) {
+      rerender(m, m.error)
+    }
+    else if (m.overlay) {
+      dismiss(m)
+    }
+  }
+  updatePager(m)
+  updateBadges(m)
+}
+
 function updateBadges(m: Mount): void {
   const count = m.root.querySelector<HTMLElement>('[data-warning-count]')
   if (count) {
-    count.textContent = `${warningCount} warning${warningCount === 1 ? '' : 's'}`
-    count.hidden = warningCount === 0
+    count.textContent = warningLabel(m.state.history)
+    count.hidden = warningCount(m.state.history) === 0
   }
   const badge = m.root.querySelector<HTMLElement>('[data-log-count]')
   if (badge) {
@@ -573,11 +602,16 @@ function connect(m: Mount): void {
     for (const action of payload.actions) {
       actions.add(action)
     }
+    if (payload.current) {
+      m.error = payload.current
+    }
     if (payload.current && payload.current.id !== m.state.report.id) {
       rerender(m, payload.current, payload.history)
     }
     else if (payload.history) {
       m.state.history = payload.history
+      updatePager(m)
+      updateBadges(m)
     }
   })
   on('history', (payload) => {
@@ -586,6 +620,7 @@ function connect(m: Mount): void {
   })
   on('error:set', (payload) => {
     previewDismissed = false
+    m.error = payload.report
     rerender(m, payload.report, payload.history)
     const bar = m.root.querySelector<HTMLElement>('[data-progress]')
     if (bar) {
@@ -596,13 +631,9 @@ function connect(m: Mount): void {
     }
   })
   on('error:clear', () => {
+    m.error = undefined
     if (m.overlay) {
-      const host = (m.overlay.getRootNode() as ShadowRoot | undefined)?.host
-      m.overlay.setAttribute('data-hidden', '')
-      setHostInert(m, false)
-      m.restore?.remove()
-      clearTimeout(dismissal)
-      dismissal = setTimeout(() => host?.remove(), 250)
+      dismiss(m)
     }
     else {
       source.close()
@@ -633,10 +664,24 @@ function connect(m: Mount): void {
     m.state.history = payload.history
     showWarning(m, payload.report)
   })
+  on('warning:clear', (payload) => {
+    m.state.history = payload.history
+    retireWarning(m, payload.id)
+  })
   on('log', payload => appendLog(m, payload))
 }
 
 /* Overlay chrome */
+
+/** Fade out and remove the overlay host; `revive` rebuilds it. */
+function dismiss(m: Mount): void {
+  const host = (m.overlay?.getRootNode() as ShadowRoot | undefined)?.host
+  m.overlay?.setAttribute('data-hidden', '')
+  setHostInert(m, false)
+  m.restore?.remove()
+  clearTimeout(dismissal)
+  dismissal = setTimeout(() => host?.remove(), 250)
+}
 
 function setMinimized(m: Mount, value: boolean, options: { persist?: boolean } = {}): void {
   const { persist = true } = options

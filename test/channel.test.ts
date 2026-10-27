@@ -137,6 +137,81 @@ describe('createChannel', () => {
     channel.close()
   })
 
+  it('retires a warning from the history and tells subscribers', async () => {
+    const sunk: unknown[] = []
+    const channel = createChannel({ sink: event => void sunk.push(event) })
+    const url = await listen(channel)
+    const error = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    const [first, second] = await Promise.all(['first', 'second'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false, kind: 'warning' })))
+    channel.setError(error)
+    channel.warn(first!)
+    channel.warn(second!)
+
+    const controller = new AbortController()
+    const received = readEvents(url, 3, controller.signal)
+    while (channel.clients === 0) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.clearWarning(first!.id)
+    channel.clearWarning()
+    const [hello, one, all] = await received
+    controller.abort()
+
+    expect(hello!.data.history.map((entry: { id: string }) => entry.id)).toEqual([error.id, first!.id, second!.id])
+    expect(one).toEqual({ event: 'warning:clear', data: { id: first!.id, history: [expect.objectContaining({ id: error.id }), expect.objectContaining({ id: second!.id })] } })
+    expect(all).toEqual({ event: 'warning:clear', data: { history: [expect.objectContaining({ id: error.id })] } })
+    expect(channel.history.map(entry => entry.id)).toEqual([error.id])
+    expect((await fetch(`${url}/history/${second!.id}`)).status).toBe(404)
+    expect(sunk.map(event => (event as { type: string }).type)).toEqual(['error:set', 'warning', 'warning', 'warning:clear', 'warning:clear'])
+  })
+
+  it('refuses to retire an error as a warning', async () => {
+    const channel = createChannel()
+    const error = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    channel.setError(error)
+    channel.clearWarning(error.id)
+    expect(channel.history.map(entry => entry.id)).toEqual([error.id])
+    channel.close()
+  })
+
+  it('keeps a live warning however many errors follow it, and caps warnings separately', async () => {
+    const channel = createChannel()
+    const live = await createReport(new Error('live warning'), { loaders: [], snippets: false })
+    channel.warn(live)
+    for (let index = 0; index < 25; index++) {
+      channel.setError(await createReport(new Error(`error ${index}`), { loaders: [], snippets: false }))
+    }
+    expect(channel.history.filter(entry => entry.kind === 'warning').map(entry => entry.id)).toEqual([live.id])
+    expect(channel.history.filter(entry => entry.kind !== 'warning').map(entry => entry.message)).toEqual(Array.from({ length: 20 }, (_, index) => `error ${index + 5}`))
+    expect(channel.getReport(live.id)).toBeDefined()
+
+    for (let index = 0; index < 100; index++) {
+      channel.warn(await createReport(new Error(`warning ${index}`), { loaders: [], snippets: false }))
+    }
+    const warnings = channel.history.filter(entry => entry.kind === 'warning')
+    expect(warnings).toHaveLength(100)
+    expect(warnings[0]!.message).toBe('warning 0')
+    expect(channel.history.filter(entry => entry.kind !== 'warning')).toHaveLength(20)
+    channel.close()
+  })
+
+  it('drops a retired warning from the hello of later subscribers', async () => {
+    const channel = createChannel()
+    const warning = await createReport(new Error('careful'), { loaders: [], snippets: false })
+    const hello = async (): Promise<any> => {
+      const res = await channel.fetchHandler(new Request('http://localhost/__my-bad/events'))
+      const reader = res!.body!.getReader()
+      const { value } = await reader.read()
+      await reader.cancel()
+      return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
+    }
+    channel.warn(warning)
+    expect((await hello()).history).toMatchObject([{ id: warning.id, kind: 'warning' }])
+    channel.clearWarning(warning.id)
+    expect((await hello()).history).toEqual([])
+    channel.close()
+  })
+
   it('announces the current error in hello only to the pages it concerns', async () => {
     const channel = createChannel()
     const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
