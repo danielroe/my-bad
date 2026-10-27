@@ -586,7 +586,9 @@ function connect(m: Mount): void {
     return
   }
   window.__MY_BAD_CLIENT__ = true
-  const source = new EventSource(eventsUrl(m))
+  const url = new URL(eventsUrl(m), location.href).href
+  const shared = window.__MY_BAD_SOURCE__
+  const source: EventTarget & { close: () => void } = shared && new URL(shared.url).pathname === new URL(url).pathname ? shared : new EventSource(url)
   source.addEventListener('open', () => setLive(m, true))
   source.addEventListener('error', () => setLive(m, false))
   const on = <T extends ChannelEvent['type']>(type: T, handler: (payload: Extract<ChannelEvent, { type: T }>['payload']) => void) => {
@@ -669,6 +671,18 @@ function connect(m: Mount): void {
     retireWarning(m, payload.id)
   })
   on('log', payload => appendLog(m, payload))
+  shared?.addEventListener('show', (event) => {
+    try {
+      const { report, history } = JSON.parse((event as MessageEvent).data) as { report: ErrorReport, history: HistoryEntry[] }
+      m.error = errorOf(report) ?? m.error
+      rerender(m, report, history)
+      setHidden(m, false)
+      setMinimized(m, false, { persist: false })
+    }
+    catch {}
+  })
+  shared?.dispatchEvent(new Event('attach'))
+  notifyBadge(m)
 }
 
 /* Overlay chrome */
@@ -681,6 +695,7 @@ function dismiss(m: Mount): void {
   m.restore?.remove()
   clearTimeout(dismissal)
   dismissal = setTimeout(() => host?.remove(), 250)
+  notifyBadge(m)
 }
 
 function setMinimized(m: Mount, value: boolean, options: { persist?: boolean } = {}): void {
@@ -773,6 +788,16 @@ function setHidden(m: Mount, value: boolean): void {
   session(hiddenKey(m.state.cwd), value ? '1' : '0')
   setHostInert(m, !value && !m.overlay.hasAttribute('data-minimized'))
   updatePreview(m)
+  notifyBadge(m)
+}
+
+/** With a badge on the page, the badge stands in for the restore button while the overlay is out of sight. */
+function notifyBadge(m: Mount): void {
+  const shared = window.__MY_BAD_SOURCE__
+  if (shared && m.restore) {
+    m.restore.hidden = true
+  }
+  shared?.dispatchEvent(new Event('overlay'))
 }
 
 function setDock(m: Mount, dock: Dock): void {
@@ -1138,5 +1163,10 @@ if (m) {
     markOverflowingSnippets(m)
     sizePreview(m)
   })
-  connect(m)
+  if (document.readyState === 'loading') {
+    addEventListener('DOMContentLoaded', () => connect(m), { once: true })
+  }
+  else {
+    connect(m)
+  }
 }

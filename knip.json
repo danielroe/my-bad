@@ -8,6 +8,7 @@
     ".": {
       "entry": [
         "src/render/html/client/main.ts",
+        "src/render/html/client/badge.ts",
         "scripts/*.ts",
         "playwright.config.ts",
         "test/visual/*.spec.ts"

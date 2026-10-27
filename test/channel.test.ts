@@ -4,9 +4,10 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createReport } from '../src'
+import { clientAssets, createReport } from '../src'
 import { createChannel } from '../src/channel'
 import { escapeCmdArg } from '../src/channel/open'
+import { assetUrls } from '../src/render/html/assets'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
@@ -255,6 +256,38 @@ describe('createChannel', () => {
     expect(await channel.fetchHandler(new Request('http://localhost/other'))).toBeUndefined()
     const missing = await channel.fetchHandler(new Request(`http://localhost/__my-bad/history/nope`))
     expect(missing?.status).toBe(404)
+    channel.close()
+  })
+})
+
+describe('client assets', () => {
+  it('serves the client script, stylesheet and badge under the channel base', async () => {
+    const channel = createChannel()
+    const url = await listen(channel)
+    for (const [file, type, body] of [['client.js', 'text/javascript', clientAssets.script], ['client.css', 'text/css', clientAssets.styles], ['badge.js', 'text/javascript', clientAssets.badge]] as const) {
+      const res = await fetch(`${url}/${file}`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toBe(`${type}; charset=utf-8`)
+      expect(res.headers.get('cache-control')).toBe('no-cache')
+      expect(await res.text()).toBe(body)
+    }
+    const current = await fetch(assetUrls(url).badge)
+    expect(current.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    const stale = await fetch(`${url}/badge.js?v=stale`)
+    expect(stale.headers.get('cache-control')).toBe('no-cache')
+    expect(await stale.text()).toBe(clientAssets.badge)
+    expect((await fetch(`${url}/client.js`, { method: 'POST' })).status).toBe(405)
+    expect((await fetch(`${url}/client.js`, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
+  })
+
+  it('serves them through the fetch handler, to untrusted callers too', async () => {
+    const channel = createChannel()
+    const res = await channel.fetchHandler(new Request('http://localhost/__my-bad/badge.js'), { trusted: false })
+    expect(res?.status).toBe(200)
+    expect(await res!.text()).toBe(clientAssets.badge)
+    const head = await channel.fetchHandler(new Request('http://localhost/__my-bad/client.css', { method: 'HEAD' }))
+    expect(head?.status).toBe(200)
+    expect(await head!.text()).toBe('')
     channel.close()
   })
 })

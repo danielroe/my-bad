@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createReport, injectOverlay, renderOverlay, renderPage, toMarkdown } from '../src'
+import { createReport, injectOverlay, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
 
 async function report() {
   const error = Object.assign(new Error('Something <broke>'), { code: 'E1001' })
@@ -102,6 +102,37 @@ describe('renderOverlay', () => {
 
   it('rejects invalid tag names', async () => {
     await expect(async () => renderOverlay(await report(), { tag: 'div' })).rejects.toThrow()
+  })
+})
+
+describe('renderBadge', () => {
+  it('embeds the overlay it expands into, short of a report, loading everything from the channel', () => {
+    const html = renderBadge({ channel: '/__my-bad', cwd: '/proj', requestId: 'r1', tag: 'nuxt-error-overlay', theme: { accent: '#00dc82' } })
+    const state = JSON.parse(stateJson(html))
+    expect(state).toMatchObject({
+      script: expect.stringMatching(/^\/__my-bad\/client\.js\?v=\w+$/),
+      overlay: { mode: 'overlay', channel: '/__my-bad', cwd: '/proj', requestId: 'r1', tag: 'nuxt-error-overlay', stylesUrl: expect.stringMatching(/^\/__my-bad\/client\.css\?v=\w+$/) },
+    })
+    expect(state.overlay.report).toBeUndefined()
+    expect(state.overlay.startMinimized).toBe(true)
+    expect(JSON.parse(stateJson(renderBadge({ channel: '/__my-bad', startMinimized: false }))).overlay.startMinimized).toBe(false)
+    expect(state.overlay.styles).toContain('--mb-accent:#00dc82')
+    expect(state.overlay.styles).not.toContain('.mb-root')
+    expect(html).not.toContain('<nuxt-error-overlay')
+    expect(html).toMatch(/<script src="\/__my-bad\/badge\.js\?v=\w+"><\/script>$/)
+    expect(html.length).toBeLessThan(1000)
+  })
+
+  it('takes asset URLs that override the channel ones', () => {
+    const html = renderBadge({ channel: '/__my-bad', assets: { script: '/assets/client.js', badge: '/assets/badge.js' } })
+    const state = JSON.parse(stateJson(html))
+    expect(state.script).toBe('/assets/client.js')
+    expect(state.overlay.stylesUrl).toMatch(/^\/__my-bad\/client\.css\?v=/)
+    expect(html).toContain('<script src="/assets/badge.js"></script>')
+  })
+
+  it('rejects invalid tag names', () => {
+    expect(() => renderBadge({ channel: '/__my-bad', tag: 'div' })).toThrow()
   })
 })
 

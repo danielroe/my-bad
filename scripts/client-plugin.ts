@@ -5,20 +5,23 @@ import { build } from 'vite'
 const root = fileURLToPath(new URL('../src/render/html/', import.meta.url))
 
 const VIRTUAL_ID = 'virtual:my-bad-client'
+const BADGE_STYLES_ID = 'virtual:my-bad-badge-styles'
 
 export interface ClientPluginOptions {
   /**
-   * Write the client bundle and stylesheet as `client.js` / `client.css` next to
-   * the output and read them on first use, instead of embedding them as string
-   * literals that every importer must parse. Default `false`.
+   * Write the client bundles and stylesheet as `client.js` / `client.css` /
+   * `badge.js` next to the output and read them on first use, instead of
+   * embedding them as string literals that every importer must parse.
+   * Default `false`.
    */
   emit?: boolean
 }
 
 /**
- * Bundles `src/render/html/client/main.ts` into a self-contained IIFE and exposes
- * it (and the stylesheet) through `getClientScript` / `getClientStyles` exports
- * of `virtual:my-bad-client`.
+ * Bundles `src/render/html/client/main.ts` and `client/badge.ts` into
+ * self-contained IIFEs and exposes them (and the stylesheet) through
+ * `getClientScript` / `getClientStyles` / `getBadgeScript` exports of
+ * `virtual:my-bad-client`.
  */
 export function clientPlugin(options: ClientPluginOptions = {}) {
   return {
@@ -30,25 +33,27 @@ export function clientPlugin(options: ClientPluginOptions = {}) {
       if (id !== `\0${VIRTUAL_ID}`) {
         return
       }
-      const [script, styles] = await Promise.all([bundleClient(), bundleStyles()])
+      const [script, styles, badge] = await Promise.all([
+        bundleClient('main.ts'),
+        bundleStyles('styles.css'),
+        bundleStyles('badge.css').then(css => bundleClient('badge.ts', css)),
+      ])
+      const assets = { getClientScript: ['client.js', script], getClientStyles: ['client.css', styles], getBadgeScript: ['badge.js', badge] }
       if (!options.emit) {
-        return `export const getClientScript = () => ${JSON.stringify(script)}\nexport const getClientStyles = () => ${JSON.stringify(styles)}\n`
+        return Object.entries(assets).map(([name, [, source]]) => `export const ${name} = () => ${JSON.stringify(source)}\n`).join('')
       }
-      this.emitFile({ type: 'asset', fileName: 'client.js', source: script })
-      this.emitFile({ type: 'asset', fileName: 'client.css', source: styles })
-      return [
-        `import { readFileSync } from 'node:fs'`,
-        `let script, styles`,
-        `export const getClientScript = () => script ??= readFileSync(new URL('./client.js', import.meta.url), 'utf8')`,
-        `export const getClientStyles = () => styles ??= readFileSync(new URL('./client.css', import.meta.url), 'utf8')`,
-        '',
-      ].join('\n')
+      const lines = [`import { readFileSync } from 'node:fs'`]
+      for (const [name, [fileName, source]] of Object.entries(assets)) {
+        this.emitFile({ type: 'asset', fileName: fileName!, source: source! })
+        lines.push(`let ${name}Cache`, `export const ${name} = () => ${name}Cache ??= readFileSync(new URL('./${fileName}', import.meta.url), 'utf8')`)
+      }
+      return `${lines.join('\n')}\n`
     },
   }
 }
 
-/** Minify the stylesheet, which is inlined into every rendered page. */
-async function bundleStyles(): Promise<string> {
+/** Minify a stylesheet, since it is inlined into pages and scripts. */
+async function bundleStyles(file: string): Promise<string> {
   const result = await build({
     configFile: false,
     logLevel: 'silent',
@@ -60,22 +65,28 @@ async function bundleStyles(): Promise<string> {
       // newer than the rest of the stylesheet needs and puts a bare `<` in the
       // inlined `<style>` block.
       target: 'safari15',
-      rollupOptions: { input: `${root}styles.css` },
+      rollupOptions: { input: `${root}${file}` },
     },
   })
   const outputs = Array.isArray(result) ? result.flatMap(chunk => chunk.output) : 'output' in result ? result.output : []
   const css = outputs.find(output => output.fileName.endsWith('.css'))
   if (!css || css.type !== 'asset' || typeof css.source !== 'string') {
-    throw new Error('Failed to minify styles.css')
+    throw new Error(`Failed to minify ${file}`)
   }
   return css.source
 }
 
-async function bundleClient(): Promise<string> {
+/** `styles` is the default export of `virtual:my-bad-badge-styles` inside the bundle. */
+async function bundleClient(entry: string, styles = ''): Promise<string> {
   const bundle = await rolldown({
-    input: `${root}client/main.ts`,
+    input: `${root}client/${entry}`,
     platform: 'browser',
     logLevel: 'silent',
+    plugins: [{
+      name: 'my-bad:badge-styles',
+      resolveId: id => id === BADGE_STYLES_ID ? `\0${BADGE_STYLES_ID}` : undefined,
+      load: id => id === `\0${BADGE_STYLES_ID}` ? `export default ${JSON.stringify(styles)}` : undefined,
+    }],
   })
   try {
     const { output } = await bundle.generate({ format: 'iife', minify: true, sourcemap: false })

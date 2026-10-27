@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createReport, renderOverlay, renderPage } from '../src'
+import { clientAssets, createReport, renderBadge, renderOverlay, renderPage } from '../src'
 import { nuxtTheme } from '../src/presets'
 
 /**
@@ -450,4 +450,42 @@ describe('minimised overlay and layered escape', () => {
     expect(state).toMatch(/^[\x00-\x7F]*$/)
     expect(JSON.parse(state).report.message).toBe('naïve — ›')
   })
+})
+
+describe.each(themes)('badge, theme: $name', (theme) => {
+  async function openBadge(): Promise<Page> {
+    const context = await browser.newContext({ colorScheme: theme.scheme, viewport: { width: 1280, height: 900 } })
+    const page = await context.newPage()
+    const hello = { version: '0', actions: [], history: [{ id: 'w', kind: 'warning', name: 'NUXT_B4025', message: 'Extraneous attribute on <Widget>', timestamp: 0 }] }
+    await page.route('http://a11y.test/**', (route) => {
+      const url = route.request().url()
+      if (url.includes('/__my-bad/events')) {
+        return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: `event: hello\ndata: ${JSON.stringify(hello)}\n\nevent: warning\ndata: ${JSON.stringify({ report: { ...hello.history[0], frames: [], causes: [], sections: [] }, history: hello.history })}\n\n` })
+      }
+      if (url.includes('/__my-bad/badge.js')) {
+        return route.fulfill({ status: 200, contentType: 'text/javascript', body: clientAssets.badge })
+      }
+      return route.fulfill({ status: 200, contentType: 'text/html', body: `<!DOCTYPE html><html lang="en"><head><title>Host</title></head><body><main><h1>Host page</h1></main>${renderBadge({ channel: '/__my-bad', theme: theme.theme ? { ...theme.theme, scheme: theme.scheme } : { scheme: theme.scheme } })}</body></html>` })
+    })
+    await page.goto('http://a11y.test/')
+    await page.locator('my-bad-overlay-badge .mb-badge-latest:not(:empty)').waitFor()
+    return page
+  }
+
+  it('meets contrast and target size minimums with no serious axe violations', async () => {
+    const page = await openBadge()
+    const samples = (await sampleContrast(page)).filter(sample => sample.selector.includes('mb-badge'))
+    expect(samples.length).toBeGreaterThan(2)
+    const failures = samples.filter(sample => sample.role === 'text' ? sample.ratio < 4.5 || sample.fontSize < 12 : sample.ratio < 3)
+    expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
+    const size = await page.locator('my-bad-overlay-badge .mb-badge').boundingBox()
+    expect(size!.height).toBeGreaterThanOrEqual(24)
+    await page.addScriptTag({ content: axeSource })
+    const results = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (context: unknown, options: unknown) => Promise<{ violations: Array<{ id: string, impact: string }> }> } }).axe
+      return axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] } })
+    })
+    expect(results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')).toEqual([])
+    await page.context().close()
+  }, 30_000)
 })

@@ -1,25 +1,14 @@
 import type { ErrorReport, HistoryEntry } from '../../types'
-import type { PageState, Theme } from './state'
+import type { BadgeState, PageState, Theme } from './state'
 import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
 import { clampMessage } from '../../report/message'
+import { assetUrls } from './assets'
 import { escapeHtml, escapeScript } from './escape'
 import { THEME_STORAGE_KEY } from './state'
 import { renderView } from './view'
 
+export { clientAssets } from './assets'
 export type { PageState, Theme } from './state'
-
-/**
- * The client script and stylesheet that `renderPage` and `renderOverlay` inline
- * by default, for serving them yourself and passing the URLs as `assets`.
- */
-export const clientAssets: { script: string, styles: string } = {
-  get script() {
-    return getClientScript()
-  },
-  get styles() {
-    return getClientStyles()
-  },
-}
 
 export interface ClientAssets {
   /** URL serving `clientAssets.script`. */
@@ -76,7 +65,20 @@ export interface RenderOverlayOptions extends RenderHtmlOptions {
   tag?: string
 }
 
+export interface RenderBadgeOptions extends Omit<RenderOverlayOptions, 'assets' | 'channel' | 'history' | 'rawStack'> {
+  /** Base path of the live channel, e.g. `/__my-bad`. */
+  channel: string
+  /**
+   * URLs serving `clientAssets`, instead of the ones the channel serves. The
+   * overlay script and stylesheet load only once the overlay is needed.
+   */
+  assets?: ClientAssets & { badge?: string }
+  /** Mount the overlay for an error minimised, regardless of the user's remembered preference. Default `true`. */
+  startMinimized?: boolean
+}
+
 const CSS_VAR_RE = /^--[\w-]+$/
+const TAG_RE = /^[a-z][a-z0-9]*-[a-z0-9-]+$/
 
 /** Theme overrides, with custom property names and values validated. */
 function themeStyles(theme: Theme | undefined, selector: string): string {
@@ -110,11 +112,10 @@ function stateScript(state: PageState, options: RenderHtmlOptions): string {
   return `<script type="application/json">${escapeScript(json)}</script>\n${script}`
 }
 
-function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageState['mode']): PageState {
+function baseState(options: RenderHtmlOptions, mode: PageState['mode']): Omit<PageState, 'report'> {
   return {
     mode,
     environment: options.environment,
-    report,
     cwd: options.cwd,
     channel: options.channel,
     history: options.history,
@@ -128,7 +129,7 @@ function baseState(report: ErrorReport, options: RenderHtmlOptions, mode: PageSt
 
 /** Render a complete HTML document for the report. */
 export function renderPage(report: ErrorReport, options: RenderPageOptions = {}): string {
-  const state = baseState(report, options, 'page')
+  const state = { ...baseState(options, 'page'), report }
   const title = options.title ?? `${report.name}: ${clampMessage(report.message.split('\n')[0] ?? '', options.maxMessageLength).head}`
   const scheme = options.theme?.scheme
   return `<!DOCTYPE html>
@@ -154,18 +155,37 @@ ${options.inject ?? ''}
  * The overlay renders inside a shadow root, so host styles cannot leak in.
  */
 export function renderOverlay(report: ErrorReport, options: RenderOverlayOptions = {}): string {
+  const state: PageState = { ...overlayState(options), report }
+  return `<${state.tag}></${state.tag}>\n${stateScript(state, options)}`
+}
+
+function overlayState(options: RenderOverlayOptions): Omit<PageState, 'report'> {
   const tag = options.tag ?? 'my-bad-overlay'
-  if (!/^[a-z][a-z0-9]*-[a-z0-9-]+$/.test(tag)) {
+  if (!TAG_RE.test(tag)) {
     throw new Error(`Invalid custom element name: ${tag}`)
   }
-  const state: PageState = {
-    ...baseState(report, options, 'overlay'),
+  return {
+    ...baseState(options, 'overlay'),
     startMinimized: options.startMinimized,
     tag,
     styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n:host{all:initial;display:contents}`,
     stylesUrl: options.assets?.styles,
   }
-  return `<${tag}></${tag}>\n${stateScript(state, options)}`
+}
+
+/**
+ * Render the badge for every dev page, anywhere in the page. It loads from the
+ * channel and renders nothing until something concerns the page: an error
+ * mounts the overlay, and warnings show a small count that expands into it.
+ * It dispatches `my-bad:error:clear` on `window` when the page's error clears.
+ */
+export function renderBadge(options: RenderBadgeOptions): string {
+  const served = assetUrls(options.channel)
+  const script = options.assets?.script ?? served.script
+  const styles = options.assets?.styles ?? served.styles
+  const badge = options.assets?.badge ?? served.badge
+  const state: BadgeState = { overlay: overlayState({ ...options, startMinimized: options.startMinimized ?? true, assets: { script, styles } }), script }
+  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script src="${escapeHtml(badge)}"></script>`
 }
 
 /** Insert the overlay before `</body>`, or append it. Avoids `String.replace`, whose `$` patterns would corrupt the inlined script. */
