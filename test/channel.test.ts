@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { clientAssets, createReport } from '../src'
 import { createChannel } from '../src/channel'
 import { escapeCmdArg } from '../src/channel/open'
+import { assetUrls } from '../src/render/html/assets'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
@@ -270,8 +271,11 @@ describe('client assets', () => {
       expect(res.headers.get('cache-control')).toBe('no-cache')
       expect(await res.text()).toBe(body)
     }
-    const hashed = await fetch(`${url}/badge.js?v=abc`)
-    expect(hashed.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    const current = await fetch(assetUrls(url).badge)
+    expect(current.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    const stale = await fetch(`${url}/badge.js?v=stale`)
+    expect(stale.headers.get('cache-control')).toBe('no-cache')
+    expect(await stale.text()).toBe(clientAssets.badge)
     expect((await fetch(`${url}/client.js`, { method: 'POST' })).status).toBe(405)
     expect((await fetch(`${url}/client.js`, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
   })

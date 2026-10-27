@@ -27,16 +27,17 @@ export const ASSET_FILES: Record<'script' | 'styles' | 'badge', readonly [file: 
 
 const hashes = new Map<string, string>()
 
+export function assetHash(key: keyof typeof ASSET_FILES): string {
+  let hash = hashes.get(key)
+  if (!hash) {
+    hash = fnv1a64Base36(ASSET_FILES[key][2]())
+    hashes.set(key, hash)
+  }
+  return hash
+}
+
 /** Content-hashed URLs of the assets under `base`, so they can be cached indefinitely. */
 export function assetUrls(base: string): { script: string, styles: string, badge: string } {
-  const url = (key: keyof typeof ASSET_FILES) => {
-    const [file, , source] = ASSET_FILES[key]
-    let hash = hashes.get(key)
-    if (!hash) {
-      hash = fnv1a64Base36(source())
-      hashes.set(key, hash)
-    }
-    return `${base}/${file}?v=${hash}`
-  }
+  const url = (key: keyof typeof ASSET_FILES) => `${base}/${ASSET_FILES[key][0]}?v=${assetHash(key)}`
   return { script: url('script'), styles: url('styles'), badge: url('badge') }
 }

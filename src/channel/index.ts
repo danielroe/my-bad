@@ -6,7 +6,7 @@ import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { json } from 'node:stream/consumers'
-import { ASSET_FILES } from '../render/html/assets'
+import { ASSET_FILES, assetHash } from '../render/html/assets'
 import { openInEditor } from './open'
 import { isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
 import { toHistoryEntry } from './protocol'
@@ -307,13 +307,13 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store' }
 
-  /** A `?v=` URL names one build of the asset, so it can be cached for good. */
+  /** Only the current build's `?v=` hash is cached for good; any other URL gets the current build uncached. */
   function assetResponse(key: keyof typeof ASSET_FILES, method: string | undefined, url: URL): { status: number, headers?: Record<string, string>, body?: string } {
     if (method !== 'GET' && method !== 'HEAD') {
       return { status: 405 }
     }
     const [, type, source] = ASSET_FILES[key]
-    const headers = { 'content-type': `${type}; charset=utf-8`, 'cache-control': url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'no-cache' }
+    const headers = { 'content-type': `${type}; charset=utf-8`, 'cache-control': url.searchParams.get('v') === assetHash(key) ? 'public, max-age=31536000, immutable' : 'no-cache' }
     return { status: 200, headers, body: method === 'HEAD' ? undefined : source() }
   }
 
