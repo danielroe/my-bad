@@ -54,7 +54,7 @@ describe('renderAnsi', () => {
           25 │   throw new Error('unreachable')
 
         at Module.withCause src/thrower.ts:23:11
-        at async main run.mjs:16:5
+        at async main run.mjs:23:5
 
         Caused by: TypeError: Widget needs a name
 
@@ -69,7 +69,7 @@ describe('renderAnsi', () => {
           at makeWidget src/thrower.ts:10:10
           at loadWidget src/thrower.ts:15:10
           at async Module.withCause src/thrower.ts:20:5
-          at async main run.mjs:16:5"
+          at async main run.mjs:23:5"
     `)
     expect(styleAt(0, 0)).toMatchObject({ foreground: 1 })
     expect(styleAt(0, 2)).toMatchObject({ foreground: 1, bold: true })
