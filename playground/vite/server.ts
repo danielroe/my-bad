@@ -26,8 +26,14 @@ const ssrRoute: Plugin = {
 const server = await createServer({
   root: import.meta.dirname,
   configFile: false,
-  plugins: [myBad(), ssrRoute],
-  server: { port: 4322, host: process.argv.includes('--host') },
+  plugins: [
+    myBad(),
+    ssrRoute,
+  ],
+  server: {
+    port: 4322,
+    host: process.argv.includes('--host'),
+  },
 })
 
 await server.listen()

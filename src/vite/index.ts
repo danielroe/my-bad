@@ -59,7 +59,9 @@ const CLIENT_URL = `/@id/__x00__${CLIENT_ID}`
 
 /** Import the client that ships next to this module by absolute path, so the project never resolves `my-bad` itself. */
 function clientSource(): string {
-  const file = fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './client.ts' : './client.mjs', import.meta.url))
+  const file = fileURLToPath(new URL(import.meta.url.endsWith('.ts')
+    ? './client.ts'
+    : './client.mjs', import.meta.url))
   return `import { installMyBadClient } from ${JSON.stringify(`/@fs/${file.replace(/^\//, '')}`)}\ninstallMyBadClient(import.meta.hot)\n`
 }
 
@@ -75,7 +77,11 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
 
     config() {
       if (live && options.replaceOverlay !== false) {
-        return { server: { hmr: { overlay: false } } }
+        return {
+          server: {
+            hmr: { overlay: false },
+          },
+        }
       }
     },
 
@@ -84,16 +90,25 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
       const channel = createChannel({
         root: devServer.config.server.fs.allow,
         allowedHosts: devServer.config.server.allowedHosts,
-        ...(typeof options.channel === 'object' ? options.channel : { open: true }),
+        ...(typeof options.channel === 'object'
+          ? options.channel
+          : { open: true }),
       })
       const cwd = options.report?.cwd ?? devServer.config.root
-      const loaders = [viteLoader(devServer), fsLoader()]
+      const loaders = [
+        viteLoader(devServer),
+        fsLoader(),
+      ]
       const presets = options.presets ?? []
-      const assets = options.inlineClient ? undefined : assetUrls(base)
+      const assets = options.inlineClient
+        ? undefined
+        : assetUrls(base)
 
       const hots = (): HotChannel[] => {
         const environments = (devServer as unknown as { environments?: Record<string, { hot: HotChannel }> }).environments
-        return environments ? Object.values(environments).map(env => env.hot) : [devServer.ws as unknown as HotChannel]
+        return environments
+          ? Object.values(environments).map(env => env.hot)
+          : [devServer.ws as unknown as HotChannel]
       }
 
       /** An error raised while the page loads predates the HMR socket, so replay the latest overlay to each new client. */
@@ -115,14 +130,40 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
         channel,
         base,
         loaders,
-        report: (error, reportOptions) => createReport(error, { cwd, loaders, presets, ...options.report, ...reportOptions }),
-        page: (report, pageOptions) => renderPage(report, { cwd, channel: live ? base : undefined, history: channel.history, assets, ...pageOptions }),
-        overlay: (report, overlayOptions) => renderOverlay(report, { cwd, channel: live ? base : undefined, history: channel.history, assets, ...options.overlay, ...overlayOptions }),
+        report: (error, reportOptions) => createReport(error, {
+          cwd,
+          loaders,
+          presets,
+          ...options.report,
+          ...reportOptions,
+        }),
+        page: (report, pageOptions) => renderPage(report, {
+          cwd,
+          channel: live ? base : undefined,
+          history: channel.history,
+          assets,
+          ...pageOptions,
+        }),
+        overlay: (report, overlayOptions) => renderOverlay(report, {
+          cwd,
+          channel: live ? base : undefined,
+          history: channel.history,
+          assets,
+          ...options.overlay,
+          ...overlayOptions,
+        }),
         async emit(error, reportOptions) {
           const report = await ctx!.report(error, reportOptions)
           channel.setError(report)
           if (live) {
-            pending = { type: 'custom', event: 'my-bad:error', data: { id: report.id, html: ctx!.overlay(report) } }
+            pending = {
+              type: 'custom',
+              event: 'my-bad:error',
+              data: {
+                id: report.id,
+                html: ctx!.overlay(report),
+              },
+            }
             broadcast(pending)
           }
           return report
@@ -131,7 +172,11 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
           channel.clearError(id)
           pending = undefined
           if (live) {
-            broadcast({ type: 'custom', event: 'my-bad:clear', data: { id } })
+            broadcast({
+              type: 'custom',
+              event: 'my-bad:clear',
+              data: { id },
+            })
           }
         },
       }
@@ -203,7 +248,13 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
       if (!live || !server) {
         return
       }
-      return [{ tag: 'script', attrs: { type: 'module', src: CLIENT_URL }, injectTo: 'head' }]
+      return [
+        {
+          tag: 'script',
+          attrs: { type: 'module', src: CLIENT_URL },
+          injectTo: 'head',
+        },
+      ]
     },
   }
 }

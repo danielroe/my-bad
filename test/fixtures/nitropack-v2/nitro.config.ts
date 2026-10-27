@@ -10,5 +10,7 @@ export default defineNitroConfig({
     'my-bad/presets': fileURLToPath(new URL('presets/index.mjs', dist)),
     'my-bad': fileURLToPath(new URL('index.mjs', dist)),
   },
-  errorHandler: process.env.MY_BAD_DEFAULT_HANDLER ? undefined : fileURLToPath(new URL('./error.ts', import.meta.url)),
+  errorHandler: process.env.MY_BAD_DEFAULT_HANDLER
+    ? undefined
+    : fileURLToPath(new URL('./error.ts', import.meta.url)),
 })

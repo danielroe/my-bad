@@ -11,7 +11,9 @@ const UNSAFE_GLOBAL_RE = /[&<>"']/g
 
 export function escapeHtml(value: unknown): string {
   const text = String(value)
-  return UNSAFE_RE.test(text) ? text.replace(UNSAFE_GLOBAL_RE, char => ESCAPES[char]!) : text
+  return UNSAFE_RE.test(text)
+    ? text.replace(UNSAFE_GLOBAL_RE, char => ESCAPES[char]!)
+    : text
 }
 
 /**
@@ -31,9 +33,13 @@ export function safeUrl(value: string | undefined): string | undefined {
   // eslint-disable-next-line no-control-regex
   const url = value.replace(/[\u0000-\u0020\u007F]/g, '')
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url)?.[1]?.toLowerCase()
-  return !scheme || scheme === 'http' || scheme === 'https' || scheme === 'mailto' ? value : undefined
+  return !scheme || scheme === 'http' || scheme === 'https' || scheme === 'mailto'
+    ? value
+    : undefined
 }
 
 export function attr(name: string, value: unknown): string {
-  return value === undefined || value === null || value === false ? '' : ` ${name}="${escapeHtml(value)}"`
+  return value === undefined || value === null || value === false
+    ? ''
+    : ` ${name}="${escapeHtml(value)}"`
 }

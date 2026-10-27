@@ -30,7 +30,9 @@ interface RawMap {
  * `sourceRoot`, which the top-level resolution never sees.
  */
 function sectionRoot(map: RawMap, parent: string): string {
-  return map.sourceRoot ? `${parent}${map.sourceRoot.replace(/\/?$/, '/')}` : parent
+  return map.sourceRoot
+    ? `${parent}${map.sourceRoot.replace(/\/?$/, '/')}`
+    : parent
 }
 
 const BASE64 = new Int8Array(128).fill(-1)
@@ -69,7 +71,9 @@ function decodeMappings(mappings: string, raw: RawMap, root: string): SourceMapE
         value += (digit & 31) << shift
         shift += 5
       } while (digit & 32)
-      const next = (state[field] ?? 0) + (value & 1 ? -(value >>> 1) : value >>> 1)
+      const next = (state[field] ?? 0) + (value & 1
+        ? -(value >>> 1)
+        : value >>> 1)
       state[field] = next
       fields.push(next)
       field++
@@ -77,7 +81,11 @@ function decodeMappings(mappings: string, raw: RawMap, root: string): SourceMapE
     const entry: SourceMapEntry = { generatedLine: line, generatedColumn: fields[0]! }
     if (fields.length >= 4) {
       const source = raw.sources?.[fields[1]!]
-      entry.originalSource = typeof source === 'string' ? (root ? `${root}${source}` : source) : undefined
+      entry.originalSource = typeof source === 'string'
+        ? (root
+            ? `${root}${source}`
+            : source)
+        : undefined
       entry.originalLine = fields[2]
       entry.originalColumn = fields[3]
     }
@@ -93,7 +101,9 @@ function decodeEntries(raw: RawMap, root = ''): SourceMapEntry[] {
   return raw.sections.flatMap(({ offset, map }) => decodeEntries(map, sectionRoot(map, root)).map(entry => ({
     ...entry,
     generatedLine: entry.generatedLine + offset.line,
-    generatedColumn: entry.generatedColumn + (entry.generatedLine === 0 ? offset.column : 0),
+    generatedColumn: entry.generatedColumn + (entry.generatedLine === 0
+      ? offset.column
+      : 0),
   })))
 }
 
@@ -129,7 +139,10 @@ function collectSources(raw: RawMap, root: string, into: Sources): Sources {
 export function decodeSourceMap(raw: RawMap): SourceMapLookup {
   const entries = decodeEntries(raw).sort((a, b) => a.generatedLine - b.generatedLine || a.generatedColumn - b.generatedColumn)
   let sources: Sources | undefined
-  const collected = () => sources ??= collectSources(raw, '', { contents: new Map(), ignored: new Set() })
+  const collected = () => sources ??= collectSources(raw, '', {
+    contents: new Map(),
+    ignored: new Set(),
+  })
   return {
     sourceContent: source => collected().contents.get(source),
     ignoredSource: source => collected().ignored.has(source),

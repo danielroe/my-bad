@@ -16,8 +16,14 @@ export function toMarkdown(report: ErrorReport, options: MarkdownOptions = {}): 
 function render(report: ErrorReport, options: MarkdownOptions, level: number): string[] {
   const h = '#'.repeat(Math.min(level, 6))
   const out: string[] = []
-  const label = report.kind === 'warning' ? 'Warning' : report.kind === 'compile' ? 'Compile error' : 'Error'
-  out.push(`${h} ${label}: ${report.name}${report.code && report.code !== report.name ? ` [${report.code}]` : ''}`, '')
+  const label = report.kind === 'warning'
+    ? 'Warning'
+    : report.kind === 'compile'
+      ? 'Compile error'
+      : 'Error'
+  out.push(`${h} ${label}: ${report.name}${report.code && report.code !== report.name
+    ? ` [${report.code}]`
+    : ''}`, '')
   out.push('```', report.message, '```', '')
   if (report.hint) {
     out.push(`> ${report.hint}`, '')
@@ -91,13 +97,23 @@ function snippetBlock(snippet: NonNullable<Frame['snippet']>, line: number | und
   const out = [`\`\`\`${snippet.lang ?? ''}`]
   for (const [index, text] of snippet.lines.entries()) {
     const n = snippet.start + index
-    out.push(`${n === line ? '>' : ' '} ${String(n).padStart(String(snippet.start + snippet.lines.length).length)} | ${text}`)
+    out.push(`${n === line
+      ? '>'
+      : ' '} ${String(n).padStart(String(snippet.start + snippet.lines.length).length)} | ${text}`)
   }
   out.push('```', '')
   return out
 }
 
 function loc(frame: { file?: string, line?: number, column?: number, raw?: string }, options: MarkdownOptions): string {
-  const file = frame.file ? (options.cwd ? relativeToCwd(frame.file, options.cwd) : frame.file) : (frame.raw?.trim() ?? '<anonymous>')
-  return `${file}${frame.line !== undefined ? `:${frame.line}` : ''}${frame.column !== undefined ? `:${frame.column}` : ''}`
+  const file = frame.file
+    ? (options.cwd
+        ? relativeToCwd(frame.file, options.cwd)
+        : frame.file)
+    : (frame.raw?.trim() ?? '<anonymous>')
+  return `${file}${frame.line !== undefined
+    ? `:${frame.line}`
+    : ''}${frame.column !== undefined
+    ? `:${frame.column}`
+    : ''}`
 }

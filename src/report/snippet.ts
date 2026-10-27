@@ -18,11 +18,18 @@ export function extractSnippet(contents: string, line: number, context: number, 
   if (ranges.length <= line - start) {
     return
   }
-  const lang = file ? langFromFile(file) : undefined
+  const lang = file
+    ? langFromFile(file)
+    : undefined
   const max = bounds.maxLineLength ?? Infinity
   if (ranges.some(([from, to]) => to - from > max)) {
     const offset = windowStart(bounds.column, max)
-    return { start, lines: ranges.map(([from, to]) => cropRange(contents, from, to, offset, max)), lang, offset }
+    return {
+      start,
+      lines: ranges.map(([from, to]) => cropRange(contents, from, to, offset, max)),
+      lang,
+      offset,
+    }
   }
   const continues = continuationAt(contents, ranges[0]![0], lang)
   return {
@@ -40,13 +47,21 @@ export function cropSnippet(snippet: Snippet, column: number | undefined, max: n
   }
   const offset = windowStart(column, max)
   const { tokens: _, ...rest } = snippet
-  return { ...rest, lines: snippet.lines.map(text => cropRange(text, 0, text.length, offset, max)), offset }
+  return {
+    ...rest,
+    lines: snippet.lines.map(text => cropRange(text, 0, text.length, offset, max)),
+    offset,
+  }
 }
 
 /** Where a window of `max` characters starts so that `column` stays clear of its edges. */
 function windowStart(column: number | undefined, max: number): number {
-  const index = column === undefined || !Number.isFinite(column) ? 0 : Math.max(0, Math.floor(column) - 1)
-  return index < max - Math.floor(max / 4) ? 0 : index - Math.floor(max / 2)
+  const index = column === undefined || !Number.isFinite(column)
+    ? 0
+    : Math.max(0, Math.floor(column) - 1)
+  return index < max - Math.floor(max / 4)
+    ? 0
+    : index - Math.floor(max / 2)
 }
 
 function isHighSurrogate(code: number): boolean {
@@ -68,16 +83,26 @@ function cropRange(text: string, from: number, to: number, offset: number, max: 
     return text.slice(from, to)
   }
   if (length <= offset) {
-    return length > 0 ? '…' : ''
+    return length > 0
+      ? '…'
+      : ''
   }
   const end = Math.min(to, from + offset + max)
   let out = text.slice(from + offset, end)
   if (offset > 0) {
-    out = `…${isLowSurrogate(out.charCodeAt(1)) ? '\uFFFD' : ''}${out.slice(isLowSurrogate(out.charCodeAt(1)) ? 2 : 1)}`
+    out = `…${isLowSurrogate(out.charCodeAt(1))
+      ? '\uFFFD'
+      : ''}${out.slice(isLowSurrogate(out.charCodeAt(1))
+      ? 2
+      : 1)}`
   }
   if (end < to) {
     const last = out.length - 2
-    out = `${out.slice(0, isHighSurrogate(out.charCodeAt(last)) ? last : last + 1)}${isHighSurrogate(out.charCodeAt(last)) ? '\uFFFD' : ''}…`
+    out = `${out.slice(0, isHighSurrogate(out.charCodeAt(last))
+      ? last
+      : last + 1)}${isHighSurrogate(out.charCodeAt(last))
+      ? '\uFFFD'
+      : ''}…`
   }
   return out
 }
@@ -97,9 +122,16 @@ function rangesBetween(contents: string, from: number, to: number): Array<[numbe
   let offset = 0
   for (let n = 1; n <= to; n++) {
     const newline = contents.indexOf('\n', offset)
-    const end = newline === -1 ? contents.length : newline
+    const end = newline === -1
+      ? contents.length
+      : newline
     if (n >= from) {
-      ranges.push([offset, newline !== -1 && contents.charCodeAt(end - 1) === 13 ? end - 1 : end])
+      ranges.push([
+        offset,
+        newline !== -1 && contents.charCodeAt(end - 1) === 13
+          ? end - 1
+          : end,
+      ])
     }
     if (newline === -1) {
       break
@@ -166,7 +198,9 @@ export function parseCodeFrame(frame: string): Snippet | undefined {
     start ??= line
     lines.push(match[3] ?? '')
   }
-  return start === undefined ? undefined : { start, lines }
+  return start === undefined
+    ? undefined
+    : { start, lines }
 }
 
 /** Recover the error location from a code frame, for compile errors that ship a frame but no `loc`. */
@@ -183,7 +217,10 @@ export function locFromCodeFrame(frame: string): { line: number, column: number 
     }
     const caret = CARET_LINE_RE.exec(raw)
     if (caret && line !== undefined) {
-      return { line, column: Math.max(1, caret[1]!.length - prefix + 1) }
+      return {
+        line,
+        column: Math.max(1, caret[1]!.length - prefix + 1),
+      }
     }
   }
   const from = colonFrameStart(all)
@@ -199,7 +236,10 @@ export function locFromCodeFrame(frame: string): { line: number, column: number 
     }
     const caret = BARE_CARET_RE.exec(raw)
     if (caret && line !== undefined) {
-      return { line, column: Math.max(1, caret[1]!.length - prefix + 1) }
+      return {
+        line,
+        column: Math.max(1, caret[1]!.length - prefix + 1),
+      }
     }
   }
 }
@@ -209,7 +249,13 @@ const LABELLED_FRAME_RE = /[\u2500\u252C\u256D\u250C\-]\[[^\S\n]*([^[\]\s]+):(\d
 /** Position from an oxc / miette style frame header such as `╭─[ src/a.ts:2:24 ]`. */
 export function locFromLabelledFrame(text: string): { file: string, line: number, column: number } | undefined {
   const match = LABELLED_FRAME_RE.exec(text)
-  return match ? { file: match[1]!, line: Number(match[2]), column: Number(match[3]) } : undefined
+  return match
+    ? {
+        file: match[1]!,
+        line: Number(match[2]),
+        column: Number(match[3]),
+      }
+    : undefined
 }
 
 /** Strip an embedded code frame (oxc / esbuild style) from a compiler message, keeping the prose. */
@@ -218,7 +264,9 @@ export function stripEmbeddedFrame(message: string): string {
   const pipe = lines.findIndex(line => LABELLED_FRAME_RE.test(line) || /^\s*\d+\s*[│|]/.test(line))
   const colon = colonFrameStart(lines)
   const candidates = [pipe, colon ?? -1].filter(index => index > 0)
-  const start = candidates.length ? Math.min(...candidates) : -1
+  const start = candidates.length
+    ? Math.min(...candidates)
+    : -1
   if (start <= 0) {
     return message
   }

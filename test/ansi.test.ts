@@ -12,7 +12,11 @@ const fixtures = fileURLToPath(new URL('./fixtures/basic/', import.meta.url))
 async function fixtureError(fn: string): Promise<Error> {
   const { stdout } = await promisify(execFile)(process.execPath, [`${fixtures}run.mjs`, 'sidecar', fn])
   const revive = (data: any): Error => {
-    const error = new Error(data.message, data.cause ? { cause: revive(data.cause) } : undefined)
+    const error = new Error(data.message, data.cause
+      ? {
+          cause: revive(data.cause),
+        }
+      : undefined)
     error.name = data.name
     error.stack = data.stack
     return error
@@ -22,13 +26,21 @@ async function fixtureError(fn: string): Promise<Error> {
 
 async function terminal(output: string) {
   const rendered = await renderString(output)
-  return { text: rendered.currentFrame, styleAt: (line: number, col: number) => rendered.getStyleAtPosition(line, col) }
+  return {
+    text: rendered.currentFrame,
+    styleAt: (line: number, col: number) => rendered.getStyleAtPosition(line, col),
+  }
 }
 
 describe('renderAnsi', () => {
   it('renders a sourcemapped error with snippet and collapsed frames', async () => {
     const report = await createReport(await fixtureError('withCause'), { cwd: fixtures })
-    const output = renderAnsi(report, { cwd: fixtures, colors: true, hyperlinks: true, width: 100 })
+    const output = renderAnsi(report, {
+      cwd: fixtures,
+      colors: true,
+      hyperlinks: true,
+      width: 100,
+    })
     expect(output).toContain(`\u001B]8;;file://${fixtures}src/thrower.ts#L23,11\u0007`)
     const { text, styleAt } = await terminal(output)
     expect(text.replaceAll(fixtures, '<fixtures>/')).toMatchInlineSnapshot(`
@@ -77,7 +89,10 @@ describe('renderAnsi', () => {
     report.hint = 'Try turning it off and on again.'
     report.docsUrl = 'https://example.com/docs/e1'
     report.code = 'E1'
-    report.trace = [{ label: '<App>' }, { label: '<NuxtPage>' }]
+    report.trace = [
+      { label: '<App>' },
+      { label: '<NuxtPage>' },
+    ]
     const { text, styleAt } = await terminal(renderAnsi(report, { colors: true, width: 80 }))
     expect(text).toMatchInlineSnapshot(`
       "⚠ Error [E1]: Careful
@@ -106,8 +121,21 @@ describe('stripAnsi', () => {
   it('removes hyperlinks as well as colours', async () => {
     const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
     report.docsUrl = 'https://nuxt.com/docs/errors/e1'
-    report.frames = [{ file: '/tmp/a,b.ts', line: 1, column: 2, function: 'f', type: 'app' }]
-    const output = renderAnsi(report, { cwd: '/tmp', colors: true, hyperlinks: true, width: 80 })
+    report.frames = [
+      {
+        file: '/tmp/a,b.ts',
+        line: 1,
+        column: 2,
+        function: 'f',
+        type: 'app',
+      },
+    ]
+    const output = renderAnsi(report, {
+      cwd: '/tmp',
+      colors: true,
+      hyperlinks: true,
+      width: 80,
+    })
     expect(output).toContain('\u001B]8;;')
     expect(stripAnsi(output)).not.toContain('\u001B')
     expect(stripAnsi(output).split('\n').filter(Boolean)).toEqual([
@@ -133,7 +161,13 @@ describe('compiled-only compile errors', () => {
       id: '/proj/app/app.vue',
       loc: { file: '/proj/app/app.vue', line: 8, column: 39 },
       frame: '7  |      _createElementVNode("div", {\n8  |        class: _normalizeClass(_ctx.bob !)\n   |                                        ^',
-    }, { cwd: '/proj', kind: 'compile', compiled: true, loaders: [], snippets: false })
+    }, {
+      cwd: '/proj',
+      kind: 'compile',
+      compiled: true,
+      loaders: [],
+      snippets: false,
+    })
     const output = stripAnsi(renderAnsi(report, { cwd: '/proj', colors: false, width: 100 }))
     expect(output).toContain('generated code:')
     expect(output).toContain('_normalizeClass(_ctx.bob !)')
@@ -142,10 +176,23 @@ describe('compiled-only compile errors', () => {
 })
 
 describe('echoing causes', () => {
-  const report = (name: string, message: string, causes: ErrorReport[] = []): ErrorReport => ({ id: name, kind: 'error', name, message, frames: [], causes, sections: [], timestamp: 0 })
+  const report = (name: string, message: string, causes: ErrorReport[] = []): ErrorReport => ({
+    id: name,
+    kind: 'error',
+    name,
+    message,
+    frames: [],
+    causes,
+    sections: [],
+    timestamp: 0,
+  })
 
   it('renders a repeated message once and keeps what the echo wraps', () => {
-    const chain = report('FetchError', 'Server error', [report('HTTPError', 'Server error', [report('TypeError', 'x is not a function')])])
+    const chain = report('FetchError', 'Server error', [
+      report('HTTPError', 'Server error', [
+        report('TypeError', 'x is not a function'),
+      ]),
+    ])
     const output = stripAnsi(renderAnsi(chain, { colors: false, width: 100 }))
 
     expect(output.match(/Server error/g)).toHaveLength(1)
@@ -154,7 +201,15 @@ describe('echoing causes', () => {
   })
 
   it('keeps an echoing cause that carries related errors', () => {
-    const chain = report('FetchError', 'Server error', [{ ...report('AggregateError', 'Server error'), errors: [report('TypeError', 'x is not a function')], omittedErrors: 2 }])
+    const chain = report('FetchError', 'Server error', [
+      {
+        ...report('AggregateError', 'Server error'),
+        errors: [
+          report('TypeError', 'x is not a function'),
+        ],
+        omittedErrors: 2,
+      },
+    ])
     const output = stripAnsi(renderAnsi(chain, { colors: false, width: 100 }))
 
     expect(output).toContain('x is not a function')

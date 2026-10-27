@@ -12,7 +12,9 @@ export default defineNuxtModule({
       nitroConfig.errorHandler = `${fixtureDir}error-handler.ts`
       nitroConfig.alias = {
         ...nitroConfig.alias,
-        '#fixture/runtime': `${fixtureDir}runtime/nuxt-v${major >= 5 ? 5 : 4}.ts`,
+        '#fixture/runtime': `${fixtureDir}runtime/nuxt-v${major >= 5
+          ? 5
+          : 4}.ts`,
         'my-bad/presets': `${distDir}presets/index.mjs`,
         'my-bad': `${distDir}index.mjs`,
       }

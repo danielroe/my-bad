@@ -4,25 +4,64 @@ import process from 'node:process'
 
 type Args = (file: string, line?: number, column?: number) => string[]
 
-const goto: Args = (file, line, column) => [line === undefined ? file : `${file}:${line}${column === undefined ? '' : `:${column}`}`]
-const gotoFlag: Args = (...args) => ['-g', ...goto(...args)]
-const lineFlag: Args = (file, line) => line === undefined ? [file] : ['--line', String(line), file]
-const linePlus: Args = (file, line) => line === undefined ? [file] : [`+${line}`, file]
+const goto: Args = (file, line, column) => [
+  line === undefined
+    ? file
+    : `${file}:${line}${column === undefined
+      ? ''
+      : `:${column}`}`,
+]
+const gotoFlag: Args = (...args) => [
+  '-g',
+  ...goto(...args),
+]
+const lineFlag: Args = (file, line) => line === undefined
+  ? [file]
+  : [
+      '--line',
+      String(line),
+      file,
+    ]
+const linePlus: Args = (file, line) => line === undefined
+  ? [file]
+  : [`+${line}`, file]
 
 function forEditors(names: string[], args: Args): Record<string, Args> {
   return Object.fromEntries(names.map(name => [name, args]))
 }
 
 const EDITORS: Record<string, Args> = {
-  ...forEditors(['code', 'code-insiders', 'codium', 'cursor', 'windsurf'], gotoFlag),
+  ...forEditors([
+    'code',
+    'code-insiders',
+    'codium',
+    'cursor',
+    'windsurf',
+  ], gotoFlag),
   ...forEditors(['zed', 'subl', 'sublime_text', 'atom'], goto),
   ...forEditors(['idea', 'webstorm', 'phpstorm'], lineFlag),
   ...forEditors(['emacs', 'gvim', 'mvim'], linePlus),
-  emacsclient: (file, line) => line === undefined ? [file] : ['-n', `+${line}`, file],
+  emacsclient: (file, line) => line === undefined
+    ? [file]
+    : ['-n', `+${line}`, file],
 }
 
 /** Editors that need a terminal; spawning them detached would open nothing visible. */
-const TERMINAL_EDITORS = new Set(['vi', 'vim', 'nvim', 'nano', 'pico', 'micro', 'hx', 'helix', 'kak', 'joe', 'ne', 'emacs -nw', 'ed'])
+const TERMINAL_EDITORS = new Set([
+  'vi',
+  'vim',
+  'nvim',
+  'nano',
+  'pico',
+  'micro',
+  'hx',
+  'helix',
+  'kak',
+  'joe',
+  'ne',
+  'emacs -nw',
+  'ed',
+])
 
 /**
  * Open a file in the user's editor. Uses `LAUNCH_EDITOR`, `VISUAL` or `EDITOR`
@@ -39,7 +78,10 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
       const args = EDITORS[name] ?? goto
       // `.cmd` / `.bat` editor shims (VS Code's `code` on Windows) are only executable through `cmd.exe`.
       const shell = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(bin)
-      return run(bin, [...extra, ...args(request.file, request.line, request.column)], shell)
+      return run(bin, [
+        ...extra,
+        ...args(request.file, request.line, request.column),
+      ], shell)
     }
   }
   const tinyOpen = await import('tiny-open' as string).then(mod => mod.default ?? mod).catch(() => undefined)
@@ -73,7 +115,11 @@ export function escapeCmdArg(arg: string): string {
       slashes++
       continue
     }
-    body += '\\'.repeat(char === '"' ? slashes * 2 : slashes) + (char === '"' ? '\\"' : char)
+    body += '\\'.repeat(char === '"'
+      ? slashes * 2
+      : slashes) + (char === '"'
+      ? '\\"'
+      : char)
     slashes = 0
   }
   body += '\\'.repeat(slashes * 2)
@@ -83,7 +129,11 @@ export function escapeCmdArg(arg: string): string {
 function run(bin: string, args: string[], shell = false): Promise<boolean> {
   return new Promise((resolve) => {
     try {
-      const child = spawn(shell ? escapeCmdArg(bin) : bin, shell ? args.map(escapeCmdArg) : args, { stdio: 'ignore', detached: true, shell })
+      const child = spawn(shell
+        ? escapeCmdArg(bin)
+        : bin, shell
+        ? args.map(escapeCmdArg)
+        : args, { stdio: 'ignore', detached: true, shell })
       child.once('error', () => resolve(false))
       child.once('spawn', () => {
         child.unref()

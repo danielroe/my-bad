@@ -15,7 +15,11 @@ beforeAll(async () => {
     logLevel: 'silent',
     appType: 'custom',
     server: { middlewareMode: true, hmr: false },
-    plugins: [myBad({ channel: { history: 5 } })],
+    plugins: [
+      myBad({
+        channel: { history: 5 },
+      }),
+    ],
   })
 })
 afterAll(() => server.close())
@@ -35,7 +39,13 @@ describe('vite', () => {
   it('maps ssrLoadModule frames through the module graph', async () => {
     const ctx = useMyBad(server)!
     const report = await ctx.report(await thrown())
-    expect(report.frames[0]).toMatchObject({ file: `${root}/src/lib.ts`, line: 2, column: 17, function: 'explode', type: 'app' })
+    expect(report.frames[0]).toMatchObject({
+      file: `${root}/src/lib.ts`,
+      line: 2,
+      column: 17,
+      function: 'explode',
+      type: 'app',
+    })
     expect(report.frames[0]!.compiled).toMatchObject({ file: `${root}/src/lib.ts`, line: 6 })
     expect(report.frames[0]!.snippet!.lines[1]).toContain('new Error(`Render failed')
     expect(report.frames[1]).toMatchObject({ file: `${root}/src/entry.ts`, line: 10, function: 'Module.render' })
@@ -44,7 +54,12 @@ describe('vite', () => {
   it('does not double-map frames that are already original', async () => {
     await thrown()
     const loader = viteLoader(server)
-    const mapped = await loader.map!({ file: `${root}/src/lib.ts`, line: 2, column: 17, type: 'app' })
+    const mapped = await loader.map!({
+      file: `${root}/src/lib.ts`,
+      line: 2,
+      column: 17,
+      type: 'app',
+    })
     expect(mapped).toBeUndefined()
   })
 
@@ -98,7 +113,10 @@ describe('client assets', () => {
       fetch(`http://127.0.0.1:${port}/__my-bad/client.js?v=1`),
       fetch(`http://127.0.0.1:${port}/__my-bad/client.css`),
     ])
-    const [scriptBody, stylesBody] = await Promise.all([script.text(), styles.text()])
+    const [scriptBody, stylesBody] = await Promise.all([
+      script.text(),
+      styles.text(),
+    ])
     http.close()
     expect(script.headers.get('content-type')).toContain('text/javascript')
     expect(styles.headers.get('content-type')).toContain('text/css')
@@ -114,7 +132,9 @@ describe('client assets', () => {
       logLevel: 'silent',
       appType: 'custom',
       server: { middlewareMode: true, hmr: false },
-      plugins: [myBad({ inlineClient: true })],
+      plugins: [
+        myBad({ inlineClient: true }),
+      ],
     })
     try {
       const ctx = useMyBad(inlined)!

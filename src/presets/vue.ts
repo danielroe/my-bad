@@ -29,9 +29,16 @@ export function traceFromInstance(instance: VueLikeInstance | null | undefined):
   let guard = 0
   while (current && guard++ < 100) {
     const type = current.type
-    const file = type?.__file ? toPath(type.__file) : undefined
-    const name = type?.__name ?? type?.name ?? (file ? file.split(/[\\/]/).pop()!.replace(/\.\w+$/, '') : 'Anonymous')
-    entries.push({ label: `<${name}>`, ...(file && { file }) })
+    const file = type?.__file
+      ? toPath(type.__file)
+      : undefined
+    const name = type?.__name ?? type?.name ?? (file
+      ? file.split(/[\\/]/).pop()!.replace(/\.\w+$/, '')
+      : 'Anonymous')
+    entries.push({
+      label: `<${name}>`,
+      ...(file && { file }),
+    })
     current = current.parent
   }
   return entries.reverse()
@@ -48,25 +55,32 @@ export interface VuePresetOptions {
  */
 export function vuePreset(options: VuePresetOptions = {}): ReportPreset {
   return {
-    internal: [/\/node_modules\/(?:@vue|vue)\//, /^(?:vue|@vue\/[^/]+)$/, /\/@vue\/(?:runtime|reactivity|shared|server-renderer|compiler)/, ...(options.internal ?? [])],
-    plugins: [{
-      name: 'vue',
-      transform(report, ctx) {
-        if (report.trace?.length) {
-          return
-        }
-        const { instance, trace } = ctx.options.context as { instance?: VueLikeInstance, trace?: string }
-        const inputTrace = (ctx.input as { vueTrace?: string } | undefined)?.vueTrace
-        if (instance) {
-          report.trace = traceFromInstance(instance)
-        }
-        else if (typeof trace === 'string' || typeof inputTrace === 'string') {
-          report.trace = parseVueTrace((trace ?? inputTrace)!)
-        }
-        if (report.trace && !report.trace.length) {
-          delete report.trace
-        }
+    internal: [
+      /\/node_modules\/(?:@vue|vue)\//,
+      /^(?:vue|@vue\/[^/]+)$/,
+      /\/@vue\/(?:runtime|reactivity|shared|server-renderer|compiler)/,
+      ...(options.internal ?? []),
+    ],
+    plugins: [
+      {
+        name: 'vue',
+        transform(report, ctx) {
+          if (report.trace?.length) {
+            return
+          }
+          const { instance, trace } = ctx.options.context as { instance?: VueLikeInstance, trace?: string }
+          const inputTrace = (ctx.input as { vueTrace?: string } | undefined)?.vueTrace
+          if (instance) {
+            report.trace = traceFromInstance(instance)
+          }
+          else if (typeof trace === 'string' || typeof inputTrace === 'string') {
+            report.trace = parseVueTrace((trace ?? inputTrace)!)
+          }
+          if (report.trace && !report.trace.length) {
+            delete report.trace
+          }
+        },
       },
-    }],
+    ],
   }
 }

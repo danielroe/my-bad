@@ -34,7 +34,9 @@ export function parseDataUrl(url: string): string | undefined {
   const comma = url.indexOf(',')
   const meta = url.slice(5, comma)
   const data = url.slice(comma + 1)
-  return meta.includes(';base64') ? Buffer.from(data, 'base64').toString('utf8') : decodeURIComponent(data)
+  return meta.includes(';base64')
+    ? Buffer.from(data, 'base64').toString('utf8')
+    : decodeURIComponent(data)
 }
 
 function sourceMappingURLIn(tail: string): string | undefined {
@@ -43,7 +45,9 @@ function sourceMappingURLIn(tail: string): string | undefined {
     return
   }
   const url = tail.slice(at + SOURCE_MAPPING_URL_MARKER.length).trimEnd()
-  return url && !/\s/.test(url) ? url : undefined
+  return url && !/\s/.test(url)
+    ? url
+    : undefined
 }
 
 /**
@@ -65,8 +69,12 @@ function lastSourceMappingURL(code: string): string | undefined {
  */
 export function parseInlineSourceMap(code: string): RawSourceMap | undefined {
   const url = lastSourceMappingURL(code)
-  const data = url ? parseDataUrl(url) : undefined
-  return data === undefined ? undefined : parse(data)
+  const data = url
+    ? parseDataUrl(url)
+    : undefined
+  return data === undefined
+    ? undefined
+    : parse(data)
 }
 
 /**
@@ -137,12 +145,16 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
         return
       }
     }
-    return canRead && !canRead(path) ? undefined : target
+    return canRead && !canRead(path)
+      ? undefined
+      : target
   }
 
   const readAllowed = (path: string) => {
     const target = allowed(path)
-    return target === undefined ? Promise.resolve(undefined) : read(target)
+    return target === undefined
+      ? Promise.resolve(undefined)
+      : read(target)
   }
 
   async function getSourceMap(file: string): Promise<RawSourceMap | undefined> {
@@ -150,7 +162,9 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
     if (allowed(file) === undefined) {
       return
     }
-    const sidecarFile = sidecar ? await readAllowed(`${file}.map`) : undefined
+    const sidecarFile = sidecar
+      ? await readAllowed(`${file}.map`)
+      : undefined
     if (sidecarFile) {
       return parsed(sidecarFile)
     }
@@ -180,11 +194,15 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
   const loader = sourceMapLoader({
     getSourceMap,
     base: file => dirname(linked.get(file) ?? file),
-    sourcesContent: bounds || canRead ? file => allowed(file) !== undefined : true,
+    sourcesContent: bounds || canRead
+      ? file => allowed(file) !== undefined
+      : true,
   })
   const readContents = async (file: string) => {
     const path = withoutQuery(file)
-    return isFilePath(path) ? (await readAllowed(path))?.contents : undefined
+    return isFilePath(path)
+      ? (await readAllowed(path))?.contents
+      : undefined
   }
   return {
     ...loader,
@@ -206,7 +224,9 @@ function canonicalPath(path: string): string {
     return normalized
   }
   const base = canonicalPath(parent)
-  return `${base === '/' ? '' : base}/${normalized.split('/').pop()}`
+  return `${base === '/'
+    ? ''
+    : base}/${normalized.split('/').pop()}`
 }
 
 function normalizePath(path: string): string {
@@ -220,7 +240,9 @@ function normalizePath(path: string): string {
       segments.push(part)
     }
   }
-  return `${normalized.startsWith('/') ? '/' : ''}${segments.join('/')}`
+  return `${normalized.startsWith('/')
+    ? '/'
+    : ''}${segments.join('/')}`
 }
 
 /**
@@ -249,8 +271,12 @@ interface CachedFile {
 /** Decode a file's map once per version of its contents. */
 function parsed(file: CachedFile, dataUrl?: string): RawSourceMap | undefined {
   if (file.map === undefined) {
-    const data = dataUrl ? parseDataUrl(dataUrl) : file.contents
-    file.map = (data === undefined ? undefined : parse(data)) ?? null
+    const data = dataUrl
+      ? parseDataUrl(dataUrl)
+      : file.contents
+    file.map = (data === undefined
+      ? undefined
+      : parse(data)) ?? null
   }
   return file.map ?? undefined
 }

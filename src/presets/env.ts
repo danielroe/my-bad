@@ -12,21 +12,32 @@ export interface EnvPresetOptions {
 /** Adds a collapsed `Environment` section with runtime and package versions. */
 export function envPreset(options: EnvPresetOptions = {}): ReportPreset {
   return {
-    plugins: [{
-      name: 'env',
-      transform(report) {
-        if (report.sections.some(section => section.id === 'env')) {
-          return
-        }
-        const runtime = typeof Bun !== 'undefined' ? `bun ${(Bun as { version: string }).version}` : typeof Deno !== 'undefined' ? `deno ${(Deno as { version: { deno: string } }).version.deno}` : `node ${process.versions?.node ?? 'unknown'}`
-        const content: Record<string, string> = { 'runtime': runtime, 'my-bad': __MY_BAD_VERSION__ }
-        for (const [name, value] of Object.entries(options.versions ?? {})) {
-          if (value) {
-            content[name] = value
+    plugins: [
+      {
+        name: 'env',
+        transform(report) {
+          if (report.sections.some(section => section.id === 'env')) {
+            return
           }
-        }
-        report.sections.push({ id: 'env', title: 'Environment', content, collapsed: true })
+          const runtime = typeof Bun !== 'undefined'
+            ? `bun ${(Bun as { version: string }).version}`
+            : typeof Deno !== 'undefined'
+              ? `deno ${(Deno as { version: { deno: string } }).version.deno}`
+              : `node ${process.versions?.node ?? 'unknown'}`
+          const content: Record<string, string> = { 'runtime': runtime, 'my-bad': __MY_BAD_VERSION__ }
+          for (const [name, value] of Object.entries(options.versions ?? {})) {
+            if (value) {
+              content[name] = value
+            }
+          }
+          report.sections.push({
+            id: 'env',
+            title: 'Environment',
+            content,
+            collapsed: true,
+          })
+        },
       },
-    }],
+    ],
   }
 }

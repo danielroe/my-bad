@@ -99,7 +99,11 @@ export interface Channel {
 }
 
 function scopeKey(request: ReportRequest = {}): string {
-  return request.requestId ? `id:${request.requestId}` : request.request ? `request:${request.request}` : ''
+  return request.requestId
+    ? `id:${request.requestId}`
+    : request.request
+      ? `request:${request.request}`
+      : ''
 }
 
 /** A source with no `percent` has unknown work left, so it ranks below any number. */
@@ -157,8 +161,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   }
 
   function history(viewer?: Viewer): HistoryEntry[] {
-    const entries = [...reports.values()]
-    return (viewer ? entries.filter(report => concernsViewer(report.id, viewer)) : entries).map(toHistoryEntry)
+    const entries = [
+      ...reports.values(),
+    ]
+    return (viewer
+      ? entries.filter(report => concernsViewer(report.id, viewer))
+      : entries).map(toHistoryEntry)
   }
 
   function remember(report: ErrorReport, request: ReportRequest = {}): void {
@@ -166,7 +174,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     reports.set(report.id, report)
     origins.set(report.id, request)
     const warning = report.kind === 'warning'
-    const same = [...reports.values()].filter(entry => (entry.kind === 'warning') === warning)
+    const same = [
+      ...reports.values(),
+    ].filter(entry => (entry.kind === 'warning') === warning)
     for (const oldest of same.slice(0, Math.max(0, same.length - (warning ? MAX_WARNINGS : max)))) {
       reports.delete(oldest.id)
       origins.delete(oldest.id)
@@ -183,11 +193,16 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         shown = id
       }
     }
-    return shown === undefined ? undefined : reports.get(shown)
+    return shown === undefined
+      ? undefined
+      : reports.get(shown)
   }
 
   function snapshot(): Map<Client, ErrorReport | undefined> {
-    return new Map([...clients].map(client => [client, shownTo(client)]))
+    return new Map([...clients].map(client => [
+      client,
+      shownTo(client),
+    ]))
   }
 
   function sendTo(client: Client, event: ChannelEvent): void {
@@ -200,7 +215,14 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   }
 
   function errorSet(report: ErrorReport, entries: HistoryEntry[]): ChannelEvent {
-    return { type: 'error:set', payload: { report, history: entries, ...origins.get(report.id) } }
+    return {
+      type: 'error:set',
+      payload: {
+        report,
+        history: entries,
+        ...origins.get(report.id),
+      },
+    }
   }
 
   /** Tell a page whose error went away, and show it the next open error that concerns it. Returns whether that sent it the history. */
@@ -209,7 +231,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     if (!previous || next?.id === previous.id) {
       return false
     }
-    sendTo(client, { type: 'error:clear', payload: { id: previous.id } })
+    sendTo(client, {
+      type: 'error:clear',
+      payload: { id: previous.id },
+    })
     if (next) {
       sendTo(client, errorSet(next, history(client.trusted ? undefined : client)))
     }
@@ -248,7 +273,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         continue
       }
       try {
-        client.send(client.trusted ? shared : encode(build(history(client))))
+        client.send(client.trusted
+          ? shared
+          : encode(build(history(client))))
       }
       catch {
         clients.delete(client)
@@ -261,11 +288,27 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     const shown = shownTo(client)
     if (!client.trusted) {
       const unprivileged = actions.filter(action => !PRIVILEGED.has(action))
-      return encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions: unprivileged, current: shown, history: history(client) } })
+      return encode({
+        type: 'hello',
+        payload: {
+          version: __MY_BAD_VERSION__,
+          actions: unprivileged,
+          current: shown,
+          history: history(client),
+        },
+      })
     }
     let frame = helloFrames.get(shown?.id ?? '')
     if (!frame) {
-      frame = encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current: shown, history: history() } })
+      frame = encode({
+        type: 'hello',
+        payload: {
+          version: __MY_BAD_VERSION__,
+          actions,
+          current: shown,
+          history: history(),
+        },
+      })
       helloFrames.set(shown?.id ?? '', frame)
     }
     return frame
@@ -274,7 +317,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   /** Roots are resolved through symlinks, so a project reached by a link still matches. */
   const roots = options.root === false
     ? undefined
-    : Promise.all((Array.isArray(options.root) ? options.root : [options.root ?? process.cwd()])
+    : Promise.all((Array.isArray(options.root)
+        ? options.root
+        : [options.root ?? process.cwd()])
         .map(root => realpath(root).catch(() => resolve(root))))
 
   function within(target: string, against: string[]): boolean {
@@ -307,7 +352,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
     const match = /\/history\/([^/]+)$/.exec(pathname)
     if (match) {
-      return { history: decodeURIComponent(match[1]!) }
+      return {
+        history: decodeURIComponent(match[1]!),
+      }
     }
   }
 
@@ -325,8 +372,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
     return {
       file,
-      line: typeof line === 'number' ? line : undefined,
-      column: typeof column === 'number' ? column : undefined,
+      line: typeof line === 'number'
+        ? line
+        : undefined,
+      column: typeof column === 'number'
+        ? column
+        : undefined,
     }
   }
 
@@ -346,15 +397,24 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       return 403
     }
     request.file = target
-    return await open(request).catch(() => false) ? 204 : 400
+    return await open(request).catch(() => false)
+      ? 204
+      : 400
   }
 
   const trust = { allowedHosts: options.allowedHosts }
 
   /** 404 rather than 403, so the answer does not confirm the id exists. */
   function historyResponse(id: string, viewer: Viewer): { status: number, body: string } {
-    const report = viewer.trusted || concernsViewer(id, viewer) ? reports.get(id) : undefined
-    return { status: report ? 200 : 404, body: report ? JSON.stringify(report) : '{}' }
+    const report = viewer.trusted || concernsViewer(id, viewer)
+      ? reports.get(id)
+      : undefined
+    return {
+      status: report ? 200 : 404,
+      body: report
+        ? JSON.stringify(report)
+        : '{}',
+    }
   }
 
   const JSON_HEADERS = { 'content-type': 'application/json', 'cache-control': 'no-store' }
@@ -365,8 +425,19 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       return { status: 405 }
     }
     const [, type, source] = ASSET_FILES[key]
-    const headers = { 'content-type': `${type}; charset=utf-8`, 'cache-control': url.searchParams.get('v') === assetHash(key) ? 'public, max-age=31536000, immutable' : 'no-cache' }
-    return { status: 200, headers, body: method === 'HEAD' ? undefined : source() }
+    const headers = {
+      'content-type': `${type}; charset=utf-8`,
+      'cache-control': url.searchParams.get('v') === assetHash(key)
+        ? 'public, max-age=31536000, immutable'
+        : 'no-cache',
+    }
+    return {
+      status: 200,
+      headers,
+      body: method === 'HEAD'
+        ? undefined
+        : source(),
+    }
   }
 
   const channel: Channel = {
@@ -413,7 +484,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         res.writeHead(status, headers).end(body)
         return true
       }
-      const { status, body } = historyResponse(matched.history, { scope: scopeFromQuery(url.searchParams), trusted })
+      const { status, body } = historyResponse(matched.history, {
+        scope: scopeFromQuery(url.searchParams),
+        trusted,
+      })
       res.writeHead(status, JSON_HEADERS)
       res.end(body)
       return true
@@ -469,12 +543,18 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         const { status, headers, body } = assetResponse(matched.asset, request.method, url)
         return new Response(body ?? null, { status, headers })
       }
-      const { status, body } = historyResponse(matched.history, { scope: scopeFromQuery(url.searchParams), trusted })
+      const { status, body } = historyResponse(matched.history, {
+        scope: scopeFromQuery(url.searchParams),
+        trusted,
+      })
       return new Response(body, { status, headers: JSON_HEADERS })
     },
 
     setError(report, requestId, request) {
-      const origin: ReportRequest = { ...(requestId && { requestId }), ...(request && { request }) }
+      const origin: ReportRequest = {
+        ...(requestId && { requestId }),
+        ...(request && { request }),
+      }
       const before = snapshot()
       remember(report, origin)
       const scope = scopeKey(origin)
@@ -490,7 +570,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       sendScoped(set, reaches)
       notify(set(history()))
       const settled = new Set([...clients].filter(client => !reaches(client) && settle(client, before.get(client))))
-      sendScoped(entries => ({ type: 'history', payload: { history: entries } }), client => !reaches(client) && !settled.has(client))
+      sendScoped(entries => ({
+        type: 'history',
+        payload: { history: entries },
+      }), client => !reaches(client) && !settled.has(client))
     },
     clearError(id) {
       if (id && !raised.has(id)) {
@@ -507,36 +590,62 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       for (const client of clients) {
         settle(client, before.get(client))
       }
-      notify({ type: 'error:clear', payload: { id } })
+      notify({
+        type: 'error:clear',
+        payload: { id },
+      })
     },
     warn(report) {
       const warning = { ...report, kind: 'warning' as const }
       remember(warning)
-      const event = (entries: HistoryEntry[]): ChannelEvent => ({ type: 'warning', payload: { report: warning, history: entries } })
+      const event = (entries: HistoryEntry[]): ChannelEvent => ({
+        type: 'warning',
+        payload: { report: warning, history: entries },
+      })
       sendScoped(event)
       notify(event(history()))
     },
     clearWarning(id) {
-      const named = id === undefined ? undefined : reports.get(id)
+      const named = id === undefined
+        ? undefined
+        : reports.get(id)
       if (named && named.kind !== 'warning') {
         return
       }
-      for (const report of [...reports.values()]) {
+      for (const report of [
+        ...reports.values(),
+      ]) {
         if (report.kind === 'warning' && (id === undefined || report.id === id)) {
           reports.delete(report.id)
           origins.delete(report.id)
         }
       }
       helloFrames.clear()
-      const event = (entries: HistoryEntry[]): ChannelEvent => ({ type: 'warning:clear', payload: { ...(id !== undefined && { id }), history: entries } })
+      const event = (entries: HistoryEntry[]): ChannelEvent => ({
+        type: 'warning:clear',
+        payload: {
+          ...(id !== undefined && { id }),
+          history: entries,
+        },
+      })
       sendScoped(event)
       notify(event(history()))
     },
     log(entry, requestId, request) {
-      const origin: ReportRequest = { ...(requestId && { requestId }), ...(request && { request }) }
+      const origin: ReportRequest = {
+        ...(requestId && { requestId }),
+        ...(request && { request }),
+      }
       const attributed = origin.requestId !== undefined || origin.request !== undefined
       broadcast(
-        { type: 'log', payload: { timestamp: Date.now(), ...entry, ...origin } },
+        {
+          type: 'log',
+          payload: {
+            timestamp: Date.now(),
+            ...entry,
+            ...origin,
+          },
+        },
         client => client.trusted || (attributed && concernsClient(client.scope, origin, true)),
       )
     },

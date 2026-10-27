@@ -12,7 +12,9 @@ export const runtime: FixtureRuntime = {
   ssrSourceMaps() {
     const nitroApp = useNitroApp() as { ssrSourceMaps?: { getSourceMap: (file: string) => RawSourceMap | undefined } }
     const accessor = nitroApp.ssrSourceMaps
-    return accessor ? file => accessor.getSourceMap(file) : undefined
+    return accessor
+      ? file => accessor.getSourceMap(file)
+      : undefined
   },
   async fetchErrorPage(event, query, headers) {
     const url = errorPageURL(useRuntimeConfig(event as H3Event).app.baseURL, query)
@@ -20,7 +22,12 @@ export const runtime: FixtureRuntime = {
     if (!res) {
       return null
     }
-    return { status: res.status, statusText: res.statusText, headers: Object.fromEntries(res.headers), html: await res.text() }
+    return {
+      status: res.status,
+      statusText: res.statusText,
+      headers: Object.fromEntries(res.headers),
+      html: await res.text(),
+    }
   },
   respond(event, { status, statusText, headers, body }) {
     setResponseHeaders(event as H3Event, headers ?? {})

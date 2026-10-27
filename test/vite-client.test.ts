@@ -13,7 +13,15 @@ let server: ViteDevServer
 let origin: string
 
 beforeAll(async () => {
-  server = await createServer({ root, configFile: false, logLevel: 'silent', plugins: [myBad()], server: { host: '127.0.0.1', port: 0 } })
+  server = await createServer({
+    root,
+    configFile: false,
+    logLevel: 'silent',
+    plugins: [
+      myBad(),
+    ],
+    server: { host: '127.0.0.1', port: 0 },
+  })
   await server.listen()
   origin = `http://127.0.0.1:${(server.httpServer!.address() as { port: number }).port}`
   browser = await chromium.launch()

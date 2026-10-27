@@ -3,8 +3,16 @@ import type { Frame } from '../types'
 /** Label a run of collapsed non-app frames, e.g. `3 dependency frames`. */
 export function groupSummary(frames: Frame[]): string {
   const kinds = new Set(frames.map(frame => frame.type))
-  const label = kinds.size > 1 ? 'dependency' : kinds.has('native') ? 'runtime' : kinds.has('internal') ? 'framework' : 'dependency'
-  return `${frames.length} ${label} frame${frames.length === 1 ? '' : 's'}`
+  const label = kinds.size > 1
+    ? 'dependency'
+    : kinds.has('native')
+      ? 'runtime'
+      : kinds.has('internal')
+        ? 'framework'
+        : 'dependency'
+  return `${frames.length} ${label} frame${frames.length === 1
+    ? ''
+    : 's'}`
 }
 
 /**

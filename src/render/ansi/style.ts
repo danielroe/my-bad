@@ -25,7 +25,17 @@ export function detectAnsiEnv(stream: { isTTY?: boolean } = process.stderr): Ans
 
 type Styler = (text: string) => string
 
-const STYLES = ['red', 'yellow', 'green', 'cyan', 'blue', 'magenta', 'dim', 'bold', 'underline'] as const
+const STYLES = [
+  'red',
+  'yellow',
+  'green',
+  'cyan',
+  'blue',
+  'magenta',
+  'dim',
+  'bold',
+  'underline',
+] as const
 
 export type Palette = { [K in typeof STYLES[number]]: Styler }
 
@@ -35,7 +45,9 @@ export function createPalette(env: AnsiEnv): Palette {
   const palette = {} as Palette
   for (const style of STYLES) {
     // `styleText` would otherwise validate `process.stdout`, which is neither the stream we render to nor the caller's `colors` choice
-    palette[style] = env.colors ? text => styleText(style, text, { validateStream: false }) : identity
+    palette[style] = env.colors
+      ? text => styleText(style, text, { validateStream: false })
+      : identity
   }
   return palette
 }
@@ -65,7 +77,9 @@ export function wrap(text: string, width: number, indent = ''): string[] {
         line = indent + word
       }
       else {
-        line = line ? `${line} ${word}` : word
+        line = line
+          ? `${line} ${word}`
+          : word
       }
     }
     out.push(line)

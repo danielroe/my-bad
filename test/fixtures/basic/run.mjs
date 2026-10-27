@@ -6,7 +6,14 @@ const [variant, fn] = process.argv.slice(2)
 
 function serialize(e) {
   return e instanceof Error
-    ? { name: e.name, message: e.message, stack: e.stack, cause: e.cause === undefined ? undefined : serialize(e.cause) }
+    ? {
+        name: e.name,
+        message: e.message,
+        stack: e.stack,
+        cause: e.cause === undefined
+          ? undefined
+          : serialize(e.cause),
+      }
     : e
 }
 

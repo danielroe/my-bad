@@ -2,7 +2,16 @@ import type { Color, Style } from 'ansivision'
 import { renderString } from 'ansivision'
 
 /** ANSI palette chosen to match the HTML theme's syntax tokens, so both assets read as one product. */
-const PALETTE = ['#09090b', '#fca5a5', '#86efac', '#fde68a', '#93c5fd', '#c4b5fd', '#7dd3fc', '#f4f4f5']
+const PALETTE = [
+  '#09090b',
+  '#fca5a5',
+  '#86efac',
+  '#fde68a',
+  '#93c5fd',
+  '#c4b5fd',
+  '#7dd3fc',
+  '#f4f4f5',
+]
 const BG = '#09090b'
 const FG = '#f4f4f5'
 const CELL = 8.4
@@ -13,11 +22,17 @@ function color(value: Color | null): string | undefined {
   if (value === null) {
     return
   }
-  return typeof value === 'number' ? PALETTE[value % 8] : `rgb(${value.join(' ')})`
+  return typeof value === 'number'
+    ? PALETTE[value % 8]
+    : `rgb(${value.join(' ')})`
 }
 
 function escapeXml(text: string): string {
-  return text.replace(/[&<>]/g, char => char === '&' ? '&amp;' : char === '<' ? '&lt;' : '&gt;')
+  return text.replace(/[&<>]/g, char => char === '&'
+    ? '&amp;'
+    : char === '<'
+      ? '&lt;'
+      : '&gt;')
 }
 
 function attrs(style: Style): string {
@@ -47,7 +62,9 @@ function row(text: string, styles: Style[]): string {
   return runs.map(({ style, text }) => {
     const applied = attrs(style)
     // `xml:space` keeps the leading indentation of gutters and stack frames.
-    return applied ? `<tspan ${applied} xml:space="preserve">${escapeXml(text)}</tspan>` : `<tspan xml:space="preserve">${escapeXml(text)}</tspan>`
+    return applied
+      ? `<tspan ${applied} xml:space="preserve">${escapeXml(text)}</tspan>`
+      : `<tspan xml:space="preserve">${escapeXml(text)}</tspan>`
   }).join('')
 }
 

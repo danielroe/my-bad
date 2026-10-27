@@ -13,5 +13,7 @@ export function withEmbeddedSource(frame: Frame, contents: string | undefined): 
 /** Only while the frame still names the file the contents were recorded for, in case a later loader rewrote it in place. */
 export function embeddedSource(frame: Frame): string | undefined {
   const entry = embedded.get(frame)
-  return entry && entry.file === frame.file ? entry.contents : undefined
+  return entry && entry.file === frame.file
+    ? entry.contents
+    : undefined
 }

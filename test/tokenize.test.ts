@@ -21,7 +21,42 @@ function lexemes(re: RegExp, line: string): string[] {
   return out
 }
 
-const alphabet = ['a', 'b', 'e', 'x', '_', '$', '-', '0', '1', '.', ';', ':', '/', '*', '<', '>', '!', '=', '+', '"', '\'', '`', '\\', '{', ')', ' ', '\n', '\r', '\u2028', '\u2029', '\u017F', 'é', '😀', '\uD83D']
+const alphabet = [
+  'a',
+  'b',
+  'e',
+  'x',
+  '_',
+  '$',
+  '-',
+  '0',
+  '1',
+  '.',
+  ';',
+  ':',
+  '/',
+  '*',
+  '<',
+  '>',
+  '!',
+  '=',
+  '+',
+  '"',
+  '\'',
+  '`',
+  '\\',
+  '{',
+  ')',
+  ' ',
+  '\n',
+  '\r',
+  '\u2028',
+  '\u2029',
+  '\u017F',
+  'é',
+  '😀',
+  '\uD83D',
+]
 const line = fc.oneof(
   fc.array(fc.constantFrom(...alphabet), { maxLength: 24 }).map(chars => chars.join('')),
   fc.string({ maxLength: 40 }),
@@ -29,7 +64,28 @@ const line = fc.oneof(
 
 describe('tOKEN_RE', () => {
   it('lexes comments exactly as the previous expression did', () => {
-    const cases = ['// c', '// c\nb', '//\r//', '/* x */ y', '/* x', '/*/', '/**/', '/* * x*/', '/*\u2028x*/', '/*\rx', '<!-- x -->', '<!-- x --!>', '<!-- x', '<!---->', '<!--->', '<!-- a\n-->', '// a\u2029b', '////////', '/*//*/', '<!--*/-->']
+    const cases = [
+      '// c',
+      '// c\nb',
+      '//\r//',
+      '/* x */ y',
+      '/* x',
+      '/*/',
+      '/**/',
+      '/* * x*/',
+      '/*\u2028x*/',
+      '/*\rx',
+      '<!-- x -->',
+      '<!-- x --!>',
+      '<!-- x',
+      '<!---->',
+      '<!--->',
+      '<!-- a\n-->',
+      '// a\u2029b',
+      '////////',
+      '/*//*/',
+      '<!--*/-->',
+    ]
     for (const text of cases) {
       expect(lexemes(TOKEN_RE, text), JSON.stringify(text)).toEqual(lexemes(PREVIOUS_RE, text))
     }
@@ -39,7 +95,13 @@ describe('tOKEN_RE', () => {
   })
 
   it('stays linear on long runs of comment openers', () => {
-    for (const text of ['//'.repeat(50_000), '/*'.repeat(50_000), '<!--'.repeat(25_000), `/*${'*'.repeat(100_000)}`, `<!--${'-'.repeat(100_000)}`]) {
+    for (const text of [
+      '//'.repeat(50_000),
+      '/*'.repeat(50_000),
+      '<!--'.repeat(25_000),
+      `/*${'*'.repeat(100_000)}`,
+      `<!--${'-'.repeat(100_000)}`,
+    ]) {
       const start = performance.now()
       lexemes(TOKEN_RE, text)
       expect(performance.now() - start).toBeLessThan(200)
@@ -48,12 +110,22 @@ describe('tOKEN_RE', () => {
 })
 
 const KEYWORDS = new Set('abstract as async await break case catch class const continue debugger default delete do else enum export extends false finally for from function if implements import in instanceof interface let new null of package private protected public return satisfies static super switch this throw true try type typeof undefined var void while with yield'.split(' '))
-const GROUPS = ['comment', 'string', 'number', 'tag', 'variable', 'punctuation', 'operator'] as const
+const GROUPS = [
+  'comment',
+  'string',
+  'number',
+  'tag',
+  'variable',
+  'punctuation',
+  'operator',
+] as const
 
 /** The line tokenizer before it carried state between lines. */
 function previousTokenizer(line: string, lang: string | undefined): Token[] {
   if (!lang || lang === 'md') {
-    return [{ type: 'text', text: line }]
+    return [
+      { type: 'text', text: line },
+    ]
   }
   const tokens: Token[] = []
   let last = 0
@@ -61,7 +133,10 @@ function previousTokenizer(line: string, lang: string | undefined): Token[] {
   TOKEN_RE.lastIndex = 0
   for (let match = TOKEN_RE.exec(line); match; match = TOKEN_RE.exec(line)) {
     if (match.index > last) {
-      tokens.push({ type: 'text', text: line.slice(last, match.index) })
+      tokens.push({
+        type: 'text',
+        text: line.slice(last, match.index),
+      })
     }
     const text = match[0]
     let group = 1
@@ -74,13 +149,24 @@ function previousTokenizer(line: string, lang: string | undefined): Token[] {
     }
     else if (type === 'variable') {
       const next = line[match.index + text.length]
-      type = inTag || (lang === 'css' && next === ':') ? 'attribute' : KEYWORDS.has(text) ? 'keyword' : /^[A-Z]/.test(text) ? 'type' : next === '(' ? 'function' : 'text'
+      type = inTag || (lang === 'css' && next === ':')
+        ? 'attribute'
+        : KEYWORDS.has(text)
+          ? 'keyword'
+          : /^[A-Z]/.test(text)
+            ? 'type'
+            : next === '('
+              ? 'function'
+              : 'text'
     }
     tokens.push({ type, text })
     last = match.index + text.length
   }
   if (last < line.length) {
-    tokens.push({ type: 'text', text: line.slice(last) })
+    tokens.push({
+      type: 'text',
+      text: line.slice(last),
+    })
   }
   return tokens
 }
@@ -92,7 +178,13 @@ function mergeTrailingTemplate(tokens: Token[]): Token[] {
   if (index < 0 || index === tokens.length - 1) {
     return tokens
   }
-  return [...tokens.slice(0, index), { type: 'string', text: tokens.slice(index).map(token => token.text).join('') }]
+  return [
+    ...tokens.slice(0, index),
+    {
+      type: 'string',
+      text: tokens.slice(index).map(token => token.text).join(''),
+    },
+  ]
 }
 
 describe('stateful tokenizer', () => {
@@ -116,21 +208,48 @@ describe('stateful tokenizer', () => {
     expect(types(['/* open', 'still comment', 'end */ const a = 1'])).toEqual([
       ['comment:/* open'],
       ['comment:still comment'],
-      ['comment:end */', 'keyword:const', 'text:a', 'operator:=', 'number:1'],
+      [
+        'comment:end */',
+        'keyword:const',
+        'text:a',
+        'operator:=',
+        'number:1',
+      ],
     ])
     expect(types(['const q = `select', '  $' + '{id} from \\` t', '` + x'])).toEqual([
-      ['keyword:const', 'text:q', 'operator:=', 'string:`select'],
+      [
+        'keyword:const',
+        'text:q',
+        'operator:=',
+        'string:`select',
+      ],
       ['string:  $' + '{id} from \\` t'],
       ['string:`', 'operator:+', 'text:x'],
     ])
-    expect(types(['<!-- a', 'b --> <div>'], 'vue')).toEqual([['comment:<!-- a'], ['comment:b -->', 'tag:<div', 'tag:>']])
+    expect(types(['<!-- a', 'b --> <div>'], 'vue')).toEqual([
+      ['comment:<!-- a'],
+      ['comment:b -->', 'tag:<div', 'tag:>'],
+    ])
     expect(types(['still inside */ x'], 'ts', 'comment')[0]![0]).toBe('comment:still inside */')
-    expect(types(['/* closed */', 'plain'])).toEqual([['comment:/* closed */'], ['text:plain']])
-    expect(types(['// line /* not a block', 'plain'])).toEqual([['comment:// line /* not a block'], ['text:plain']])
+    expect(types(['/* closed */', 'plain'])).toEqual([
+      ['comment:/* closed */'],
+      ['text:plain'],
+    ])
+    expect(types(['// line /* not a block', 'plain'])).toEqual([
+      ['comment:// line /* not a block'],
+      ['text:plain'],
+    ])
   })
 
   it('finds the construct a snippet starts inside from bounded context before it', () => {
-    const file = ['const a = 1', '/**', ' * docs', ' * more docs', ' */', 'function f() {}'].join('\n')
+    const file = [
+      'const a = 1',
+      '/**',
+      ' * docs',
+      ' * more docs',
+      ' */',
+      'function f() {}',
+    ].join('\n')
     const startOf = (n: number) => file.split('\n').slice(0, n - 1).join('\n').length + 1
     expect(continuationAt(file, startOf(3), 'ts')).toBe('comment')
     expect(continuationAt(file, startOf(6), 'ts')).toBeUndefined()
@@ -144,10 +263,26 @@ describe('stateful tokenizer', () => {
   })
 
   it('highlights a snippet that starts inside a comment in HTML and ANSI', async () => {
-    const contents = ['/**', ' * explains', ' * the failure', ' */', 'throw new Error(\'x\')', 'export {}'].join('\n')
+    const contents = [
+      '/**',
+      ' * explains',
+      ' * the failure',
+      ' */',
+      'throw new Error(\'x\')',
+      'export {}',
+    ].join('\n')
     const error = new Error('x')
     error.stack = 'Error: x\n    at f (/proj/a.ts:5:1)'
-    const report = await createReport(error, { cwd: '/proj', snippetLines: 2, loaders: [{ name: 'memory', read: () => contents }] })
+    const report = await createReport(error, {
+      cwd: '/proj',
+      snippetLines: 2,
+      loaders: [
+        {
+          name: 'memory',
+          read: () => contents,
+        },
+      ],
+    })
     const snippet = report.frames[0]!.snippet!
     expect(snippet).toMatchObject({ start: 3, continues: 'comment' })
     expect(renderSnippet(snippet, 5, 1)).toContain('<span class="tk-comment"> * the failure</span>')
@@ -156,31 +291,63 @@ describe('stateful tokenizer', () => {
   })
 
   it('calls a custom tokenizer line by line and falls back to the built-in one for lines it declines', async () => {
-    const contents = ['/* open', 'inside', 'close */ const a = 1', 'custom line'].join('\n')
+    const contents = [
+      '/* open',
+      'inside',
+      'close */ const a = 1',
+      'custom line',
+    ].join('\n')
     const error = new Error('x')
     error.stack = 'Error: x\n    at f (/proj/a.ts:3:1)'
     const calls: Array<[string, string | undefined]> = []
     const tokenizer = (line: string, lang: string | undefined): Token[] | undefined => {
       calls.push([line, lang])
-      return line === 'custom line' ? [{ type: 'keyword', text: line }] : undefined
+      return line === 'custom line'
+        ? [
+            { type: 'keyword', text: line },
+          ]
+        : undefined
     }
-    const report = await createReport(error, { cwd: '/proj', snippetLines: 2, tokenizer, loaders: [{ name: 'memory', read: () => contents }] })
+    const report = await createReport(error, {
+      cwd: '/proj',
+      snippetLines: 2,
+      tokenizer,
+      loaders: [
+        {
+          name: 'memory',
+          read: () => contents,
+        },
+      ],
+    })
     const snippet = report.frames[0]!.snippet!
     expect(calls).toEqual(snippet.lines.map(line => [line, 'ts']))
-    expect(snippet.tokens![1]).toEqual([{ type: 'comment', text: 'inside' }])
-    expect(snippet.tokens![3]).toEqual([{ type: 'keyword', text: 'custom line' }])
+    expect(snippet.tokens![1]).toEqual([
+      { type: 'comment', text: 'inside' },
+    ])
+    expect(snippet.tokens![3]).toEqual([
+      { type: 'keyword', text: 'custom line' },
+    ])
     expect(renderSnippet(snippet, 3)).toContain('<span class="tk-keyword">custom line</span>')
   })
 
   it('keeps cropped snippets line by line', async () => {
-    const snippet = { start: 1, lines: ['/* a\u2026', 'b */'], lang: 'ts', offset: 10 }
+    const snippet = {
+      start: 1,
+      lines: ['/* a\u2026', 'b */'],
+      lang: 'ts',
+      offset: 10,
+    }
     expect(renderSnippet(snippet, 2)).not.toContain('<span class="tk-comment">b */</span>')
   })
 
   it('stays linear on long continued lines', () => {
     for (const state of ['comment', 'html-comment', 'template'] as const) {
       const start = performance.now()
-      tokenizeLines(['\\'.repeat(100_000), '*'.repeat(100_000), '-'.repeat(100_000)], 'ts', state)
+      tokenizeLines([
+        '\\'.repeat(100_000),
+        '*'.repeat(100_000),
+        '-'.repeat(100_000),
+      ], 'ts', state)
       expect(performance.now() - start).toBeLessThan(200)
     }
   })

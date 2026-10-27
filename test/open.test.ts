@@ -32,7 +32,10 @@ vi.mock('node:child_process', async (importOriginal) => {
         return original.spawn(...args)
       }
       spawns.push(args)
-      return { once: (event: string, listener: () => void) => void (event === 'spawn' && queueMicrotask(listener)), unref: () => {} } as unknown as ReturnType<typeof original.spawn>
+      return {
+        once: (event: string, listener: () => void) => void (event === 'spawn' && queueMicrotask(listener)),
+        unref: () => {},
+      } as unknown as ReturnType<typeof original.spawn>
     },
   }
 })

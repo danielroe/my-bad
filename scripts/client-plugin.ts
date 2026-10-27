@@ -27,7 +27,9 @@ export function clientPlugin(options: ClientPluginOptions = {}) {
   return {
     name: 'my-bad:client',
     resolveId(id: string) {
-      return id === VIRTUAL_ID ? `\0${VIRTUAL_ID}` : undefined
+      return id === VIRTUAL_ID
+        ? `\0${VIRTUAL_ID}`
+        : undefined
     },
     async load(this: { emitFile: (file: { type: 'asset', fileName: string, source: string }) => unknown }, id: string) {
       if (id !== `\0${VIRTUAL_ID}`) {
@@ -38,7 +40,11 @@ export function clientPlugin(options: ClientPluginOptions = {}) {
         bundleStyles('styles.css'),
         bundleStyles('badge.css').then(css => bundleClient('badge.ts', css)),
       ])
-      const assets = { getClientScript: ['client.js', script], getClientStyles: ['client.css', styles], getBadgeScript: ['badge.js', badge] }
+      const assets = {
+        getClientScript: ['client.js', script],
+        getClientStyles: ['client.css', styles],
+        getBadgeScript: ['badge.js', badge],
+      }
       if (!options.emit) {
         return Object.entries(assets).map(([name, [, source]]) => `export const ${name} = () => ${JSON.stringify(source)}\n`).join('')
       }
@@ -68,7 +74,11 @@ async function bundleStyles(file: string): Promise<string> {
       rollupOptions: { input: `${root}${file}` },
     },
   })
-  const outputs = Array.isArray(result) ? result.flatMap(chunk => chunk.output) : 'output' in result ? result.output : []
+  const outputs = Array.isArray(result)
+    ? result.flatMap(chunk => chunk.output)
+    : 'output' in result
+      ? result.output
+      : []
   const css = outputs.find(output => output.fileName.endsWith('.css'))
   if (!css || css.type !== 'asset' || typeof css.source !== 'string') {
     throw new Error(`Failed to minify ${file}`)
@@ -82,11 +92,17 @@ async function bundleClient(entry: string, styles = ''): Promise<string> {
     input: `${root}client/${entry}`,
     platform: 'browser',
     logLevel: 'silent',
-    plugins: [{
-      name: 'my-bad:badge-styles',
-      resolveId: id => id === BADGE_STYLES_ID ? `\0${BADGE_STYLES_ID}` : undefined,
-      load: id => id === `\0${BADGE_STYLES_ID}` ? `export default ${JSON.stringify(styles)}` : undefined,
-    }],
+    plugins: [
+      {
+        name: 'my-bad:badge-styles',
+        resolveId: id => id === BADGE_STYLES_ID
+          ? `\0${BADGE_STYLES_ID}`
+          : undefined,
+        load: id => id === `\0${BADGE_STYLES_ID}`
+          ? `export default ${JSON.stringify(styles)}`
+          : undefined,
+      },
+    ],
   })
   try {
     const { output } = await bundle.generate({ format: 'iife', minify: true, sourcemap: false })

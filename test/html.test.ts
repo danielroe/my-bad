@@ -9,12 +9,26 @@ async function report() {
     at node:internal/main:3:3`
   const r = await createReport(error, {
     cwd: '/proj',
-    loaders: [{ name: 'memory', read: file => file === '/proj/src/handler.ts' ? 'const a = 1\nconst b = 2\nthrow new Error(`x` + a) // boom\nexport {}\n' : undefined }],
+    loaders: [
+      {
+        name: 'memory',
+        read: file => file === '/proj/src/handler.ts'
+          ? 'const a = 1\nconst b = 2\nthrow new Error(`x` + a) // boom\nexport {}\n'
+          : undefined,
+      },
+    ],
   })
   r.hint = 'Do the thing'
   r.docsUrl = 'https://example.com/e1001'
-  r.trace = [{ label: '<App>', file: '/proj/app.vue' }, { label: '<Child>' }]
-  r.sections.push({ id: 'request', title: 'Request', content: { method: 'GET', url: '/x' } })
+  r.trace = [
+    { label: '<App>', file: '/proj/app.vue' },
+    { label: '<Child>' },
+  ]
+  r.sections.push({
+    id: 'request',
+    title: 'Request',
+    content: { method: 'GET', url: '/x' },
+  })
   return r
 }
 
@@ -30,7 +44,15 @@ function markup(html: string): string {
 
 describe('renderPage', () => {
   it('renders a full document with embedded state', async () => {
-    const html = renderPage(await report(), { cwd: '/proj', channel: '/__my-bad', theme: { name: 'Nuxt', accent: '#00dc82', vars: { '--mb-bg': '#0a0a0a', 'bad;}': 'x' } } })
+    const html = renderPage(await report(), {
+      cwd: '/proj',
+      channel: '/__my-bad',
+      theme: {
+        name: 'Nuxt',
+        accent: '#00dc82',
+        vars: { '--mb-bg': '#0a0a0a', 'bad;}': 'x' },
+      },
+    })
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('Something &lt;broke&gt;')
     expect(html).toContain('data-action="open" data-file="/proj/src/handler.ts" data-line="3" data-column="9"')
@@ -50,7 +72,15 @@ describe('renderPage', () => {
     expect(original).toContain('<span class="mb-brand-name">my-bad</span>')
     expect(original).not.toContain('nuxt.com')
     const logo = '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>'
-    const branded = markup(renderPage(r, { theme: { name: 'Acme', logo, url: 'https://example.com', accent: '#00dc82', vars: { '--mb-font-display': 'serif' } } }))
+    const branded = markup(renderPage(r, {
+      theme: {
+        name: 'Acme',
+        logo,
+        url: 'https://example.com',
+        accent: '#00dc82',
+        vars: { '--mb-font-display': 'serif' },
+      },
+    }))
     expect(branded).toContain(`${logo}<span class="mb-brand-name mb-sr-only">Acme</span>`)
     expect(branded).toContain('href="https://example.com"')
     expect(branded).toContain('--mb-accent:#00dc82;--mb-font-display:serif')
@@ -107,11 +137,24 @@ describe('renderOverlay', () => {
 
 describe('renderBadge', () => {
   it('embeds the overlay it expands into, short of a report, loading everything from the channel', () => {
-    const html = renderBadge({ channel: '/__my-bad', cwd: '/proj', requestId: 'r1', tag: 'nuxt-error-overlay', theme: { accent: '#00dc82' } })
+    const html = renderBadge({
+      channel: '/__my-bad',
+      cwd: '/proj',
+      requestId: 'r1',
+      tag: 'nuxt-error-overlay',
+      theme: { accent: '#00dc82' },
+    })
     const state = JSON.parse(stateJson(html))
     expect(state).toMatchObject({
       script: expect.stringMatching(/^\/__my-bad\/client\.js\?v=\w+$/),
-      overlay: { mode: 'overlay', channel: '/__my-bad', cwd: '/proj', requestId: 'r1', tag: 'nuxt-error-overlay', stylesUrl: expect.stringMatching(/^\/__my-bad\/client\.css\?v=\w+$/) },
+      overlay: {
+        mode: 'overlay',
+        channel: '/__my-bad',
+        cwd: '/proj',
+        requestId: 'r1',
+        tag: 'nuxt-error-overlay',
+        stylesUrl: expect.stringMatching(/^\/__my-bad\/client\.css\?v=\w+$/),
+      },
     })
     expect(state.overlay.report).toBeUndefined()
     expect(state.overlay.startMinimized).toBe(true)
@@ -125,7 +168,10 @@ describe('renderBadge', () => {
   })
 
   it('takes asset URLs that override the channel ones', () => {
-    const html = renderBadge({ channel: '/__my-bad', assets: { script: '/assets/client.js', badge: '/assets/badge.js' } })
+    const html = renderBadge({
+      channel: '/__my-bad',
+      assets: { script: '/assets/client.js', badge: '/assets/badge.js' },
+    })
     const state = JSON.parse(stateJson(html))
     expect(state.script).toBe('/assets/client.js')
     expect(state.overlay.stylesUrl).toMatch(/^\/__my-bad\/client\.css\?v=/)
@@ -182,7 +228,13 @@ describe('toMarkdown', () => {
       id: '/proj/app.vue',
       loc: { file: '/proj/app.vue', line: 8, column: 39 },
       frame: '7  |      _createElementVNode("div", {\n8  |        class: _normalizeClass(_ctx.bob !)\n   |                                        ^',
-    }, { cwd: '/proj', kind: 'compile', compiled: true, loaders: [], snippets: false })
+    }, {
+      cwd: '/proj',
+      kind: 'compile',
+      compiled: true,
+      loaders: [],
+      snippets: false,
+    })
     const markdown = toMarkdown(compiled, { cwd: '/proj' })
     expect(markdown).toContain('Generated code `./app.vue:8:39`')
     expect(markdown).toContain('> 8 |       class: _normalizeClass(_ctx.bob !)')
@@ -203,19 +255,30 @@ describe('injectOverlay', () => {
 describe('determinism', () => {
   it('renders identical markup for the same report', async () => {
     const r = await report()
-    r.causes.push({ ...r, id: 'cause', causes: [], errors: undefined })
+    r.causes.push({
+      ...r,
+      id: 'cause',
+      causes: [],
+      errors: undefined,
+    })
     const a = renderPage(r, { cwd: '/proj' })
     renderPage(await report(), { cwd: '/proj' })
     const b = renderPage(r, { cwd: '/proj' })
     expect(a).toBe(b)
     expect(a).not.toMatch(/mb-r\d+/)
-    const ids = [...markup(a).matchAll(/ id="([^"]+)"/g)].map(match => match[1])
+    const ids = [
+      ...markup(a).matchAll(/ id="([^"]+)"/g),
+    ].map(match => match[1])
     expect(new Set(ids).size).toBe(ids.length)
   })
 
   it('aligns the caret under tab-indented code', async () => {
     const r = await report()
-    r.frames[0]!.snippet = { start: 1, lines: ['\t\tthrow new Error()'], lang: 'ts' }
+    r.frames[0]!.snippet = {
+      start: 1,
+      lines: ['\t\tthrow new Error()'],
+      lang: 'ts',
+    }
     r.frames[0]!.line = 1
     r.frames[0]!.column = 9
     const html = renderPage(r)
@@ -226,7 +289,15 @@ describe('determinism', () => {
 describe('in-memory compiled locations', () => {
   it('labels a compiled location that shares the source path', async () => {
     const r = await report()
-    r.frames[0]!.compiled = { file: r.frames[0]!.file!, line: 9, column: 2, snippet: { start: 8, lines: ['a', 'b', 'c'] } }
+    r.frames[0]!.compiled = {
+      file: r.frames[0]!.file!,
+      line: 9,
+      column: 2,
+      snippet: {
+        start: 8,
+        lines: ['a', 'b', 'c'],
+      },
+    }
     const html = markup(renderPage(r))
     expect(html).toContain('in memory')
     expect(html).toContain('data-snippet-compiled')
@@ -249,8 +320,16 @@ describe('dependency paths', () => {
 describe('source-first presentation', () => {
   it('keeps the message as the heading and preserves every cause and related error', async () => {
     const r = await report()
-    r.causes.push({ ...r, id: 'cause', message: 'Inner failure', causes: [], errors: undefined })
-    r.errors = [{ ...r.causes[0]!, id: 'related', message: 'Independent failure' }]
+    r.causes.push({
+      ...r,
+      id: 'cause',
+      message: 'Inner failure',
+      causes: [],
+      errors: undefined,
+    })
+    r.errors = [
+      { ...r.causes[0]!, id: 'related', message: 'Independent failure' },
+    ]
     const html = markup(renderPage(r))
     expect(html).toMatch(/<h1[^>]*data-message>Something &lt;broke&gt;<\/h1>/)
     expect(html).toContain('data-action="cause" data-path="rc0"')
@@ -265,7 +344,20 @@ describe('source-first presentation', () => {
   it('counts related errors in the header and marks warnings visibly', async () => {
     const r = await report()
     expect(markup(renderPage(r))).toContain('<span class="mb-header-count">1 error</span>')
-    r.errors = [{ ...r, id: 'a', causes: [], errors: undefined }, { ...r, id: 'b', causes: [], errors: undefined }]
+    r.errors = [
+      {
+        ...r,
+        id: 'a',
+        causes: [],
+        errors: undefined,
+      },
+      {
+        ...r,
+        id: 'b',
+        causes: [],
+        errors: undefined,
+      },
+    ]
     expect(markup(renderPage(r))).toContain('<span class="mb-header-count">3 errors</span>')
 
     const warning = await report()
@@ -279,9 +371,20 @@ describe('source-first presentation', () => {
 
   it('renders the source of every cause and related error without the client script', async () => {
     const r = await report()
-    const cause = { ...r, id: 'cause', message: 'Inner failure', causes: [], errors: undefined, frames: [{ ...r.frames[0]!, file: '/proj/src/cause.ts' }] }
+    const cause = {
+      ...r,
+      id: 'cause',
+      message: 'Inner failure',
+      causes: [],
+      errors: undefined,
+      frames: [
+        { ...r.frames[0]!, file: '/proj/src/cause.ts' },
+      ],
+    }
     r.causes.push(cause)
-    r.errors = [{ ...cause, id: 'related', message: 'Independent failure' }]
+    r.errors = [
+      { ...cause, id: 'related', message: 'Independent failure' },
+    ]
     const html = markup(renderPage(r))
     const fallback = html.slice(html.indexOf('data-fallback'), html.indexOf('class="mb-secondary"'))
     expect(fallback).toContain('Inner failure')
@@ -294,7 +397,16 @@ describe('source-first presentation', () => {
 
   it('keeps request context in one place and groups missing framework code in stack order', async () => {
     const r = await report()
-    r.frames.push({ type: 'app', function: 'caller', file: '/proj/caller.ts', line: 1, snippet: { start: 1, lines: ['handler()'] } }, { type: 'internal', function: 'runtime', file: 'node:runtime' })
+    r.frames.push({
+      type: 'app',
+      function: 'caller',
+      file: '/proj/caller.ts',
+      line: 1,
+      snippet: {
+        start: 1,
+        lines: ['handler()'],
+      },
+    }, { type: 'internal', function: 'runtime', file: 'node:runtime' })
     r.frames[1]!.snippet = undefined
     const html = markup(renderPage(r))
     expect(html.match(/data-action="info"/g)).toHaveLength(1)
@@ -318,7 +430,9 @@ describe('source-first presentation', () => {
 
   it.each(['app', 'vendor', 'internal'] as const)('does not offer an empty call stack for a single %s frame', async (type) => {
     const r = await report()
-    r.frames = [{ ...r.frames[0]!, type }]
+    r.frames = [
+      { ...r.frames[0]!, type },
+    ]
     const html = markup(renderPage(r))
     expect(html).toContain('data-frame ')
     expect(html).not.toContain('data-action="stack"')
@@ -327,7 +441,21 @@ describe('source-first presentation', () => {
 
   it('renders a compiled-only excerpt at its generated location', async () => {
     const r = await report()
-    r.frames = [{ type: 'app', file: '/proj/app.vue', compiled: { file: '/proj/app.vue', line: 8, column: 3, snippet: { start: 8, lines: ['  invalid()'] } } }]
+    r.frames = [
+      {
+        type: 'app',
+        file: '/proj/app.vue',
+        compiled: {
+          file: '/proj/app.vue',
+          line: 8,
+          column: 3,
+          snippet: {
+            start: 8,
+            lines: ['  invalid()'],
+          },
+        },
+      },
+    ]
     const html = markup(renderPage(r, { cwd: '/proj' }))
     expect(html).toContain('data-compiled="true"')
     expect(html).toContain('data-snippet-compiled')
@@ -341,7 +469,9 @@ describe('escaping', () => {
   it('keeps safe documentation links and drops the rest', async () => {
     const r = await report()
     r.docsUrl = 'javascript:alert(1)'
-    const html = markup(renderPage(r, { theme: { name: 'Acme', url: 'java\tscript:alert(2)' } }))
+    const html = markup(renderPage(r, {
+      theme: { name: 'Acme', url: 'java\tscript:alert(2)' },
+    }))
     expect(html).not.toContain('javascript')
     expect(html).not.toContain('script:alert')
     expect(html).not.toContain('Learn more')
@@ -371,8 +501,19 @@ describe('long messages', () => {
 describe('history pager', () => {
   it('points navigation at the first entry when the history has dropped the shown report', async () => {
     const r = await report()
-    const entry = (id: string) => ({ id, kind: 'error' as const, name: 'Error', message: id, timestamp: 0 })
-    const html = markup(renderPage(r, { history: [entry('a'), entry('b')] }))
+    const entry = (id: string) => ({
+      id,
+      kind: 'error' as const,
+      name: 'Error',
+      message: id,
+      timestamp: 0,
+    })
+    const html = markup(renderPage(r, {
+      history: [
+        entry('a'),
+        entry('b'),
+      ],
+    }))
     expect(html).toContain('<span data-pager-label>1 of 2</span>')
     expect(html).toContain('data-action="history" data-dir="-1" disabled')
     expect(html).toContain('data-action="history" data-dir="0">a')
@@ -388,19 +529,25 @@ describe('theme before first paint', () => {
 
   function run(script: string, env: { stored?: string | Error, dark?: boolean | Error }): string | undefined {
     let theme: string | undefined
-    const localStorage = { getItem: () => {
-      if (env.stored instanceof Error) {
-        throw env.stored
-      }
-      return env.stored ?? null
-    } }
+    const localStorage = {
+      getItem: () => {
+        if (env.stored instanceof Error) {
+          throw env.stored
+        }
+        return env.stored ?? null
+      },
+    }
     const matchMedia = () => {
       if (env.dark instanceof Error) {
         throw env.dark
       }
       return { matches: env.dark ?? false }
     }
-    const document = { documentElement: { setAttribute: (_: string, value: string) => (theme = value) } }
+    const document = {
+      documentElement: {
+        setAttribute: (_: string, value: string) => (theme = value),
+      },
+    }
     // eslint-disable-next-line no-new-func
     new Function('localStorage', 'matchMedia', 'document', script)(localStorage, matchMedia, document)
     return theme
@@ -419,14 +566,24 @@ describe('theme before first paint', () => {
     expect(run(script, { dark: true })).toBe('dark')
     expect(run(script, { dark: false })).toBe('light')
     expect(run(script, { stored: 'purple', dark: true })).toBe('dark')
-    expect(run(script, { stored: new Error('SecurityError'), dark: false })).toBe('light')
-    expect(() => run(script, { stored: new Error('SecurityError'), dark: new Error('unsupported') })).not.toThrow()
+    expect(run(script, {
+      stored: new Error('SecurityError'),
+      dark: false,
+    })).toBe('light')
+    expect(() => run(script, {
+      stored: new Error('SecurityError'),
+      dark: new Error('unsupported'),
+    })).not.toThrow()
   })
 
   it('leaves a forced scheme and the overlay alone', async () => {
     const r = await report()
-    expect(bootstrap(renderPage(r, { theme: { scheme: 'dark' } }))).toBeUndefined()
-    expect(renderPage(r, { theme: { scheme: 'dark' } })).toContain('<html lang="en" data-theme="dark">')
+    expect(bootstrap(renderPage(r, {
+      theme: { scheme: 'dark' },
+    }))).toBeUndefined()
+    expect(renderPage(r, {
+      theme: { scheme: 'dark' },
+    })).toContain('<html lang="en" data-theme="dark">')
     expect(renderOverlay(r)).not.toContain(bootstrap(renderPage(r)))
   })
 })
@@ -434,7 +591,15 @@ describe('theme before first paint', () => {
 describe('copy location', () => {
   it('offers the original and compiled position of each frame', async () => {
     const r = await report()
-    r.frames[0]!.compiled = { file: '/proj/dist/handler.js', line: 9, column: 2, snippet: { start: 9, lines: ['throw x'] } }
+    r.frames[0]!.compiled = {
+      file: '/proj/dist/handler.js',
+      line: 9,
+      column: 2,
+      snippet: {
+        start: 9,
+        lines: ['throw x'],
+      },
+    }
     const html = markup(renderPage(r, { cwd: '/proj' }))
     expect(html).toContain('data-action="copy-location" data-file="/proj/src/handler.ts" data-line="3" data-column="9" data-compiled-file="/proj/dist/handler.js" data-compiled-line="9" data-compiled-column="2" title="Copy location" aria-label="Copy location"')
     expect(html).toContain('data-action="open" data-file="/proj/src/handler.ts" data-line="3" data-column="9"')
@@ -442,13 +607,31 @@ describe('copy location', () => {
 
   it('offers the generated position of a compiled-only frame', async () => {
     const r = await report()
-    r.frames = [{ type: 'app', compiled: { file: '/proj/app.vue', line: 8, column: 3, snippet: { start: 8, lines: ['  invalid()'] } } }]
+    r.frames = [
+      {
+        type: 'app',
+        compiled: {
+          file: '/proj/app.vue',
+          line: 8,
+          column: 3,
+          snippet: {
+            start: 8,
+            lines: ['  invalid()'],
+          },
+        },
+      },
+    ]
     expect(markup(renderPage(r))).toContain('data-action="copy-location" data-compiled-file="/proj/app.vue" data-compiled-line="8" data-compiled-column="3"')
   })
 
   it('offers the position of frames without a snippet', async () => {
     const r = await report()
-    r.frames.push({ type: 'app', file: '/proj/src/other.ts', line: 4, function: 'other' })
+    r.frames.push({
+      type: 'app',
+      file: '/proj/src/other.ts',
+      line: 4,
+      function: 'other',
+    })
     expect(markup(renderPage(r))).toContain('<div class="mb-empty-frame"><span class="mb-function">other</span>')
     expect(markup(renderPage(r))).toMatch(/mb-empty-frame">.*data-action="copy-location" data-file="\/proj\/src\/other.ts" data-line="4"/)
   })

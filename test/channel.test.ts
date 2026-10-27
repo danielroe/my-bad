@@ -53,7 +53,10 @@ async function readEvents(url: string, count: number, signal: AbortSignal, query
       const event = /^event: (.+)$/m.exec(block)?.[1]
       const data = /^data: (.+)$/m.exec(block)?.[1]
       if (event && data) {
-        events.push({ event, data: JSON.parse(data) })
+        events.push({
+          event,
+          data: JSON.parse(data),
+        })
       }
     }
   }
@@ -65,7 +68,10 @@ describe('createChannel', () => {
   it('sends hello, error:set and error:clear over SSE', async () => {
     const opened: unknown[] = []
     const events: unknown[] = []
-    const channel = createChannel({ open: request => void opened.push(request), sink: event => void events.push(event.type) })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+      sink: event => void events.push(event.type),
+    })
     const url = await listen(channel)
     const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
 
@@ -79,17 +85,40 @@ describe('createChannel', () => {
     const [hello, set, clear] = await received
     controller.abort()
 
-    expect(hello).toMatchObject({ event: 'hello', data: { actions: ['open'], history: [] } })
-    expect(set).toMatchObject({ event: 'error:set', data: { report: { id: report.id }, history: [{ id: report.id }] } })
+    expect(hello).toMatchObject({
+      event: 'hello',
+      data: {
+        actions: ['open'],
+        history: [],
+      },
+    })
+    expect(set).toMatchObject({
+      event: 'error:set',
+      data: {
+        report: { id: report.id },
+        history: [
+          { id: report.id },
+        ],
+      },
+    })
     expect(clear).toMatchObject({ event: 'error:clear' })
     expect(events).toEqual(['error:set', 'error:clear'])
 
     const file = resolve('package.json')
-    const res = await fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file, line: 3 }) })
+    const res = await fetch(`${url}/open`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ file, line: 3 }),
+    })
     expect(res.status).toBe(204)
-    expect(opened).toEqual([{ file, line: 3, column: undefined }])
+    expect(opened).toEqual([
+      { file, line: 3, column: undefined },
+    ])
     expect((await fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: '{}' })).status).toBe(400)
-    expect((await fetch(`${url}/open`, { method: 'POST', body: JSON.stringify({ file }) })).status).toBe(415)
+    expect((await fetch(`${url}/open`, {
+      method: 'POST',
+      body: JSON.stringify({ file }),
+    })).status).toBe(415)
     expect(opened).toHaveLength(1)
   })
 
@@ -122,13 +151,29 @@ describe('createChannel', () => {
     const [[, set], [, other]] = await Promise.all([mine, theirs])
     controller.abort()
 
-    expect(set).toMatchObject({ event: 'error:set', data: { report: { id: report.id }, requestId: 'a', request: 'GET /about' } })
-    expect(other).toMatchObject({ event: 'history', data: { history: [{ id: report.id }] } })
+    expect(set).toMatchObject({
+      event: 'error:set',
+      data: {
+        report: { id: report.id },
+        requestId: 'a',
+        request: 'GET /about',
+      },
+    })
+    expect(other).toMatchObject({
+      event: 'history',
+      data: {
+        history: [
+          { id: report.id },
+        ],
+      },
+    })
   })
 
   it('ignores a clear naming a report that is no longer current', async () => {
     const events: string[] = []
-    const channel = createChannel({ sink: event => void events.push(event.type) })
+    const channel = createChannel({
+      sink: event => void events.push(event.type),
+    })
     const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
 
     channel.setError(report, 'a', 'GET /about')
@@ -155,7 +200,13 @@ describe('createChannel', () => {
     const events = await received
     controller.abort()
 
-    expect(events.map(event => event.event)).toEqual(['hello', 'error:set', 'error:clear', 'history', 'log'])
+    expect(events.map(event => event.event)).toEqual([
+      'hello',
+      'error:set',
+      'error:clear',
+      'history',
+      'log',
+    ])
     expect(events[2]!.data).toEqual({ id: report.id })
   })
 
@@ -188,9 +239,21 @@ describe('createChannel', () => {
     const [onA, onB] = await Promise.all([a, b])
     controller.abort()
 
-    expect(onA.map(event => event.event)).toEqual(['hello', 'error:set', 'history', 'error:clear', 'log'])
+    expect(onA.map(event => event.event)).toEqual([
+      'hello',
+      'error:set',
+      'history',
+      'error:clear',
+      'log',
+    ])
     expect(onA[3]!.data).toEqual({ id: first!.id })
-    expect(onB.map(event => event.event)).toEqual(['hello', 'history', 'error:set', 'error:clear', 'log'])
+    expect(onB.map(event => event.event)).toEqual([
+      'hello',
+      'history',
+      'error:set',
+      'error:clear',
+      'log',
+    ])
     expect(onB[3]!.data).toEqual({ id: second!.id })
   })
 
@@ -216,7 +279,9 @@ describe('createChannel', () => {
 
   it('retires a warning from the history and tells subscribers', async () => {
     const sunk: unknown[] = []
-    const channel = createChannel({ sink: event => void sunk.push(event) })
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
     const url = await listen(channel)
     const error = await createReport(new Error('boom'), { loaders: [], snippets: false })
     const [first, second] = await Promise.all(['first', 'second'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false, kind: 'warning' })))
@@ -235,11 +300,33 @@ describe('createChannel', () => {
     controller.abort()
 
     expect(hello!.data.history.map((entry: { id: string }) => entry.id)).toEqual([error.id, first!.id, second!.id])
-    expect(one).toEqual({ event: 'warning:clear', data: { id: first!.id, history: [expect.objectContaining({ id: error.id }), expect.objectContaining({ id: second!.id })] } })
-    expect(all).toEqual({ event: 'warning:clear', data: { history: [expect.objectContaining({ id: error.id })] } })
+    expect(one).toEqual({
+      event: 'warning:clear',
+      data: {
+        id: first!.id,
+        history: [
+          expect.objectContaining({ id: error.id }),
+          expect.objectContaining({ id: second!.id }),
+        ],
+      },
+    })
+    expect(all).toEqual({
+      event: 'warning:clear',
+      data: {
+        history: [
+          expect.objectContaining({ id: error.id }),
+        ],
+      },
+    })
     expect(channel.history.map(entry => entry.id)).toEqual([error.id])
     expect((await fetch(`${url}/history/${second!.id}`)).status).toBe(404)
-    expect(sunk.map(event => (event as { type: string }).type)).toEqual(['error:set', 'warning', 'warning', 'warning:clear', 'warning:clear'])
+    expect(sunk.map(event => (event as { type: string }).type)).toEqual([
+      'error:set',
+      'warning',
+      'warning',
+      'warning:clear',
+      'warning:clear',
+    ])
   })
 
   it('refuses to retire an error as a warning', async () => {
@@ -283,7 +370,9 @@ describe('createChannel', () => {
       return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
     }
     channel.warn(warning)
-    expect((await hello()).history).toMatchObject([{ id: warning.id, kind: 'warning' }])
+    expect((await hello()).history).toMatchObject([
+      { id: warning.id, kind: 'warning' },
+    ])
     channel.clearWarning(warning.id)
     expect((await hello()).history).toEqual([])
     channel.close()
@@ -301,12 +390,20 @@ describe('createChannel', () => {
     }
 
     channel.setError(report, 'a', 'GET /about')
-    expect(await hello('?requestId=a')).toMatchObject({ current: { id: report.id } })
-    expect(await hello('?path=/about')).toMatchObject({ current: { id: report.id } })
+    expect(await hello('?requestId=a')).toMatchObject({
+      current: { id: report.id },
+    })
+    expect(await hello('?path=/about')).toMatchObject({
+      current: { id: report.id },
+    })
     expect((await hello('?requestId=b&path=/contact')).current).toBeUndefined()
-    expect((await hello('?requestId=b&path=/contact')).history).toMatchObject([{ id: report.id }])
+    expect((await hello('?requestId=b&path=/contact')).history).toMatchObject([
+      { id: report.id },
+    ])
     channel.setError(report)
-    expect(await hello('?requestId=b')).toMatchObject({ current: { id: report.id } })
+    expect(await hello('?requestId=b')).toMatchObject({
+      current: { id: report.id },
+    })
     channel.close()
   })
 
@@ -326,7 +423,12 @@ describe('createChannel', () => {
     expect(await payload()).toMatchObject({ history: [] })
     expect((await payload()).current).toBeUndefined()
     channel.setError(report)
-    expect(await payload()).toMatchObject({ current: { id: report.id }, history: [{ id: report.id }] })
+    expect(await payload()).toMatchObject({
+      current: { id: report.id },
+      history: [
+        { id: report.id },
+      ],
+    })
     channel.clearError()
     expect((await payload()).current).toBeUndefined()
     expect(await channel.fetchHandler(new Request('http://localhost/other'))).toBeUndefined()
@@ -340,7 +442,11 @@ describe('client assets', () => {
   it('serves the client script, stylesheet and badge under the channel base', async () => {
     const channel = createChannel()
     const url = await listen(channel)
-    for (const [file, type, body] of [['client.js', 'text/javascript', clientAssets.script], ['client.css', 'text/css', clientAssets.styles], ['badge.js', 'text/javascript', clientAssets.badge]] as const) {
+    for (const [file, type, body] of [
+      ['client.js', 'text/javascript', clientAssets.script],
+      ['client.css', 'text/css', clientAssets.styles],
+      ['badge.js', 'text/javascript', clientAssets.badge],
+    ] as const) {
       const res = await fetch(`${url}/${file}`)
       expect(res.status).toBe(200)
       expect(res.headers.get('content-type')).toBe(`${type}; charset=utf-8`)
@@ -353,7 +459,9 @@ describe('client assets', () => {
     expect(stale.headers.get('cache-control')).toBe('no-cache')
     expect(await stale.text()).toBe(clientAssets.badge)
     expect((await fetch(`${url}/client.js`, { method: 'POST' })).status).toBe(405)
-    expect((await fetch(`${url}/client.js`, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
+    expect((await fetch(`${url}/client.js`, {
+      headers: { 'sec-fetch-site': 'cross-site' },
+    })).status).toBe(403)
   })
 
   it('serves them through the fetch handler, to untrusted callers too', async () => {
@@ -372,13 +480,22 @@ describe('cross-origin requests', () => {
   const file = resolve('package.json')
 
   async function post(url: string, headers: Record<string, string>): Promise<number> {
-    const res = await fetch(`${url}/open`, { method: 'POST', headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify({ file }) })
+    const res = await fetch(`${url}/open`, {
+      method: 'POST',
+      headers: {
+        ...JSON_HEADERS,
+        ...headers,
+      },
+      body: JSON.stringify({ file }),
+    })
     return res.status
   }
 
   it('refuses requests made by a page on another site', async () => {
     const opened: unknown[] = []
-    const channel = createChannel({ open: request => void opened.push(request) })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+    })
     const url = await listen(channel)
 
     expect(await post(url, { 'sec-fetch-site': 'cross-site', 'origin': 'https://evil.example' })).toBe(403)
@@ -387,13 +504,19 @@ describe('cross-origin requests', () => {
     expect(await post(url, { origin: 'null' })).toBe(403)
     expect(opened).toEqual([])
 
-    expect((await fetch(`${url}/events`, { headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403)
-    expect((await fetch(`${url}/history/nope`, { headers: { origin: 'https://evil.example' } })).status).toBe(403)
+    expect((await fetch(`${url}/events`, {
+      headers: { 'sec-fetch-site': 'cross-site' },
+    })).status).toBe(403)
+    expect((await fetch(`${url}/history/nope`, {
+      headers: { origin: 'https://evil.example' },
+    })).status).toBe(403)
   })
 
   it('allows same-origin and non-browser requests', async () => {
     const opened: unknown[] = []
-    const channel = createChannel({ open: request => void opened.push(request) })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+    })
     const url = await listen(channel)
     const origin = new URL(url).origin
 
@@ -405,7 +528,9 @@ describe('cross-origin requests', () => {
   })
 
   it('gates the fetch handler too', async () => {
-    const channel = createChannel({ open: () => {} })
+    const channel = createChannel({
+      open: () => {},
+    })
     const evil = new Request('http://localhost:3000/__my-bad/open', {
       method: 'POST',
       headers: { ...JSON_HEADERS, 'sec-fetch-site': 'cross-site' },
@@ -425,38 +550,68 @@ describe('cross-origin requests', () => {
 describe('open containment', () => {
   it('rejects files outside the root and accepts files within it', async () => {
     const opened: unknown[] = []
-    const channel = createChannel({ open: request => void opened.push(request) })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+    })
     const url = await listen(channel)
 
-    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+    const post = (file: string) => fetch(`${url}/open`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ file }),
+    }).then(res => res.status)
     expect(await post('/etc/passwd')).toBe(403)
     expect(await post(resolve('/outside.ts'))).toBe(400)
     expect(await post(resolve('src/index.ts'))).toBe(204)
     expect(await post('src/../src/index.ts')).toBe(204)
     expect(opened).toEqual([
-      { file: resolve('src/index.ts'), line: undefined, column: undefined },
-      { file: resolve('src/index.ts'), line: undefined, column: undefined },
+      {
+        file: resolve('src/index.ts'),
+        line: undefined,
+        column: undefined,
+      },
+      {
+        file: resolve('src/index.ts'),
+        line: undefined,
+        column: undefined,
+      },
     ])
   })
 
   it('honours an explicit root and opting out', async () => {
     const opened: unknown[] = []
-    const confined = createChannel({ open: request => void opened.push(request), root: resolve('src') })
+    const confined = createChannel({
+      open: request => void opened.push(request),
+      root: resolve('src'),
+    })
     const confinedUrl = await listen(confined)
-    const post = (url: string, file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+    const post = (url: string, file: string) => fetch(`${url}/open`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ file }),
+    }).then(res => res.status)
     expect(await post(confinedUrl, resolve('test/channel.test.ts'))).toBe(403)
     expect(await post(confinedUrl, resolve('src/index.ts'))).toBe(204)
 
-    const anywhere = createChannel({ open: request => void opened.push(request), root: false })
+    const anywhere = createChannel({
+      open: request => void opened.push(request),
+      root: false,
+    })
     const anywhereUrl = await listen(anywhere)
     expect(await post(anywhereUrl, '/etc/passwd')).toBe(204)
   })
 
   it('refuses a path that names no file', async () => {
     const opened: unknown[] = []
-    const channel = createChannel({ open: request => void opened.push(request) })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+    })
     const url = await listen(channel)
-    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+    const post = (file: string) => fetch(`${url}/open`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ file }),
+    }).then(res => res.status)
 
     expect(await post(resolve('src/nope.ts'))).toBe(400)
     expect(await post(`${resolve('src/index.ts')}&calc.exe`)).toBe(400)
@@ -472,9 +627,16 @@ describe('open containment', () => {
     await symlink(outside, join(dir, 'link.txt'))
 
     const opened: OpenRequest[] = []
-    const channel = createChannel({ open: request => void opened.push(request), root: dir })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+      root: dir,
+    })
     const url = await listen(channel)
-    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+    const post = (file: string) => fetch(`${url}/open`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ file }),
+    }).then(res => res.status)
 
     expect(await post(join(dir, 'link.txt'))).toBe(403)
     expect(await post(join(dir, 'inside.txt'))).toBe(204)
@@ -490,18 +652,33 @@ describe('open containment', () => {
     await symlink(real, link)
 
     const opened: OpenRequest[] = []
-    const channel = createChannel({ open: request => void opened.push(request), root: link })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+      root: link,
+    })
     const url = await listen(channel)
-    const res = await fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file: join(link, 'app.ts') }) })
+    const res = await fetch(`${url}/open`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        file: join(link, 'app.ts'),
+      }),
+    })
 
     expect(res.status).toBe(204)
     expect(opened.map(request => request.file)).toEqual([await realpath(join(real, 'app.ts'))])
   })
 
   it('lets a function refuse a request', async () => {
-    const channel = createChannel({ open: request => !request.file.endsWith('index.ts') })
+    const channel = createChannel({
+      open: request => !request.file.endsWith('index.ts'),
+    })
     const url = await listen(channel)
-    const post = (file: string) => fetch(`${url}/open`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) }).then(res => res.status)
+    const post = (file: string) => fetch(`${url}/open`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ file }),
+    }).then(res => res.status)
 
     expect(await post(resolve('src/index.ts'))).toBe(400)
     expect(await post(resolve('src/types.ts'))).toBe(204)
@@ -513,8 +690,17 @@ describe('host validation', () => {
   const body = JSON.stringify({ file })
 
   it('refuses browser requests addressed to a non-loopback host', async () => {
-    const channel = createChannel({ open: () => {} })
-    const post = (headers: Record<string, string>) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, ...headers }, body })).then(res => res?.status)
+    const channel = createChannel({
+      open: () => {},
+    })
+    const post = (headers: Record<string, string>) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', {
+      method: 'POST',
+      headers: {
+        ...JSON_HEADERS,
+        ...headers,
+      },
+      body,
+    })).then(res => res?.status)
 
     expect(await post({ 'sec-fetch-site': 'same-origin', 'host': 'rebound.example:3000' })).toBe(403)
     expect(await post({ origin: 'http://rebound.example:3000', host: 'rebound.example:3000' })).toBe(403)
@@ -525,8 +711,14 @@ describe('host validation', () => {
   })
 
   it('accepts IP-literal hosts', async () => {
-    const channel = createChannel({ open: () => {} })
-    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body })).then(res => res?.status)
+    const channel = createChannel({
+      open: () => {},
+    })
+    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', {
+      method: 'POST',
+      headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host },
+      body,
+    })).then(res => res?.status)
 
     expect(await post('192.168.1.20:3000')).toBe(204)
     expect(await post('[fe80::1]:3000')).toBe(204)
@@ -535,8 +727,15 @@ describe('host validation', () => {
   })
 
   it('honours allowedHosts', async () => {
-    const channel = createChannel({ open: () => {}, allowedHosts: ['.example.dev', 'devbox'] })
-    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body })).then(res => res?.status)
+    const channel = createChannel({
+      open: () => {},
+      allowedHosts: ['.example.dev', 'devbox'],
+    })
+    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', {
+      method: 'POST',
+      headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host },
+      body,
+    })).then(res => res?.status)
 
     expect(await post('app.example.dev:3000')).toBe(204)
     expect(await post('example.dev')).toBe(204)
@@ -544,8 +743,15 @@ describe('host validation', () => {
     expect(await post('devbox.evil.example')).toBe(403)
     channel.close()
 
-    const any = createChannel({ open: () => {}, allowedHosts: true })
-    expect((await any.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', 'host': 'anything.example' }, body })))?.status).toBe(204)
+    const any = createChannel({
+      open: () => {},
+      allowedHosts: true,
+    })
+    expect((await any.fetchHandler(new Request('http://localhost:3000/__my-bad/open', {
+      method: 'POST',
+      headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', 'host': 'anything.example' },
+      body,
+    })))?.status).toBe(204)
     any.close()
   })
 })
@@ -562,7 +768,9 @@ describe('escapeCmdArg', () => {
 describe('build progress', () => {
   function collect() {
     const events: BuildProgress[] = []
-    const channel = createChannel({ sink: event => void (event.type === 'build' && events.push(event.payload)) })
+    const channel = createChannel({
+      sink: event => void (event.type === 'build' && events.push(event.payload)),
+    })
     return { channel, events }
   }
 
@@ -586,7 +794,12 @@ describe('build progress', () => {
     channel.progress({ phase: 'modules', percent: 100, source: 'app' })
     channel.close()
 
-    expect(events.map(event => [event.source, event.percent])).toEqual([['cli', 30], ['cli', 30], ['app', 90], ['app', 100]])
+    expect(events.map(event => [event.source, event.percent])).toEqual([
+      ['cli', 30],
+      ['cli', 30],
+      ['app', 90],
+      ['app', 100],
+    ])
   })
 })
 
@@ -606,21 +819,37 @@ describe('untrusted callers', () => {
     channel.setError(mine, 'a', 'GET /about')
     channel.setError(theirs, 'b', 'GET /contact')
 
-    expect((await hello(channel, '?requestId=a&path=/about', false)).history).toMatchObject([{ id: mine.id }])
+    expect((await hello(channel, '?requestId=a&path=/about', false)).history).toMatchObject([
+      { id: mine.id },
+    ])
     expect((await hello(channel, '?requestId=c&path=/other', false)).history).toEqual([])
-    expect((await hello(channel, '?requestId=a&path=/about')).history).toMatchObject([{ id: mine.id }, { id: theirs.id }])
-    expect((await hello(channel, '?requestId=a&path=/about', true)).history).toMatchObject([{ id: mine.id }, { id: theirs.id }])
+    expect((await hello(channel, '?requestId=a&path=/about')).history).toMatchObject([
+      { id: mine.id },
+      { id: theirs.id },
+    ])
+    expect((await hello(channel, '?requestId=a&path=/about', true)).history).toMatchObject([
+      { id: mine.id },
+      { id: theirs.id },
+    ])
     channel.close()
   })
 
   it('withholds the open action and refuses the endpoint', async () => {
     const opened: unknown[] = []
-    const channel = createChannel({ open: request => void opened.push(request) })
+    const channel = createChannel({
+      open: request => void opened.push(request),
+    })
     expect((await hello(channel, '?path=/about')).actions).toEqual(['open'])
     expect((await hello(channel, '?path=/about', false)).actions).toEqual([])
 
     const post = async (trusted?: boolean): Promise<number> => (await channel.fetchHandler(
-      new Request('http://localhost/__my-bad/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ file: resolve('package.json') }) }),
+      new Request('http://localhost/__my-bad/open', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          file: resolve('package.json'),
+        }),
+      }),
       { trusted },
     ))!.status
     expect(await post(false)).toBe(403)
@@ -639,7 +868,10 @@ describe('untrusted callers', () => {
     const scoped = await createReport(new Error('scoped'), { loaders: [], snippets: false })
     channel.setError(scoped, 'a', 'GET /about')
 
-    expect((await hello(channel, '?requestId=z&path=/nowhere', false)).history).toMatchObject([{ id: report.id }, { id: warning.id }])
+    expect((await hello(channel, '?requestId=z&path=/nowhere', false)).history).toMatchObject([
+      { id: report.id },
+      { id: warning.id },
+    ])
     channel.close()
   })
 
@@ -656,11 +888,21 @@ describe('untrusted callers', () => {
     expect(await status('?path=/admin', false)).toBe(404)
 
     const owner = await hello(channel, '?requestId=a&path=/admin', false)
-    expect(owner).toMatchObject({ current: { id: report.id }, history: [{ id: report.id }] })
+    expect(owner).toMatchObject({
+      current: { id: report.id },
+      history: [
+        { id: report.id },
+      ],
+    })
     expect(await status('?requestId=a&path=/admin', false)).toBe(200)
 
     const loopback = await hello(channel, '?path=/admin')
-    expect(loopback).toMatchObject({ current: { id: report.id }, history: [{ id: report.id }] })
+    expect(loopback).toMatchObject({
+      current: { id: report.id },
+      history: [
+        { id: report.id },
+      ],
+    })
     channel.close()
   })
 
@@ -707,8 +949,18 @@ describe('untrusted callers', () => {
     controller.abort()
     server.close()
 
-    expect(theirHistory).toMatchObject({ event: 'history', data: { history: [{ id: first.id }, { id: second.id }] } })
-    expect(myScoped!.data.history).toMatchObject([{ id: first.id }])
+    expect(theirHistory).toMatchObject({
+      event: 'history',
+      data: {
+        history: [
+          { id: first.id },
+          { id: second.id },
+        ],
+      },
+    })
+    expect(myScoped!.data.history).toMatchObject([
+      { id: first.id },
+    ])
   })
 })
 
@@ -733,7 +985,10 @@ describe('scoped logs', () => {
           const event = /^event: (.+)$/m.exec(block)?.[1]
           const data = /^data: (.+)$/m.exec(block)?.[1]
           if (event && data) {
-            received.push({ event, data: JSON.parse(data) })
+            received.push({
+              event,
+              data: JSON.parse(data),
+            })
           }
         }
         return pump()
@@ -775,7 +1030,9 @@ describe('scoped logs', () => {
 
   it('passes every log to the sink exactly once, with its attribution', async () => {
     const events: any[] = []
-    const channel = createChannel({ sink: event => void (event.type === 'log' && events.push(event.payload)) })
+    const channel = createChannel({
+      sink: event => void (event.type === 'log' && events.push(event.payload)),
+    })
     const { ready } = subscribe(channel, '?requestId=a&path=/about', false)
     await ready
     channel.log({ level: 'info', text: 'unattributed' })
@@ -801,6 +1058,8 @@ describe('scoped logs', () => {
     void (await ready)()
     channel.close()
 
-    expect(received.filter(event => event.event === 'log').map(event => event.data)).toEqual([{ level: 'warn', text: 'careful', timestamp: 5 }])
+    expect(received.filter(event => event.event === 'log').map(event => event.data)).toEqual([
+      { level: 'warn', text: 'careful', timestamp: 5 },
+    ])
   })
 })

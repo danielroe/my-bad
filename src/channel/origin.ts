@@ -79,7 +79,9 @@ export function isTrustedNodeRequest(req: IncomingMessage, options?: TrustOption
 
 function header(req: IncomingMessage, name: string): string | undefined {
   const value = req.headers[name]
-  return Array.isArray(value) ? value[0] : value
+  return Array.isArray(value)
+    ? value[0]
+    : value
 }
 
 export function isTrustedFetchRequest(request: Request, options?: TrustOptions): boolean {

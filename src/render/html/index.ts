@@ -93,12 +93,16 @@ function themeStyles(theme: Theme | undefined, selector: string): string {
       vars.push(`${name}:${cssValue(value)}`)
     }
   }
-  return `${vars.length ? `${selector}{${vars.join(';')}}\n` : ''}${theme?.css ?? ''}`
+  return `${vars.length
+    ? `${selector}{${vars.join(';')}}\n`
+    : ''}${theme?.css ?? ''}`
 }
 
 /** The built-in stylesheet, inlined unless it is served separately. */
 function sheet(assets: ClientAssets | undefined): string {
-  return assets?.styles ? '' : getClientStyles()
+  return assets?.styles
+    ? ''
+    : getClientStyles()
 }
 
 function cssValue(value: string): string {
@@ -109,8 +113,14 @@ function cssValue(value: string): string {
 const THEME_BOOTSTRAP = `<script>(function(){var t;try{t=localStorage.getItem(${escapeScript(JSON.stringify(THEME_STORAGE_KEY))})}catch(e){}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}})()</script>\n`
 
 function stateScript(state: PageState, options: RenderHtmlOptions): string {
-  const script = options.assets?.script ? `<script src="${escapeHtml(options.assets.script)}"></script>` : `<script>${getClientScript()}</script>`
-  const json = JSON.stringify(state, options.rawStack ? undefined : (key, value) => key === 'rawStack' ? undefined : value)
+  const script = options.assets?.script
+    ? `<script src="${escapeHtml(options.assets.script)}"></script>`
+    : `<script>${getClientScript()}</script>`
+  const json = JSON.stringify(state, options.rawStack
+    ? undefined
+    : (key, value) => key === 'rawStack'
+        ? undefined
+        : value)
   return `<script type="application/json">${escapeScript(json)}</script>\n${script}`
 }
 
@@ -131,17 +141,24 @@ function baseState(options: RenderHtmlOptions, mode: PageState['mode']): Omit<Pa
 
 /** Render a complete HTML document for the report. */
 export function renderPage(report: ErrorReport, options: RenderPageOptions = {}): string {
-  const state = { ...baseState(options, 'page'), report }
+  const state = {
+    ...baseState(options, 'page'),
+    report,
+  }
   const title = options.title ?? `${report.name}: ${clampMessage(report.message.split('\n')[0] ?? '', options.maxMessageLength).head}`
   const scheme = options.theme?.scheme
   return `<!DOCTYPE html>
-<html lang="en"${scheme ? ` data-theme="${escapeHtml(scheme)}"` : ''}>
+<html lang="en"${scheme
+  ? ` data-theme="${escapeHtml(scheme)}"`
+  : ''}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${escapeHtml(title)}</title>
-${scheme ? '' : THEME_BOOTSTRAP}${options.assets?.styles ? `<link rel="stylesheet" href="${escapeHtml(options.assets.styles)}">\n` : ''}<style>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${sheet(options.assets)}${themeStyles(options.theme, ':root')}</style>
+${scheme ? '' : THEME_BOOTSTRAP}${options.assets?.styles
+  ? `<link rel="stylesheet" href="${escapeHtml(options.assets.styles)}">\n`
+  : ''}<style>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${sheet(options.assets)}${themeStyles(options.theme, ':root')}</style>
 ${options.head ?? ''}
 </head>
 <body>
@@ -157,7 +174,10 @@ ${options.inject ?? ''}
  * The overlay renders inside a shadow root, so host styles cannot leak in.
  */
 export function renderOverlay(report: ErrorReport, options: RenderOverlayOptions = {}): string {
-  const state: PageState = { ...overlayState(options), report }
+  const state: PageState = {
+    ...overlayState(options),
+    report,
+  }
   return `<${state.tag}></${state.tag}>\n${stateScript(state, options)}`
 }
 
@@ -187,7 +207,14 @@ export function renderBadge(options: RenderBadgeOptions): string {
   const script = options.assets?.script ?? served.script
   const styles = options.assets?.styles ?? served.styles
   const badge = options.assets?.badge ?? served.badge
-  const state: BadgeState = { overlay: overlayState({ ...options, startMinimized: options.startMinimized ?? true, assets: { script, styles } }), script }
+  const state: BadgeState = {
+    overlay: overlayState({
+      ...options,
+      startMinimized: options.startMinimized ?? true,
+      assets: { script, styles },
+    }),
+    script,
+  }
   return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script defer src="${escapeHtml(badge)}"></script>`
 }
 
@@ -195,5 +222,7 @@ export function renderBadge(options: RenderBadgeOptions): string {
 export function injectOverlay(html: string, report: ErrorReport, options: RenderOverlayOptions = {}): string {
   const overlay = renderOverlay(report, options)
   const index = html.lastIndexOf('</body>')
-  return index === -1 ? html + overlay : `${html.slice(0, index)}${overlay}${html.slice(index)}`
+  return index === -1
+    ? html + overlay
+    : `${html.slice(0, index)}${overlay}${html.slice(index)}`
 }

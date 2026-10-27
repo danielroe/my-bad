@@ -5,7 +5,9 @@ const VENDOR_RE = /\/(?:node_modules|\.pnpm|\.yarn|\.bun)\//
 const NATIVE_RE = /^(?:node:|internal\/|<anonymous>|native$|wasm:|ext:|bun:|deno:)/
 
 export function matchesPattern(value: string, pattern: string | RegExp): boolean {
-  return typeof pattern === 'string' ? value.includes(pattern) : pattern.test(value)
+  return typeof pattern === 'string'
+    ? value.includes(pattern)
+    : pattern.test(value)
 }
 
 /**

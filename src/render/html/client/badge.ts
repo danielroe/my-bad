@@ -6,7 +6,16 @@ import { THEME_STORAGE_KEY } from '../state'
 
 type Payload<T extends ChannelEvent['type']> = Extract<ChannelEvent, { type: T }>['payload']
 
-const TYPES: Array<ChannelEvent['type']> = ['hello', 'error:set', 'error:clear', 'history', 'warning', 'warning:clear', 'log', 'build']
+const TYPES: Array<ChannelEvent['type']> = [
+  'hello',
+  'error:set',
+  'error:clear',
+  'history',
+  'warning',
+  'warning:clear',
+  'log',
+  'build',
+]
 
 const ICONS = {
   warning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg>',
@@ -56,7 +65,9 @@ function firstLine(report: ErrorReport): string {
 }
 
 function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
+  return `${count} ${noun}${count === 1
+    ? ''
+    : 's'}`
 }
 
 function start(state: BadgeState): void {
@@ -90,7 +101,11 @@ function start(state: BadgeState): void {
   let badge: Badge | undefined
 
   const warnings = () => history.filter(entry => entry.kind === 'warning')
-  const forward = (type: string, payload?: unknown) => target.dispatchEvent(payload === undefined ? new Event(type) : new MessageEvent(type, { data: JSON.stringify(payload) }))
+  const forward = (type: string, payload?: unknown) => target.dispatchEvent(payload === undefined
+    ? new Event(type)
+    : new MessageEvent(type, {
+        data: JSON.stringify(payload),
+      }))
 
   function announce(report: ErrorReport): void {
     latest = report
@@ -99,7 +114,9 @@ function start(state: BadgeState): void {
       latest = undefined
       render()
     }, LATEST_MS)
-    announcement = `${report.kind === 'warning' ? 'Warning' : 'Error'}: ${firstLine(report)}`
+    announcement = `${report.kind === 'warning'
+      ? 'Warning'
+      : 'Error'}: ${firstLine(report)}`
   }
 
   function setHistory(next: HistoryEntry[]): void {
@@ -152,7 +169,9 @@ function start(state: BadgeState): void {
   }
 
   function cleared(id: string | undefined): void {
-    dispatchEvent(new CustomEvent('my-bad:error:clear', { detail: { id } }))
+    dispatchEvent(new CustomEvent('my-bad:error:clear', {
+      detail: { id },
+    }))
   }
 
   function receive(type: ChannelEvent['type'], data: string): void {
@@ -254,7 +273,9 @@ function start(state: BadgeState): void {
     }
     try {
       const res = await fetch(`${overlay.channel}/history/${encodeURIComponent(entry.id)}?${query}`)
-      return res.ok ? await res.json() : undefined
+      return res.ok
+        ? await res.json()
+        : undefined
     }
     catch {}
   }
@@ -304,7 +325,11 @@ function start(state: BadgeState): void {
 
   function scheme(): string {
     const remembered = storage(THEME_STORAGE_KEY)
-    return overlay.theme?.scheme ?? (remembered === 'light' || remembered === 'dark' ? remembered : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    return overlay.theme?.scheme ?? (remembered === 'light' || remembered === 'dark'
+      ? remembered
+      : matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light')
   }
 
   function create(): Badge {
@@ -324,7 +349,13 @@ function start(state: BadgeState): void {
     status.setAttribute('role', 'status')
     shadow.append(style, button, status)
     const [, count, latest] = button.children as unknown as HTMLElement[]
-    return { host, button, count: count!, latest: latest!, status }
+    return {
+      host,
+      button,
+      count: count!,
+      latest: latest!,
+      status,
+    }
   }
 
   /** A host whose overlay has not been built yet counts as shown, since its script is about to build it. */
@@ -350,7 +381,9 @@ function start(state: BadgeState): void {
     }
     const kind = current ? 'error' : 'warning'
     const summary = [current && '1 error', count && plural(count, 'warning')].filter(Boolean).join(', ')
-    const detail = latest ? firstLine(latest) : ''
+    const detail = latest
+      ? firstLine(latest)
+      : ''
     const { button } = badge
     button.hidden = false
     button.dataset.kind = kind
@@ -368,7 +401,9 @@ function start(state: BadgeState): void {
     }
   }
 
-  document.addEventListener('visibilitychange', () => document.hidden ? disconnect() : connect())
+  document.addEventListener('visibilitychange', () => document.hidden
+    ? disconnect()
+    : connect())
   if (!document.hidden) {
     connect()
   }

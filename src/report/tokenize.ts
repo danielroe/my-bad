@@ -9,7 +9,15 @@ const KEYWORDS = new Set('abstract as async await break case catch class const c
  */
 export const TOKEN_RE = /(\/\/[^\n\r\u2028\u2029]*|\/\*(?:(?!\*\/)[^\n\r\u2028\u2029])*(?:\*\/)?|<!--(?:(?!--!?>)[^\n\r\u2028\u2029])*(?:--!?>)?)|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\]|\\.)*`?)|(\b\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?n?\b|\b0x[\da-f]+\b)|(<\/?[a-z][\w.-]*|\/?>)|([a-z_$][\w$-]*)|([{}()[\]])|([=!<>+\-*/%&|^~?:.,;]+)/giu
 
-const GROUPS: TokenType[] = ['comment', 'string', 'number', 'tag', 'variable', 'punctuation', 'operator']
+const GROUPS: TokenType[] = [
+  'comment',
+  'string',
+  'number',
+  'tag',
+  'variable',
+  'punctuation',
+  'operator',
+]
 
 const HTML_COMMENT_CLOSE_RE = /--!?>/
 
@@ -23,11 +31,15 @@ interface Lexed {
 function closeOf(line: string, state: SnippetContinuation): number {
   if (state === 'comment') {
     const at = line.indexOf('*/')
-    return at < 0 ? -1 : at + 2
+    return at < 0
+      ? -1
+      : at + 2
   }
   if (state === 'html-comment') {
     const match = HTML_COMMENT_CLOSE_RE.exec(line)
-    return match ? match.index + match[0].length : -1
+    return match
+      ? match.index + match[0].length
+      : -1
   }
   for (let i = 0; i < line.length; i++) {
     const code = line.charCodeAt(i)
@@ -52,13 +64,19 @@ function isEscaped(text: string, index: number): boolean {
 /** The construct a comment or string token leaves open, if it is unterminated. */
 function openedBy(text: string): SnippetContinuation | undefined {
   if (text.startsWith('/*')) {
-    return text.length >= 4 && text.endsWith('*/') ? undefined : 'comment'
+    return text.length >= 4 && text.endsWith('*/')
+      ? undefined
+      : 'comment'
   }
   if (text.startsWith('<!--')) {
-    return text.length >= 7 && (text.endsWith('-->') || text.endsWith('--!>')) ? undefined : 'html-comment'
+    return text.length >= 7 && (text.endsWith('-->') || text.endsWith('--!>'))
+      ? undefined
+      : 'html-comment'
   }
   if (text.startsWith('`')) {
-    return text.length >= 2 && text.endsWith('`') && !isEscaped(text, text.length - 1) ? undefined : 'template'
+    return text.length >= 2 && text.endsWith('`') && !isEscaped(text, text.length - 1)
+      ? undefined
+      : 'template'
   }
 }
 
@@ -68,17 +86,34 @@ function openedBy(text: string): SnippetContinuation | undefined {
  */
 function tokenizeFrom(line: string, lang: string | undefined, state: SnippetContinuation | undefined): Lexed {
   if (!lang || lang === 'md') {
-    return { tokens: [{ type: 'text', text: line }], state: undefined }
+    return {
+      tokens: [
+        { type: 'text', text: line },
+      ],
+      state: undefined,
+    }
   }
   const tokens: Token[] = []
   let last = 0
   if (state) {
     const end = closeOf(line, state)
-    const type: TokenType = state === 'template' ? 'string' : 'comment'
+    const type: TokenType = state === 'template'
+      ? 'string'
+      : 'comment'
     if (end < 0) {
-      return { tokens: line ? [{ type, text: line }] : [], state }
+      return {
+        tokens: line
+          ? [
+              { type, text: line },
+            ]
+          : [],
+        state,
+      }
     }
-    tokens.push({ type, text: line.slice(0, end) })
+    tokens.push({
+      type,
+      text: line.slice(0, end),
+    })
     last = end
   }
   let inTag = false
@@ -86,7 +121,10 @@ function tokenizeFrom(line: string, lang: string | undefined, state: SnippetCont
   TOKEN_RE.lastIndex = last
   for (let match = TOKEN_RE.exec(line); match; match = TOKEN_RE.exec(line)) {
     if (match.index > last) {
-      tokens.push({ type: 'text', text: line.slice(last, match.index) })
+      tokens.push({
+        type: 'text',
+        text: line.slice(last, match.index),
+      })
     }
     let text = match[0]
     let group = 1
@@ -132,7 +170,10 @@ function tokenizeFrom(line: string, lang: string | undefined, state: SnippetCont
     TOKEN_RE.lastIndex = last
   }
   if (last < line.length) {
-    tokens.push({ type: 'text', text: line.slice(last) })
+    tokens.push({
+      type: 'text',
+      text: line.slice(last),
+    })
     open = undefined
   }
   return { tokens, state: open }
@@ -197,7 +238,9 @@ function scanState(text: string): SnippetContinuation | undefined {
     switch (match[0]) {
       case '//': {
         const newline = text.indexOf('\n', at)
-        at = newline < 0 ? text.length : newline + 1
+        at = newline < 0
+          ? text.length
+          : newline + 1
         break
       }
       case '/*': {
@@ -224,8 +267,12 @@ function scanState(text: string): SnippetContinuation | undefined {
         }
         break
       default: {
-        const end = closeAfter(text, at, match[0] === '"' ? DOUBLE_STOP_RE : SINGLE_STOP_RE)
-        at = end < 0 ? text.length : end
+        const end = closeAfter(text, at, match[0] === '"'
+          ? DOUBLE_STOP_RE
+          : SINGLE_STOP_RE)
+        at = end < 0
+          ? text.length
+          : end
       }
     }
   }
@@ -241,17 +288,23 @@ export function continuationAt(contents: string, end: number, lang: string | und
   }
   let from = end
   for (let n = 0; n < CONTEXT_LINES && from > 0 && end - from < CONTEXT_CHARS; n++) {
-    from = (from >= 2 ? contents.lastIndexOf('\n', from - 2) : -1) + 1
+    from = (from >= 2
+      ? contents.lastIndexOf('\n', from - 2)
+      : -1) + 1
   }
   if (end - from > CONTEXT_CHARS) {
     const cut = contents.indexOf('\n', end - CONTEXT_CHARS)
-    from = cut < 0 ? end : cut + 1
+    from = cut < 0
+      ? end
+      : cut + 1
   }
   if (from >= end) {
     return
   }
   const context = contents.slice(from, end - 1)
-  return context.includes('/*') || context.includes('<!--') || context.includes('`') ? scanState(context) : undefined
+  return context.includes('/*') || context.includes('<!--') || context.includes('`')
+    ? scanState(context)
+    : undefined
 }
 
 interface Lexing {
@@ -269,7 +322,9 @@ const lexed = new WeakMap<Snippet, Lexing>()
 function lineTokens(snippet: Snippet, index: number): Token[] {
   const line = snippet.lines[index] ?? ''
   if (snippet.offset !== undefined) {
-    return defaultTokenizer(line, snippet.lang) ?? [{ type: 'text', text: line }]
+    return defaultTokenizer(line, snippet.lang) ?? [
+      { type: 'text', text: line },
+    ]
   }
   let lexing = lexed.get(snippet)
   if (!lexing) {
@@ -281,7 +336,9 @@ function lineTokens(snippet: Snippet, index: number): Token[] {
     lexing.lines.push(next.tokens)
     lexing.state = next.state
   }
-  return lexing.lines[index] ?? [{ type: 'text', text: line }]
+  return lexing.lines[index] ?? [
+    { type: 'text', text: line },
+  ]
 }
 
 /** Tokens for a snippet line, preferring tokens stored on the report. */

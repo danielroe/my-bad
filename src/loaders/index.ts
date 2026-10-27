@@ -8,5 +8,8 @@ export type { MappedPosition, RawIndexSourceMap, RawSourceMap, SourceMapLoaderOp
 
 /** Reads sources from disk without mapping, for processes started with `--enable-source-maps`. */
 export function passthroughLoader(): SourceLoader {
-  return { ...fsLoader({ sidecar: false, inline: false }), name: 'passthrough' }
+  return {
+    ...fsLoader({ sidecar: false, inline: false }),
+    name: 'passthrough',
+  }
 }
