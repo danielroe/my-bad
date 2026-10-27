@@ -68,8 +68,14 @@ export interface Channel {
   handler: (req: IncomingMessage, res: ServerResponse, options?: CallerOptions) => Promise<boolean>
   /** Fetch-style handler returning `undefined` for unknown paths. */
   fetchHandler: (request: Request, options?: CallerOptions) => Promise<Response | undefined>
-  /** Publish the current error. Naming the request it came from (`requestId`, `METHOD /path?query`) sends it only to the pages that request concerns. */
+  /**
+   * Publish an error, open until `clearError` retires it or another error replaces it. Each page shows the newest
+   * open error that concerns it. Naming the request it came from (`requestId`, `METHOD /path?query`) sends it only to
+   * the pages that request concerns, and replaces only earlier errors from that request; an error from no request
+   * replaces every open error.
+   */
   setError: (report: ErrorReport, requestId?: string, request?: string) => void
+  /** Retire the open error with this id, or every open error without one. Pages showing it are told it cleared. */
   clearError: (id?: string) => void
   /** Publish a warning. It stays in the history until retired with `clearWarning`. */
   warn: (report: ErrorReport) => void
@@ -83,12 +89,17 @@ export interface Channel {
   log: (entry: Omit<LogEntry, 'timestamp'> & { timestamp?: number }, requestId?: string, request?: string) => void
   /** Publish build progress. Updates carrying a `source` are resolved against the other live sources; `percent: 100` retires one. */
   progress: (progress: BuildProgress) => void
+  /** The newest open error. */
   readonly current: ErrorReport | undefined
   readonly history: HistoryEntry[]
   getReport: (id: string) => ErrorReport | undefined
   /** Number of connected clients. */
   readonly clients: number
   close: () => void
+}
+
+function scopeKey(request: ReportRequest = {}): string {
+  return request.requestId ? `id:${request.requestId}` : request.request ? `request:${request.request}` : ''
 }
 
 /** A source with no `percent` has unknown work left, so it ranks below any number. */
@@ -128,10 +139,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const reports = new Map<string, ErrorReport>()
   const origins = new Map<string, ReportRequest>()
   const live = new Map<string, BuildProgress>()
-  let current: ErrorReport | undefined
-  let currentRequest: ReportRequest = {}
+  /** Ids of the errors not yet cleared, oldest first. */
+  const raised = new Set<string>()
   const clients = new Set<Client>()
-  const concerned = (client: Client) => concernsClient(client.scope, currentRequest, !client.trusted)
   const actions: string[] = []
   if (options.open) {
     actions.push('open')
@@ -140,7 +150,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const keepalive = setInterval(send, options.keepalive ?? 15_000, ': ping\n\n')
   keepalive.unref?.()
 
-  const helloFrames = new Map<boolean, string>()
+  const helloFrames = new Map<string, string>()
 
   function concernsViewer(id: string, viewer: Viewer): boolean {
     return concernsClient(viewer.scope, origins.get(id) ?? {}, !viewer.trusted)
@@ -160,8 +170,50 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     for (const oldest of same.slice(0, Math.max(0, same.length - (warning ? MAX_WARNINGS : max)))) {
       reports.delete(oldest.id)
       origins.delete(oldest.id)
+      raised.delete(oldest.id)
     }
     helloFrames.clear()
+  }
+
+  /** The newest open error that concerns a page. */
+  function shownTo(viewer: Viewer): ErrorReport | undefined {
+    let shown: string | undefined
+    for (const id of raised) {
+      if (concernsViewer(id, viewer)) {
+        shown = id
+      }
+    }
+    return shown === undefined ? undefined : reports.get(shown)
+  }
+
+  function snapshot(): Map<Client, ErrorReport | undefined> {
+    return new Map([...clients].map(client => [client, shownTo(client)]))
+  }
+
+  function sendTo(client: Client, event: ChannelEvent): void {
+    try {
+      client.send(encode(event))
+    }
+    catch {
+      clients.delete(client)
+    }
+  }
+
+  function errorSet(report: ErrorReport, entries: HistoryEntry[]): ChannelEvent {
+    return { type: 'error:set', payload: { report, history: entries, ...origins.get(report.id) } }
+  }
+
+  /** Tell a page whose error went away, and show it the next open error that concerns it. Returns whether that sent it the history. */
+  function settle(client: Client, previous: ErrorReport | undefined): boolean {
+    const next = shownTo(client)
+    if (!previous || next?.id === previous.id) {
+      return false
+    }
+    sendTo(client, { type: 'error:clear', payload: { id: previous.id } })
+    if (next) {
+      sendTo(client, errorSet(next, history(client.trusted ? undefined : client)))
+    }
+    return !!next
   }
 
   function send(chunk: string, to: (client: Client) => boolean = () => true): void {
@@ -206,15 +258,15 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   /** The current error is only announced to the pages it concerns; the rest just learn it happened. */
   function hello(client: Client): string {
-    const mine = current !== undefined && concerned(client)
+    const shown = shownTo(client)
     if (!client.trusted) {
       const unprivileged = actions.filter(action => !PRIVILEGED.has(action))
-      return encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions: unprivileged, current: mine ? current : undefined, history: history(client) } })
+      return encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions: unprivileged, current: shown, history: history(client) } })
     }
-    let frame = helloFrames.get(mine)
+    let frame = helloFrames.get(shown?.id ?? '')
     if (!frame) {
-      frame = encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current: mine ? current : undefined, history: history() } })
-      helloFrames.set(mine, frame)
+      frame = encode({ type: 'hello', payload: { version: __MY_BAD_VERSION__, actions, current: shown, history: history() } })
+      helloFrames.set(shown?.id ?? '', frame)
     }
     return frame
   }
@@ -422,22 +474,40 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     },
 
     setError(report, requestId, request) {
-      currentRequest = { ...(requestId && { requestId }), ...(request && { request }) }
-      remember(report, currentRequest)
-      current = report
-      const set = (entries: HistoryEntry[]): ChannelEvent => ({ type: 'error:set', payload: { report, history: entries, ...currentRequest } })
-      sendScoped(set, concerned)
+      const origin: ReportRequest = { ...(requestId && { requestId }), ...(request && { request }) }
+      const before = snapshot()
+      remember(report, origin)
+      const scope = scopeKey(origin)
+      for (const id of raised) {
+        if (!scope || scopeKey(origins.get(id)) === scope) {
+          raised.delete(id)
+        }
+      }
+      raised.delete(report.id)
+      raised.add(report.id)
+      const reaches = (client: Client) => concernsClient(client.scope, origin, !client.trusted)
+      const set = (entries: HistoryEntry[]) => errorSet(report, entries)
+      sendScoped(set, reaches)
       notify(set(history()))
-      sendScoped(entries => ({ type: 'history', payload: { history: entries } }), client => !concerned(client))
+      const settled = new Set([...clients].filter(client => !reaches(client) && settle(client, before.get(client))))
+      sendScoped(entries => ({ type: 'history', payload: { history: entries } }), client => !reaches(client) && !settled.has(client))
     },
     clearError(id) {
-      if (id && current?.id !== id) {
+      if (id && !raised.has(id)) {
         return
       }
-      broadcast({ type: 'error:clear', payload: { id } }, concerned)
-      current = undefined
-      currentRequest = {}
+      const before = snapshot()
+      if (id) {
+        raised.delete(id)
+      }
+      else {
+        raised.clear()
+      }
       helloFrames.clear()
+      for (const client of clients) {
+        settle(client, before.get(client))
+      }
+      notify({ type: 'error:clear', payload: { id } })
     },
     warn(report) {
       const warning = { ...report, kind: 'warning' as const }
@@ -484,7 +554,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       broadcast({ type: 'build', payload: leastAdvanced(live) ?? progress })
     },
     get current() {
-      return current
+      return reports.get([...raised].at(-1) ?? '')
     },
     get history() {
       return history()

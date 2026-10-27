@@ -206,6 +206,9 @@ function revive(m: Mount): void {
   clearTimeout(dismissal)
   dismissal = undefined
   if (m.overlay?.isConnected) {
+    if (m.restore && !m.restore.isConnected) {
+      (m.overlay.getRootNode() as ShadowRoot).append(m.restore)
+    }
     return
   }
   const host = document.createElement(m.themeTarget.localName)

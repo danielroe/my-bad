@@ -138,6 +138,82 @@ describe('createChannel', () => {
     channel.close()
   })
 
+  it('clears a page that an error no longer concerns once it is published for another request', async () => {
+    const channel = createChannel()
+    const url = await listen(channel)
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+
+    const controller = new AbortController()
+    const received = readEvents(url, 5, controller.signal, '?path=/about&requestId=page')
+    while (channel.clients === 0) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.setError(report)
+    channel.setError(report, 'module-request', 'GET /_nuxt/app.vue')
+    channel.clearError()
+    channel.log({ level: 'info', text: 'done' })
+    const events = await received
+    controller.abort()
+
+    expect(events.map(event => event.event)).toEqual(['hello', 'error:set', 'error:clear', 'history', 'log'])
+    expect(events[2]!.data).toEqual({ id: report.id })
+  })
+
+  it('keeps an error open on its own page while another request errors, until it is cleared', async () => {
+    const channel = createChannel()
+    const url = await listen(channel)
+    const [first, second] = await Promise.all(['first', 'second'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false })))
+
+    const controller = new AbortController()
+    const a = readEvents(url, 5, controller.signal, '?path=/a&requestId=a')
+    const b = readEvents(url, 5, controller.signal, '?path=/b&requestId=b')
+    while (channel.clients < 2) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.setError(first!, 'a', 'GET /a')
+    channel.setError(second!, 'b', 'GET /b')
+    const hello = async (query: string): Promise<any> => {
+      const res = await channel.fetchHandler(new Request(`http://localhost/__my-bad/events${query}`))
+      const reader = res!.body!.getReader()
+      const { value } = await reader.read()
+      await reader.cancel()
+      return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
+    }
+    expect((await hello('?path=/a&requestId=a')).current).toMatchObject({ id: first!.id })
+    expect(channel.current?.id).toBe(second!.id)
+
+    channel.clearError(first!.id)
+    channel.clearError()
+    channel.log({ level: 'info', text: 'done' })
+    const [onA, onB] = await Promise.all([a, b])
+    controller.abort()
+
+    expect(onA.map(event => event.event)).toEqual(['hello', 'error:set', 'history', 'error:clear', 'log'])
+    expect(onA[3]!.data).toEqual({ id: first!.id })
+    expect(onB.map(event => event.event)).toEqual(['hello', 'history', 'error:set', 'error:clear', 'log'])
+    expect(onB[3]!.data).toEqual({ id: second!.id })
+  })
+
+  it('replaces earlier errors from the same request, and every open error with one from no request', async () => {
+    const channel = createChannel()
+    const [a1, a2, b, everywhere] = await Promise.all(['a1', 'a2', 'b', 'everywhere'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false })))
+    channel.setError(a1!, 'a', 'GET /a')
+    channel.setError(a2!, 'a', 'GET /a')
+    channel.clearError(a2!.id)
+    expect(channel.current).toBeUndefined()
+
+    channel.setError(a1!, 'a', 'GET /a')
+    channel.setError(b!, 'b', 'GET /b')
+    channel.clearError(b!.id)
+    expect(channel.current?.id).toBe(a1!.id)
+
+    channel.setError(b!, 'b', 'GET /b')
+    channel.setError(everywhere!)
+    channel.clearError(everywhere!.id)
+    expect(channel.current).toBeUndefined()
+    channel.close()
+  })
+
   it('retires a warning from the history and tells subscribers', async () => {
     const sunk: unknown[] = []
     const channel = createChannel({ sink: event => void sunk.push(event) })

@@ -220,9 +220,10 @@ server.on('request', (req, res) => channel.handler(req, res).then(handled => han
 // page opens an `editor://` URL on the machine running the browser instead.
 await channel.handler(req, res, { trusted: isLoopback(req) })
 
-channel.setError(report) // pages swap content in place
+channel.setError(report) // pages swap content in place; replaces every open error
 channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
-channel.clearError() // pages reload, overlays dismiss
+channel.clearError(report.id) // retire one error: pages showing it reload or move on to the next open error that concerns them
+channel.clearError() // retire every error: pages reload, overlays dismiss
 channel.warn(report) // toast, and counted in the header until retired
 channel.clearWarning(report.id) // retire it: pages drop it from their count and toasts (no id retires every warning)
 channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer of trusted callers

@@ -283,14 +283,44 @@ describe('browser client', () => {
     await waitFor(async () => (await b.locator('my-bad-overlay').locator('[data-pager-label]').textContent())?.endsWith(`of ${channel.history.length}`), true)
 
     channel.clearError(forA.id)
-    await waitFor(() => a.locator('my-bad-overlay').count(), 0)
+    await waitFor(() => a.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'scoped start')
     expect(await b.locator('my-bad-overlay').locator('[data-message]').first().textContent()).toBe('scoped start')
+
+    const forB = await report('only for b')
+    channel.setError(forB, 'b', 'GET /scoped?rid=b')
+    await waitFor(() => b.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'only for b')
+    channel.clearError()
+    for (const page of pages) {
+      await waitFor(() => page.locator('my-bad-overlay').count(), 0)
+    }
 
     channel.setError(await report('for everyone'))
     for (const page of pages) {
       await waitFor(() => page.locator('my-bad-overlay').locator('[data-message]').first().textContent(), 'for everyone')
       await page.close()
     }
+  }, 30_000)
+
+  it('can still be restored after its error clears and the next open error takes its place', async () => {
+    channel.setError(await report('for every page'))
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    await page.goto(`${origin}/scoped?rid=a`)
+    const overlay = page.locator('my-bad-overlay')
+    const message = () => overlay.locator('[data-message]').first().textContent()
+    await waitFor(message, 'for every page')
+    const own = await report('only for this page')
+    channel.setError(own, 'a', 'GET /scoped?rid=a')
+    await waitFor(message, 'only for this page')
+
+    channel.clearError(own.id)
+    await waitFor(message, 'for every page')
+    await page.keyboard.press('Escape')
+    await overlay.locator('[data-action="hide"]').click()
+    await waitFor(() => overlay.locator('[data-action="restore"]').isVisible(), true)
+    await overlay.locator('[data-action="restore"]').click()
+    await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-hidden'), null)
+    channel.clearError()
+    await page.close()
   }, 30_000)
 
   it('names its request when fetching a report from the history pager', async () => {
