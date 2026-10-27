@@ -829,6 +829,41 @@ describe('badge', () => {
     }
   }, 30_000)
 
+  it('works from a page rendered by another version of my-bad, which gets this build uncached', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const state = (html: string) => JSON.parse(/<script type="application\/json">(.*?)<\/script>/s.exec(html)![1]!)
+    const skewed = renderBadge({ cwd: proj, channel: '/__my-bad' }).replace(/\?v=\w+/g, '?v=0ther')
+    const badgeState = state(skewed)
+    const html = skewed.replace(/<script type="application\/json">.*?<\/script>/s, `<script type="application/json">${JSON.stringify({ ...badgeState, future: true, overlay: { ...badgeState.overlay, version: '0.0.1', future: { nested: 1 } } })}</script>`)
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    const caching: Record<string, string | null> = {}
+    page.on('response', (response) => {
+      if (response.url().includes('?v=')) {
+        caching[new URL(response.url()).pathname] = response.headers()['cache-control'] ?? null
+      }
+    })
+    await page.route(`${origin}/skewed`, route => route.fulfill({ contentType: 'text/html', body: `<!DOCTYPE html><html><head>${html}</head><body><h1 id="user">User page</h1></body></html>` }))
+    await page.goto(`${origin}/skewed`)
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    const overlay = page.locator('my-bad-overlay')
+
+    channel.warn(await warning('across versions'))
+    await waitFor(() => badge.isVisible(), true)
+    await badge.click()
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'across versions')
+    channel.setError(await report('broken across versions'))
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'broken across versions')
+    expect(await overlay.locator('.mb-header').evaluate(el => getComputedStyle(el).display)).toBe('flex')
+    expect(caching).toEqual({ '/__my-bad/badge.js': 'no-cache', '/__my-bad/client.js': 'no-cache', '/__my-bad/client.css': 'no-cache' })
+    channel.clearError()
+    channel.clearWarning()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it('closes its stream while the tab is hidden and catches up when it returns', async () => {
     channel.clearWarning()
     channel.clearError()
