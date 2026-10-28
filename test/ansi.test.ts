@@ -217,6 +217,24 @@ describe('echoing causes', () => {
   })
 })
 
+describe('duplicate cause frames', () => {
+  it('renders the innermost cause frames when they are all dependency frames', async () => {
+    const inner = new TypeError('useSwitchLocalePath is not a function')
+    inner.stack = 'TypeError: useSwitchLocalePath is not a function\n    at call (/proj/node_modules/@nuxtjs/i18n/dist/runtime/composables.mjs:12:34)'
+    const wrapper = Object.assign(new Error('useSwitchLocalePath is not a function', { cause: inner }), { name: 'NuxtError', statusCode: 500 })
+    wrapper.stack = 'NuxtError: useSwitchLocalePath is not a function\n    at createErrorFromThrown (/proj/node_modules/nuxt/dist/app/entry.js:1:1)'
+    const report = await createReport(wrapper, { loaders: [], snippets: false })
+    const output = stripAnsi(renderAnsi(report, {
+      cwd: '/proj',
+      colors: false,
+      verbose: true,
+      width: 100,
+    }))
+    expect(output).toContain('@nuxtjs/i18n/dist/runtime/composables.mjs:12:34')
+    expect(output).not.toContain('entry.js')
+  })
+})
+
 describe('long messages', () => {
   it('truncates the message and reports how much was left out', async () => {
     const report = await createReport(new Error('L'.repeat(5000)), { loaders: [], snippets: false })

@@ -241,6 +241,34 @@ describe('duplicate causes', () => {
     const report = await createReport(wrapper, { loaders: [], snippets: false })
     expect(report.causes).toHaveLength(1)
   })
+
+  it('prefers the cause frames when they are all dependency frames', async () => {
+    const inner = new TypeError('useSwitchLocalePath is not a function')
+    inner.stack = 'TypeError: useSwitchLocalePath is not a function\n    at call (/proj/node_modules/@nuxtjs/i18n/dist/runtime/composables.mjs:12:34)'
+    const wrapper = Object.assign(new Error('useSwitchLocalePath is not a function', { cause: inner }), { name: 'NuxtError', statusCode: 500 })
+    wrapper.stack = 'NuxtError: useSwitchLocalePath is not a function\n    at createErrorFromThrown (/proj/node_modules/nuxt/dist/app/entry.js:1:1)'
+    const report = await createReport(wrapper, { loaders: [], snippets: false })
+    expect(report.causes).toEqual([])
+    expect(report.frames[0]).toMatchObject({ file: '/proj/node_modules/@nuxtjs/i18n/dist/runtime/composables.mjs', type: 'vendor' })
+  })
+
+  it('keeps the wrapper frames when the cause has no stack', async () => {
+    const inner = new Error('Widget needs a name')
+    inner.stack = undefined
+    const wrapper = Object.assign(new Error('Widget needs a name', { cause: inner }), { name: 'HTTPError' })
+    wrapper.stack = 'HTTPError: Widget needs a name\n    at handler (/proj/node_modules/h3/dist/h3.mjs:1:1)'
+    const report = await createReport(wrapper, { loaders: [], snippets: false })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/node_modules/h3/dist/h3.mjs', type: 'vendor' })
+  })
+
+  it('keeps the wrapper app frames when the cause has only dependency frames', async () => {
+    const inner = new Error('Widget needs a name')
+    inner.stack = 'Error: Widget needs a name\n    at dep (/proj/node_modules/dep/index.js:2:2)'
+    const wrapper = Object.assign(new Error('Widget needs a name', { cause: inner }), { name: 'HTTPError' })
+    wrapper.stack = 'HTTPError: Widget needs a name\n    at handler (/proj/src/server.ts:1:1)'
+    const report = await createReport(wrapper, { loaders: [], snippets: false })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/src/server.ts', type: 'app' })
+  })
 })
 
 describe('oxc style compile errors', () => {
