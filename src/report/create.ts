@@ -98,7 +98,7 @@ function collapseDuplicateCauses(report: ErrorReport): ErrorReport {
     }
   }
   const hasApp = (frames: ErrorReport['frames']) => frames.some(frame => frame.type === 'app')
-  const frames = hasApp(duplicate.frames) || !report.frames.length
+  const frames = duplicate.frames.length && (hasApp(duplicate.frames) || !hasApp(report.frames))
     ? duplicate.frames
     : report.frames
   const generic = /^(?:Error|HTTPError|H3Error|FetchError)$/.test(report.name)
