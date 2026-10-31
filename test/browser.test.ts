@@ -490,6 +490,41 @@ describe('browser client', () => {
     await page.close()
   }, 30_000)
 
+  it('starts expanded again for a report the user expanded, and forgets it once minimised', async () => {
+    channel.clearWarning()
+    channel.setError(await report('expanded before the reload'))
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    await page.goto(`${origin}/overlay-minimized`)
+    const overlay = page.locator('my-bad-overlay')
+    const dialog = overlay.locator('[data-overlay]')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'expanded before the reload')
+    expect(await dialog.getAttribute('data-minimized')).toBe('')
+
+    await overlay.locator('[data-action="expand"]').click()
+    await waitFor(() => dialog.getAttribute('data-minimized'), null)
+
+    await page.reload()
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'expanded before the reload')
+    expect(await dialog.getAttribute('data-minimized')).toBeNull()
+
+    channel.setError(await report('a different error'))
+    await page.reload()
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'a different error')
+    expect(await dialog.getAttribute('data-minimized')).toBe('')
+
+    await overlay.locator('[data-action="expand"]').click()
+    await waitFor(() => dialog.getAttribute('data-minimized'), null)
+    await overlay.locator('[data-preview] [data-action="minimize"]').click()
+    await waitFor(() => dialog.getAttribute('data-minimized'), '')
+
+    await page.reload()
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'a different error')
+    expect(await dialog.getAttribute('data-minimized')).toBe('')
+    await page.close()
+  }, 30_000)
+
   it('mounts and styles itself when the script and stylesheet are served separately', async () => {
     channel.setError(await report('external'))
     const page = await browser.newPage({
