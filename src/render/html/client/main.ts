@@ -16,6 +16,9 @@ const STORAGE = {
   minimized: 'my-bad:overlay:minimized',
 }
 
+/** The report id the user last expanded, so a retry of the same error starts expanded. */
+const EXPANDED_SESSION_KEY = 'my-bad:overlay:expanded'
+
 const EXPAND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>'
 
 let connected = false
@@ -820,6 +823,9 @@ function connect(m: Mount): void {
       rerender(m, report, history)
       setHidden(m, false)
       setMinimized(m, false, { persist: false })
+      if (errorOf(report)) {
+        session(EXPANDED_SESSION_KEY, report.id)
+      }
     }
     catch {}
   })
@@ -837,6 +843,7 @@ function dismiss(m: Mount): void {
   m.restore?.remove()
   clearTimeout(dismissal)
   dismissal = setTimeout(() => host?.remove(), 250)
+  session(EXPANDED_SESSION_KEY, null)
   notifyBadge(m)
 }
 
@@ -857,6 +864,7 @@ function setMinimized(m: Mount, value: boolean, options: { persist?: boolean } =
   }
   if (persist) {
     storage(STORAGE.minimized, value ? '1' : '0')
+    session(EXPANDED_SESSION_KEY, value ? null : m.state.report.id)
   }
   applyMode(m)
 }
@@ -992,6 +1000,9 @@ function setHidden(m: Mount, value: boolean): void {
   m.overlay.toggleAttribute('inert', value)
   m.restore.hidden = !value
   session(hiddenKey(m.state.cwd), value ? '1' : '0')
+  if (value) {
+    session(EXPANDED_SESSION_KEY, null)
+  }
   applyMode(m)
   notifyBadge(m)
 }
@@ -1071,7 +1082,8 @@ function setupOverlay(m: Mount): void {
   overlay.setAttribute('data-dock', dock)
   m.preview?.setAttribute('data-dock', dock)
   const minimized = storage(STORAGE.minimized)
-  setMinimized(m, !!m.state.startMinimized || minimized === '1', { persist: false })
+  const expanded = session(EXPANDED_SESSION_KEY) === m.state.report.id
+  setMinimized(m, !expanded && (!!m.state.startMinimized || minimized === '1'), { persist: false })
   setHidden(m, session(hiddenKey(m.state.cwd)) === '1')
 
   draggable(m, overlay, () => overlay.hasAttribute('data-minimized'), () => setMinimized(m, false))
