@@ -878,6 +878,30 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('remembers a badge-expanded error across a reload', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    const broken = await report('badge expanded error')
+    channel.setError(broken)
+    const { page, errors } = await open('/badge')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    const overlay = page.locator('my-bad-overlay')
+    const dialog = overlay.locator('[data-overlay]')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'badge expanded error')
+    expect(await dialog.getAttribute('data-minimized')).toBe('')
+
+    await overlay.locator('[data-action="hide"]').click()
+    await waitFor(() => badge.isVisible(), true)
+    await badge.click()
+    await waitFor(() => dialog.getAttribute('data-minimized'), null)
+
+    await page.reload()
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'badge expanded error')
+    expect(await dialog.getAttribute('data-minimized')).toBeNull()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it('mounts the error that is current when the page connects', async () => {
     channel.clearWarning()
     channel.setError(await report('before the page'))

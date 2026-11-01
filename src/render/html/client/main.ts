@@ -823,6 +823,9 @@ function connect(m: Mount): void {
       rerender(m, report, history)
       setHidden(m, false)
       setMinimized(m, false, { persist: false })
+      if (errorOf(report)) {
+        session(EXPANDED_SESSION_KEY, report.id)
+      }
     }
     catch {}
   })
