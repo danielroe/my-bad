@@ -213,8 +213,8 @@ importers:
         specifier: 1.0.2
         version: 1.0.2
       node:
-        specifier: runtime:^24.0.0
-        version: runtime:24.22.1
+        specifier: runtime:^26.0.0
+        version: runtime:26.13.0
       pkg-pr-new:
         specifier: 0.0.92
         version: 0.0.92
@@ -1065,8 +1065,8 @@ packages:
     resolution: {integrity: sha512-llZkSzeTsimFx64U+ThT2xQM2uEce8GIQUYvxgbB6ZFvBhV2LP9LeJJb3HT+syG0uCFLsTCHjV9SfC0WNU1vtA==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
 
-  '@nuxt/cli-nightly@4.0.1-2610261959-008e036':
-    resolution: {integrity: sha512-jFybeS3WWUw/6fVDtbtFrIXqDJumn9RatNoowVXkHEhz+KZTKb6P/S7zbnICUOHW26uebv2rc1gceo/m0aBl8Q==}
+  '@nuxt/cli-nightly@4.0.1-2610292127-cd8f364':
+    resolution: {integrity: sha512-h6Xh2F8NQO358LPmdhpoSDCqaUs/vEkIPJXsMD+NqWkCZoeAeuLzLU7nUI2nqoCXifJ1W8fdgfR6a70ORWUwvA==}
     engines: {node: ^22.21.0 || ^24.11.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -4294,7 +4294,7 @@ packages:
     resolution: {integrity: sha512-OmO8+GM1JUZqXET720VrJCwkjUCXmCMQm0Z3UDDRbfNLHS4NEAvY60j5jiFv0tkKw2PNNlqOLhahVmwJIOLDIQ==}
     engines: {node: '>=18'}
 
-  node@runtime:24.22.1:
+  node@runtime:26.13.0:
     resolution:
       type: variations
       variants:
@@ -4302,9 +4302,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-9ie20HmCnmSKS4AP+oidN9viORNQcDADDbhaqGFZGiY=
+            integrity: sha256-wSgCxNSdgeA5B1IPyskKZFXbf0LhVfTpKmv/BtLAbUc=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-aix-ppc64.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-aix-ppc64.tar.gz
           targets:
             - cpu: ppc64
               os: aix
@@ -4312,9 +4312,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-icaCWT12zUQjP6U7FWMmTn3py7GJytFpE1xbT637wKc=
+            integrity: sha256-04vV5aLdzmu7XOReRuIIM32k1R//5hHlZ/0yBz1kOfY=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-darwin-arm64.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-darwin-arm64.tar.gz
           targets:
             - cpu: arm64
               os: darwin
@@ -4322,9 +4322,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-0TJVfn7iuFrwiwyMNDOOZcZDDyI40B9ydyjvQtyDsDU=
+            integrity: sha256-UlybKbsCY9aH3mCkzsDiptuHao6wMjaeV5Xspx58NY4=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-darwin-x64.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-darwin-x64.tar.gz
           targets:
             - cpu: x64
               os: darwin
@@ -4332,9 +4332,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-M8N74jS6i+4EGWEEexkWD019DxZOjiRveL3RD+/xSLM=
+            integrity: sha256-Q56cQ4rN9qb/5HQY2nCRU9ZsS+2BLjCkc/qssQfdJ5E=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-linux-arm64.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-linux-arm64.tar.gz
           targets:
             - cpu: arm64
               os: linux
@@ -4342,9 +4342,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-nOVyhEUBaynkmtCY96M2Bhql93DRd9knJ4vCb9Ym5kM=
+            integrity: sha256-zu5jVLJeb1JcXZK7E48my3vMXvRA3MYw4fax9IsDqPg=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-linux-ppc64le.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-linux-ppc64le.tar.gz
           targets:
             - cpu: ppc64le
               os: linux
@@ -4352,9 +4352,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-cZea6xw4W8jugxANODo7HsClIC4D35+ZanBAMwnK/7U=
+            integrity: sha256-SgAJqeiWL/bhpRlKZMKIt+2Si3TiVy61/fYxXd1vs8c=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-linux-s390x.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-linux-s390x.tar.gz
           targets:
             - cpu: s390x
               os: linux
@@ -4362,9 +4362,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-myUNKdariuON0jAZ4sBKbWspFqsdrXIcX24dorKQHGo=
+            integrity: sha256-m6FRoFEHiUYIN3mPigYyYj7eEhppV1Snahgbr5Uje9I=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-linux-x64-musl.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-linux-x64-musl.tar.gz
           targets:
             - cpu: x64
               os: linux
@@ -4373,9 +4373,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-62co53xXajUWLBIsRcyt8iTYn/AKvI2uRswol8YALXw=
+            integrity: sha256-WEhVOGi0AtP6u1sJJwZJl3eAo5D4MhVXIQJaCLUQRFU=
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-linux-x64.tar.gz
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-linux-x64.tar.gz
           targets:
             - cpu: x64
               os: linux
@@ -4383,10 +4383,10 @@ packages:
             archive: zip
             bin:
               node: node.exe
-            integrity: sha256-oMgHMZ/t4kxKDY+EVkyCphm9MTsWsQwAfDg8JgnpkXE=
-            prefix: node-v24.22.1-win-arm64
+            integrity: sha256-qUJxOVlRVu9ITh+wiVdnbgnUIyNo3RdDoqn5Pz0kGxQ=
+            prefix: node-v26.13.0-win-arm64
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-win-arm64.zip
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-win-arm64.zip
           targets:
             - cpu: arm64
               os: win32
@@ -4394,10 +4394,10 @@ packages:
             archive: zip
             bin:
               node: node.exe
-            integrity: sha256-0gRtKMLD3NIRrFFFwL8w4gR++d+zBmk8jG4uzNi5X6U=
-            prefix: node-v24.22.1-win-x64
+            integrity: sha256-3MYNWaB0aZn5kGSgHAIERdVNhCKMaRzb8ltJrDtZFQo=
+            prefix: node-v26.13.0-win-x64
             type: binary
-            url: https://nodejs.org/download/release/v24.22.1/node-v24.22.1-win-x64.zip
+            url: https://nodejs.org/download/release/v26.13.0/node-v26.13.0-win-x64.zip
           targets:
             - cpu: x64
               os: win32
@@ -4405,9 +4405,9 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-glQSWCWj5eg0vYomDatMgwP3IEZKdBUG7CeYm5uhdps=
+            integrity: sha256-892ncroMHyzW/sRvbsJGh1hHZ/LD+RF6R+3xked4ZyA=
             type: binary
-            url: https://unofficial-builds.nodejs.org/download/release/v24.22.1/node-v24.22.1-linux-arm64-musl.tar.gz
+            url: https://unofficial-builds.nodejs.org/download/release/v26.13.0/node-v26.13.0-linux-arm64-musl.tar.gz
           targets:
             - cpu: arm64
               os: linux
@@ -4416,14 +4416,14 @@ packages:
             archive: tarball
             bin:
               node: bin/node
-            integrity: sha256-Cp7dzi0ujzrdvpT6RtdRMlstdPf9HOYylhZNNrbfxuU=
+            integrity: sha256-xsc4/lZMPrBTFyv9TKEWbuyLwHb4QjGi6nAWXjFvWAk=
             type: binary
-            url: https://unofficial-builds.nodejs.org/download/release/v24.22.1/node-v24.22.1-linux-x64-musl.tar.gz
+            url: https://unofficial-builds.nodejs.org/download/release/v26.13.0/node-v26.13.0-linux-x64-musl.tar.gz
           targets:
             - cpu: x64
               os: linux
               libc: musl
-    version: 24.22.1
+    version: 26.13.0
     hasBin: true
 
   nopt@8.1.0:
@@ -6872,7 +6872,7 @@ snapshots:
     dependencies:
       which: 7.0.0
 
-  '@nuxt/cli-nightly@4.0.1-2610261959-008e036(@nuxt/schema-nightly@5.0.0-29806258.d070492f)(jiti@2.7.0)(oxc-parser@0.155.0)(rolldown@1.2.15)':
+  '@nuxt/cli-nightly@4.0.1-2610292127-cd8f364(@nuxt/schema-nightly@5.0.0-29806258.d070492f)(jiti@2.7.0)(oxc-parser@0.155.0)(rolldown@1.2.15)':
     dependencies:
       '@clack/prompts': 1.8.1
       args-tokenizer: 0.3.0
@@ -10827,7 +10827,7 @@ snapshots:
 
   node-releases@2.0.60: {}
 
-  node@runtime:24.22.1: {}
+  node@runtime:26.13.0: {}
 
   nopt@8.1.0:
     dependencies:
@@ -10879,7 +10879,7 @@ snapshots:
   nuxt-nightly@5.0.0-29806258.d070492f(ec421ffc035122b46ad62ac7e4a2d6f0):
     dependencies:
       '@dxup/nuxt': 0.5.10(esbuild@0.28.2)(magicast@0.5.5)(oxc-parser@0.155.0)(rolldown@1.2.15)(rollup@4.63.1)(vite@8.3.5)
-      '@nuxt/cli': '@nuxt/cli-nightly@4.0.1-2610261959-008e036(@nuxt/schema-nightly@5.0.0-29806258.d070492f)(jiti@2.7.0)(oxc-parser@0.155.0)(rolldown@1.2.15)'
+      '@nuxt/cli': '@nuxt/cli-nightly@4.0.1-2610292127-cd8f364(@nuxt/schema-nightly@5.0.0-29806258.d070492f)(jiti@2.7.0)(oxc-parser@0.155.0)(rolldown@1.2.15)'
       '@nuxt/devtools': 4.0.0-alpha.16(07d51941e5bca2736e3a0c74bd04fb20)
       '@nuxt/kit': '@nuxt/kit-nightly@5.0.0-29806258.d070492f(@nuxt/schema-nightly@5.0.0-29806258.d070492f)(confbox@0.2.4)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(oxc-parser@0.155.0)(rolldown@1.2.15)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.15)(rollup@4.63.1)(vite@8.3.5))'
       '@nuxt/nitro-server': '@nuxt/nitro-server-nightly@5.0.0-29806258.d070492f(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7(supports-color@10.2.2)))(@nuxt/schema-nightly@5.0.0-29806258.d070492f)(@oxc-project/types@0.155.0)(chokidar@5.0.0)(confbox@0.2.4)(db0@0.3.4)(dotenv@17.4.2)(esbuild@0.28.2)(giget@3.3.1)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(lightningcss@1.33.0)(mlly@1.8.2)(nuxt-nightly@5.0.0-29806258.d070492f(ec421ffc035122b46ad62ac7e4a2d6f0))(ofetch@2.0.0-alpha.3)(oxc-parser@0.155.0)(rolldown@1.2.15)(rollup@4.63.1)(typescript@6.0.3)(unplugin@3.3.0(esbuild@0.28.2)(rolldown@1.2.15)(rollup@4.63.1)(vite@8.3.5))(vite@8.3.5)'
