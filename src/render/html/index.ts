@@ -148,7 +148,7 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
   const title = options.title ?? `${report.name}: ${clampMessage(report.message.split('\n')[0] ?? '', options.maxMessageLength).head}`
   const scheme = options.theme?.scheme
   return `<!DOCTYPE html>
-<html lang="en"${scheme
+<html lang="en" dir="ltr"${scheme
   ? ` data-theme="${escapeHtml(scheme)}"`
   : ''}>
 <head>
@@ -191,7 +191,7 @@ function overlayState(options: RenderOverlayOptions): Omit<PageState, 'report'> 
     startMinimized: options.startMinimized,
     dock: options.dock,
     tag,
-    styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n:host{all:initial;display:contents}`,
+    styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n:host{all:initial;direction:ltr;display:contents}`,
     stylesUrl: options.assets?.styles,
   }
 }

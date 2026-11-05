@@ -583,7 +583,7 @@ describe('theme before first paint', () => {
     }))).toBeUndefined()
     expect(renderPage(r, {
       theme: { scheme: 'dark' },
-    })).toContain('<html lang="en" data-theme="dark">')
+    })).toContain('<html lang="en" dir="ltr" data-theme="dark">')
     expect(renderOverlay(r)).not.toContain(bootstrap(renderPage(r)))
   })
 })
