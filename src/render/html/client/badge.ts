@@ -342,6 +342,7 @@ function start(state: BadgeState): void {
     button.type = 'button'
     button.className = 'mb-badge'
     button.lang = 'en'
+    button.dir = 'ltr'
     button.innerHTML = '<span></span><span class="mb-badge-count"></span><span class="mb-badge-latest"></span>'
     button.addEventListener('click', () => void expand())
     const status = document.createElement('div')

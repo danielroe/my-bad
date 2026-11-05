@@ -13,6 +13,10 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   tab-size: 2;
+  /* Reports are English-only, so they must not pick up the surrounding page's direction:
+     an inherited rtl reorders paths, error codes and trailing punctuation. */
+  direction: ltr;
+  text-align: start;
 }
 :where(.mb-root) a { color: var(--mb-accent-ink); text-decoration: none; }
 :where(.mb-root) a:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -292,6 +296,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
   overflow: hidden;
   background: var(--mb-bg); color: var(--mb-fg);
   font: 15px/1.55 var(--mb-font-sans);
+  direction: ltr; text-align: start;
 }
 .mb-overlay > .mb-root { overflow: auto; min-height: 0; grid-template-rows: auto 1fr; }
 .mb-overlay .mb-header { position: sticky; }

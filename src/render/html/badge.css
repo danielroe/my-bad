@@ -9,6 +9,7 @@
   border: 1px solid var(--mb-line-strong); border-radius: 999px;
   box-shadow: var(--mb-shadow);
   font: 500 12px/1.4 var(--mb-font-sans); text-align: left;
+  direction: ltr;
   cursor: pointer;
 }
 .mb-badge[hidden] { display: none; }

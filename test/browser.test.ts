@@ -311,6 +311,32 @@ describe('browser client', () => {
     await page.close()
   }, 30_000)
 
+  it('renders left to right inside a right-to-left page', async () => {
+    channel.clearError()
+    const page = await browser.newPage()
+    await page.goto(`${origin}/overlay`)
+    await page.evaluate(() => document.documentElement.setAttribute('dir', 'rtl'))
+    channel.setError(await report('rtl page.'))
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'rtl page.')
+    const measured = await overlay.locator('[data-message]').first().evaluate((el) => {
+      const node = el.firstChild as Text
+      const text = node.textContent ?? ''
+      const first = text.search(/\S/)
+      const range = document.createRange()
+      range.setStart(node, first)
+      range.setEnd(node, first + 1)
+      const startX = range.getBoundingClientRect().x
+      range.setStart(node, text.length - 1)
+      range.setEnd(node, text.length)
+      return { direction: getComputedStyle(el).direction, startX, endX: range.getBoundingClientRect().x }
+    })
+    expect(measured.direction).toBe('ltr')
+    // With an inherited rtl, a trailing period renders to the left of the word it follows.
+    expect(measured.endX).toBeGreaterThan(measured.startX)
+    await page.close()
+  }, 30_000)
+
   it('keeps warning toasts clear of the page preview', async () => {
     for (const [width, dock] of [
       [1200, 'bottom-right'],
