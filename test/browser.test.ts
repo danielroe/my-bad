@@ -332,7 +332,6 @@ describe('browser client', () => {
       return { direction: getComputedStyle(el).direction, startX, endX: range.getBoundingClientRect().x }
     })
     expect(measured.direction).toBe('ltr')
-    // With an inherited rtl, a trailing period renders to the left of the word it follows.
     expect(measured.endX).toBeGreaterThan(measured.startX)
     await page.close()
   }, 30_000)

@@ -144,10 +144,6 @@ function overlayMount(state: PageState, host: HTMLElement): Mount {
   overlay.setAttribute('aria-modal', 'true')
   overlay.setAttribute('aria-label', 'Error details')
   overlay.setAttribute('lang', 'en')
-  // The overlay is English-only, but it is mounted inside the app's document, so it would
-  // otherwise inherit `direction` from an RTL page and bidi-reorder every path, error code
-  // and sentence it renders.
-  overlay.setAttribute('dir', 'ltr')
   const root = document.createElement('div')
   root.className = 'mb-root'
   root.dataset.myBadRoot = ''

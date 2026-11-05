@@ -191,7 +191,7 @@ function overlayState(options: RenderOverlayOptions): Omit<PageState, 'report'> 
     startMinimized: options.startMinimized,
     dock: options.dock,
     tag,
-    styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n/* \`all\` does not reset \`direction\` or \`unicode-bidi\`, so the host keeps the page's direction unless it is set explicitly. */\n:host{all:initial;direction:ltr;display:contents}`,
+    styles: `${sheet(options.assets)}${themeStyles(options.theme, ':host')}\n:host{all:initial;direction:ltr;display:contents}`,
     stylesUrl: options.assets?.styles,
   }
 }
