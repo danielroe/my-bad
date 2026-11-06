@@ -100,6 +100,14 @@ describe('renderPage', () => {
     expect(JSON.parse(state).report.message).toBe(r.message)
   })
 
+  it('escapes the omitted error count', async () => {
+    const r = await report()
+    r.causes.push({ ...r, causes: [], omittedErrors: '<img src=x onerror=alert(1)>' as unknown as number })
+    const html = markup(renderPage(r))
+    expect(html).not.toContain('<img')
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt; more related')
+  })
+
   it('omits rawStack from the embedded state unless asked for', async () => {
     const r = await report()
     r.causes.push({ ...r, causes: [] })

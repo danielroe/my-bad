@@ -171,7 +171,7 @@ function renderFallback(state: PageState, selected: string): string {
   }
   const omitted = all.reduce((total, entry) => total + (entry.report.omittedErrors ?? 0), 0)
   const note = omitted
-    ? `<p class="mb-fallback-label">and ${omitted} more related ${omitted === 1
+    ? `<p class="mb-fallback-label">and ${escapeHtml(omitted)} more related ${omitted === 1
       ? 'error'
       : 'errors'} not shown</p>`
     : ''
