@@ -219,13 +219,14 @@ const channel = createChannel({
   sink: fileSink('.nuxt/my-bad.jsonl')
 })
 // `open: true` launches `LAUNCH_EDITOR` / `VISUAL` / `EDITOR` at the frame's line, falling back to the OS default app
+// for common source and text files (never `.js` on Windows, where the default app runs it)
 // `open` requests are confined to `root` (default `process.cwd()`; the Vite plugin uses `server.fs.allow`),
 // must name an existing file, and must be `application/json`; pass `root: false` to allow any path
 // `open` may be a function instead, returning `false` to refuse a request
 
-// The channel refuses requests a page on another origin made (`Sec-Fetch-Site`, else `Origin` must match the
-// host addressed), and browser requests addressed to a host that is neither an IP literal, `localhost`,
-// `*.localhost`, nor listed in `allowedHosts` (the Vite plugin passes `server.allowedHosts`).
+// The channel refuses requests addressed to a host that is neither an IP literal, `localhost`, `*.localhost`,
+// nor listed in `allowedHosts` (the Vite plugin passes `server.allowedHosts`), and requests a page on another
+// origin made (`Sec-Fetch-Site`, else `Origin` must match the host addressed).
 // Requests with neither header (`curl`, editor integrations) are allowed.
 
 // Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css` and `badge.js`
@@ -233,15 +234,17 @@ const channel = createChannel({
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))
 // or fetch-style: await channel.fetchHandler(request)
 
-// Callers are trusted by default and may browse every retained report. Pass `{ trusted: false }` for a peer
-// the host cannot vouch for (a connection forwarded into a container, a `--host` binding): the channel still
-// connects and streams, but its `hello.history` and the `history` payloads hold only the reports that concern
-// the page (a report naming a request id is matched by that id alone, never by path), `/history/:id` answers
-// 404 for any other report, log entries reach it only when attributed to a request that concerns it, and
+// Callers connecting from a loopback address (`req.socket.remoteAddress`, or `request.ip` for `fetchHandler`) are
+// trusted by default and may browse every retained report. Any other peer, or one whose address is unknown, is
+// untrusted (a `--host` binding, a connection forwarded into a container): the channel still connects and
+// streams, but its `hello.history` and the `history` payloads hold only the reports that concern the page
+// (a report naming a request id is matched by that id alone, never by path), `/history/:id` answers 404 for
+// any other report, log entries reach it only when attributed to a request that concerns it, and
 // privileged actions such as `open` are neither advertised nor accepted, so the
 // page opens an `editor://` URL on the machine running the browser instead.
+// Pass `trusted` explicitly behind a proxy, where the peer address is the proxy's.
 await channel.handler(req, res, {
-  trusted: isLoopback(req)
+  trusted: isLoopback(clientAddress(req))
 })
 
 channel.setError(report) // pages swap content in place; replaces every open error

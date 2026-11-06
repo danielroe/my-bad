@@ -1,5 +1,6 @@
 import type { OpenRequest } from './index'
 import { spawn } from 'node:child_process'
+import { extname } from 'node:path'
 import process from 'node:process'
 
 type Args = (file: string, line?: number, column?: number) => string[]
@@ -63,11 +64,54 @@ const TERMINAL_EDITORS = new Set([
   'ed',
 ])
 
+/** Source and text formats the OS default application may be asked to open. */
+const DEFAULT_APP_EXTENSIONS = new Set([
+  '.astro',
+  '.cjs',
+  '.css',
+  '.cts',
+  '.gql',
+  '.graphql',
+  '.htm',
+  '.html',
+  '.js',
+  '.json',
+  '.json5',
+  '.jsonc',
+  '.jsx',
+  '.less',
+  '.markdown',
+  '.md',
+  '.mdx',
+  '.mjs',
+  '.mts',
+  '.pcss',
+  '.postcss',
+  '.sass',
+  '.scss',
+  '.styl',
+  '.svelte',
+  '.toml',
+  '.ts',
+  '.tsx',
+  '.txt',
+  '.vue',
+  '.yaml',
+  '.yml',
+])
+
+/** `.js` is excluded on Windows, where its default application is Windows Script Host. */
+function opensInDefaultApp(file: string): boolean {
+  const extension = extname(file).toLowerCase()
+  return DEFAULT_APP_EXTENSIONS.has(extension) && !(process.platform === 'win32' && extension === '.js')
+}
+
 /**
  * Open a file in the user's editor. Uses `LAUNCH_EDITOR`, `VISUAL` or `EDITOR`
  * when set, passing the line and column for editors we know how to drive. Falls
  * back to the OS default application (via `tiny-open` if installed, otherwise
- * `open` / `rundll32` / `xdg-open`), which cannot jump to a line.
+ * `open` / `rundll32` / `xdg-open`), which cannot jump to a line, for common
+ * source and text formats only; anything else resolves `false`.
  */
 export async function openInEditor(request: OpenRequest): Promise<boolean> {
   const configured = process.env.LAUNCH_EDITOR || process.env.VISUAL || process.env.EDITOR
@@ -83,6 +127,9 @@ export async function openInEditor(request: OpenRequest): Promise<boolean> {
         ...args(request.file, request.line, request.column),
       ], shell)
     }
+  }
+  if (!opensInDefaultApp(request.file)) {
+    return false
   }
   const tinyOpen = await import('tiny-open' as string).then(mod => mod.default ?? mod).catch(() => undefined)
   if (typeof tinyOpen === 'function') {

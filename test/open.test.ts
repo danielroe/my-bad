@@ -69,16 +69,57 @@ describe('windows fallback', () => {
     vi.stubEnv('VISUAL', '')
     vi.stubEnv('EDITOR', '')
 
-    expect(await openInEditor({ file: String.raw`C:\proj\a&calc.exe` })).toBe(true)
+    expect(await openInEditor({ file: String.raw`C:\proj\a&calc.exe&.ts` })).toBe(true)
     expect(spawns).toHaveLength(1)
     const [bin, args, options] = spawns[0] as [string, string[], { shell?: boolean }]
     expect(bin).toBe('rundll32.exe')
-    expect(args).toEqual(['url.dll,FileProtocolHandler', String.raw`C:\proj\a&calc.exe`])
+    expect(args).toEqual(['url.dll,FileProtocolHandler', String.raw`C:\proj\a&calc.exe&.ts`])
     expect(options.shell).toBeFalsy()
     expect(bin).not.toContain('cmd')
     for (const arg of args.slice(0, -1)) {
       expect(arg).not.toContain('calc.exe')
     }
+  })
+})
+
+describe('default application fallback', () => {
+  it('only hands source and text files to the default application', async () => {
+    const spawns = recordSpawns()
+    vi.stubEnv('LAUNCH_EDITOR', '')
+    vi.stubEnv('VISUAL', '')
+    vi.stubEnv('EDITOR', '')
+
+    const refused: Record<string, string[]> = {
+      win32: [
+        String.raw`C:\proj\node_modules\.bin\vite.cmd`,
+        String.raw`C:\proj\scripts\setup.bat`,
+        String.raw`C:\proj\tool.exe`,
+        String.raw`C:\proj\script.vbs`,
+        String.raw`C:\proj\src\index.js`,
+      ],
+      darwin: ['/proj/node_modules/.bin/vite', '/proj/run.command', '/proj/Makefile'],
+      linux: ['/proj/node_modules/.bin/vite', '/proj/launch.desktop', '/proj/run.sh'],
+    }
+    for (const [platform, files] of Object.entries(refused)) {
+      stubPlatform(platform)
+      for (const file of files) {
+        expect(await openInEditor({ file }), file).toBe(false)
+      }
+    }
+    expect(spawns).toEqual([])
+
+    stubPlatform('darwin')
+    expect(await openInEditor({ file: '/proj/src/index.js' })).toBe(true)
+    stubPlatform('win32')
+    expect(await openInEditor({ file: String.raw`C:\proj\pages\index.vue` })).toBe(true)
+    expect(spawns).toHaveLength(2)
+  })
+
+  it('opens any file in a configured editor', async () => {
+    const spawns = recordSpawns()
+    vi.stubEnv('LAUNCH_EDITOR', 'code')
+    expect(await openInEditor({ file: '/proj/node_modules/.bin/vite' })).toBe(true)
+    expect(spawns).toHaveLength(1)
   })
 })
 
