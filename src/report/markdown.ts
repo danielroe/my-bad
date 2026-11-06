@@ -1,4 +1,5 @@
 import type { ErrorReport, Frame } from '../types'
+import { stripAnsi } from './ansi'
 import { relativeToCwd } from './path'
 import { stringifyValue } from './stringify'
 
@@ -10,7 +11,7 @@ export interface MarkdownOptions {
 
 /** Render a report as Markdown suitable for a GitHub issue or an agent prompt. */
 export function toMarkdown(report: ErrorReport, options: MarkdownOptions = {}): string {
-  return render(report, options, 2).join('\n')
+  return stripAnsi(render(report, options, 2).join('\n'))
 }
 
 function render(report: ErrorReport, options: MarkdownOptions, level: number): string[] {

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { renderString } from 'ansivision'
 import { describe, expect, it } from 'vitest'
-import { createReport, renderAnsi } from '../src'
+import { createReport, renderAnsi, toMarkdown } from '../src'
 import { stripAnsi } from '../src/report/ansi'
 
 const fixtures = fileURLToPath(new URL('./fixtures/basic/', import.meta.url))
@@ -241,5 +241,88 @@ describe('long messages', () => {
     const output = stripAnsi(renderAnsi(report, { colors: false, width: 80, maxMessageLength: 100 }))
     expect(output).toContain('4900 more characters')
     expect(output).not.toContain('L'.repeat(101))
+  })
+})
+
+// eslint-disable-next-line no-control-regex
+const CONTROL_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/
+const PAYLOAD = '\u001B\u001B[m]52;c;ZWNobyBoaQ==\u0007\u001Bc\r\b\u009B2J\u001B]0;title\u001B\\'
+
+async function hostileReport(): Promise<ErrorReport> {
+  const report = await createReport(new Error(`boom ${PAYLOAD}`), { loaders: [], snippets: false })
+  Object.assign(report, {
+    name: `Error${PAYLOAD}`,
+    code: `E1${PAYLOAD}`,
+    hint: `hint ${PAYLOAD}`,
+    docsUrl: `https://example.com/${PAYLOAD}`,
+    trace: [
+      { label: `<App${PAYLOAD}>` },
+    ],
+    sections: [
+      {
+        id: 'a',
+        title: `Title${PAYLOAD}`,
+        content: { [`key${PAYLOAD}`]: `value${PAYLOAD}` },
+      },
+      { id: 'b', title: 'Text', content: `text${PAYLOAD}` },
+    ],
+    frames: [
+      {
+        file: '/proj/a.ts',
+        displayFile: `a${PAYLOAD}.ts`,
+        line: 2,
+        column: 1,
+        function: `fn${PAYLOAD}`,
+        type: 'app',
+        snippet: {
+          start: 1,
+          lines: [`// ${PAYLOAD}`, `const x = '${PAYLOAD}'`],
+        },
+      },
+      { raw: `at ${PAYLOAD}`, function: `vendor${PAYLOAD}`, type: 'native' },
+    ],
+  } satisfies Partial<ErrorReport>)
+  return report
+}
+
+describe('control characters', () => {
+  it('strips sequences that an earlier removal would otherwise join', () => {
+    expect(stripAnsi(`a${PAYLOAD}b`)).toBe('a]52;c;ZWNobyBoaQ==2Jb')
+    expect(stripAnsi('a\tb\nc\r\n')).toBe('a\tb\nc\n')
+  })
+
+  it('removes control characters from report messages', async () => {
+    const report = await createReport(new Error(`boom ${PAYLOAD}`), { loaders: [], snippets: false })
+    expect(report.message).not.toMatch(CONTROL_RE)
+  })
+
+  it('removes control characters from every rendered field', async () => {
+    const output = renderAnsi(await hostileReport(), {
+      cwd: '/proj',
+      colors: false,
+      hyperlinks: false,
+      verbose: true,
+      width: 200,
+    })
+    expect(output).not.toMatch(CONTROL_RE)
+    expect(output).toContain('value]52;c;ZWNobyBoaQ==2J')
+  })
+
+  it('keeps its own styling while removing injected sequences', async () => {
+    const output = renderAnsi(await hostileReport(), {
+      cwd: '/proj',
+      colors: true,
+      hyperlinks: true,
+      verbose: true,
+      width: 200,
+    })
+    expect(output).toContain('\u001B[1m')
+    expect(output).toContain('\u001B]8;;https://example.com/]52;c;ZWNobyBoaQ==2J\u0007')
+    // eslint-disable-next-line no-control-regex
+    expect(output.replace(/\u001B\[\d+m|\u001B\]8;;[^\u0007]*\u0007/g, '')).not.toMatch(CONTROL_RE)
+  })
+
+  it('removes control characters from markdown', async () => {
+    expect(toMarkdown(await hostileReport(), { cwd: '/proj', allFrames: true })).not.toMatch(CONTROL_RE)
   })
 })
