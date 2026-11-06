@@ -1376,3 +1376,27 @@ describe('problem sets', () => {
     channel.close()
   })
 })
+
+describe('subscribe', () => {
+  it('passes every sink event to listeners until they unsubscribe, unaffected by one that throws', async () => {
+    const sunk: string[] = []
+    const heard: string[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event.type),
+    })
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    channel.subscribe(() => {
+      throw new Error('listener failed')
+    })
+    const stop = channel.subscribe(event => void heard.push(event.type))
+    channel.setError(report)
+    channel.setProblems('ts', [])
+    channel.progress({ phase: 'build' })
+    stop()
+    channel.clearError()
+
+    expect(heard).toEqual(['error:set', 'problems', 'build'])
+    expect(sunk).toEqual([...heard, 'error:clear'])
+    channel.close()
+  })
+})
