@@ -2,12 +2,17 @@ name: release
 
 on:
   push:
-    branches: [main]
+    branches: [main, v0.2]
   pull_request:
     types: [closed]
-    branches: [main]
+    branches: [main, v0.2]
   # this is required to trigger releases when the release PR is merged, or to rerun a release if needed
   workflow_dispatch:
+    inputs:
+      npm-tag:
+        description: 'npm dist-tag to publish to. Set by uppt/release for maintenance lines; leave blank otherwise'
+        required: false
+        default: ''
 
 permissions: {}
 
@@ -16,7 +21,9 @@ jobs:
   # or update a draft release PR, and close any superseded release PRs
   # (e.g. `release/v1.0.1` when the bump is now `release/v1.1.0`).
   pr:
-    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: |
+      github.event_name == 'push'
+      && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == 'refs/heads/v0.2')
     runs-on: ubuntu-latest
     permissions:
       contents: write       # push the `release/vX.Y.Z` branch and delete superseded ones
@@ -25,6 +32,7 @@ jobs:
       - uses: danielroe/uppt/pr@6c1a9b480b0f02a3f535dedaf1a113f590aa56f2 # v0.6.12
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          base-branch: ${{ github.ref_name }}
 
   # The release PR was merged: tag the squash commit, cut a GitHub release
   # from the PR body, and dispatch the publish workflow. The `release/v`
@@ -47,6 +55,8 @@ jobs:
       - uses: danielroe/uppt/release@6c1a9b480b0f02a3f535dedaf1a113f590aa56f2 # v0.6.12
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # TODO: drop once a newer release line is published to `latest`
+          npm-tag: ${{ github.event.pull_request.base.ref == 'v0.2' && 'latest' || '' }}
 
   # The chained dispatch from `release` lands here as a `workflow_dispatch`
   # event on a `vX.Y.Z` tag ref. The `pack` job installs deps, runs
@@ -84,3 +94,4 @@ jobs:
       - uses: danielroe/uppt/publish@6c1a9b480b0f02a3f535dedaf1a113f590aa56f2 # v0.6.12
         with:
           files: ${{ needs.pack.outputs.files }}
+          npm-tag: ${{ inputs.npm-tag }}
