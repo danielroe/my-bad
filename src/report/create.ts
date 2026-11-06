@@ -190,7 +190,11 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   const frames = await buildFrames(quoted ?? input, error, ctx, kind)
 
   const sources = await buildSourceFrames(error.sources, ctx)
-  if (sources.frames.length) {
+  // A compile shape names the position itself, while a stack is the thrower's, so `sources` lead only a stack.
+  if (locatesByCompileShape(quoted ?? input, kind)) {
+    frames.push(...sources.frames)
+  }
+  else {
     frames.unshift(...sources.frames)
   }
 
@@ -213,10 +217,12 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   const report: ErrorReport = {
     id: '',
     kind,
-    name: quoted?.name ?? error.name,
+    name: quoted?.name ?? (error.unnamed && kind === 'warning'
+      ? 'Warning'
+      : error.name),
     message: truncate(quoted
       ? quoted.message
-      : kind === 'compile'
+      : locatesByCompileShape(input, kind)
         ? stripEmbeddedFrame(error.message)
         : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
@@ -258,7 +264,7 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   }
 
   const top = frames.find(frame => frame.type === 'app') ?? frames[0]
-  report.id = fnv1a64Base36(`${report.name}\n${report.message}\n${top?.file ?? ''}:${top?.line ?? ''}`)
+  report.id = fnv1a64Base36(`${report.name}\n${report.message}\n${top?.file ?? ''}:${top?.line ?? ''}:${top?.column ?? ''}`)
   return report
 }
 
@@ -271,6 +277,8 @@ function nestedContext(ctx: BuildContext): BuildContext {
 
 interface NormalizedError {
   name: string
+  /** No name was given, so `name` is the default. */
+  unnamed?: boolean
   message: string
   stack?: string
   /** `stack` without the header quoting the message. */
@@ -300,6 +308,7 @@ function normalizeInput(input: unknown): NormalizedError {
       name: typeof error.name === 'string' && error.name
         ? error.name
         : 'Error',
+      ...(!(typeof error.name === 'string' && error.name) && { unnamed: true }),
       message: stripAnsi(typeof error.message === 'string'
         ? error.message
         : String(error.message)),
@@ -326,6 +335,7 @@ function normalizeInput(input: unknown): NormalizedError {
   }
   return {
     name: 'Error',
+    unnamed: true,
     message: stripAnsi(stringifyValue(input, 2)),
   }
 }
@@ -341,6 +351,7 @@ function withoutHeader(stack: string, message: string): string {
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
+const SOURCE_RE = /^(?<file>(?:[a-z]:)?[^\s:][^:]*)(?::(?<line>\d+)(?::(?<column>\d+))?)?$/i
 const ERROR_NAME_RE = /^(?<name>[A-Z][A-Za-z]*(?:Error|Exception)): (?<message>[\s\S]*)$/
 
 /**
@@ -395,7 +406,8 @@ function isInside(file: string, dir: string): boolean {
 }
 
 /**
- * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`.
+ * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`,
+ * `file:line` or a bare `file`.
  * Only entries that parse and can be read become frames; the rest are listed verbatim
  * so nothing the thrower reported is lost.
  */
@@ -403,7 +415,7 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
   const frames: Frame[] = []
   const unresolved: string[] = []
   for (const source of sources ?? []) {
-    const groups = TRAILING_POSITION_RE.exec(source)?.groups
+    const groups = SOURCE_RE.exec(source.trim())?.groups
     const raw = groups
       ? normalizeSlashes(groups.file!)
       : undefined
@@ -416,12 +428,16 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
     }
     const frame: Frame = {
       file,
-      line: Number(groups!.line),
-      column: Number(groups!.column),
+      ...(groups!.line && {
+        line: Number(groups!.line),
+      }),
+      ...(groups!.column && {
+        column: Number(groups!.column),
+      }),
       type: 'app',
     }
-    if (ctx.options.snippets) {
-      setSnippet(frame, await loadSnippet(file, frame.line!, frame.column, ctx))
+    if (ctx.options.snippets && frame.line) {
+      setSnippet(frame, await loadSnippet(file, frame.line, frame.column, ctx))
     }
     addDisplayPaths(frame, ctx.options.cwd)
     frames.push(frame)
@@ -483,9 +499,14 @@ function mergeFrameLoc(declared: { file?: string, line: number, column: number }
   }
 }
 
+/** A compile-shaped input locates a warning too, so it is read the same way for both kinds. */
+function locatesByCompileShape(input: unknown, kind: ReportKind): input is CompileErrorInput {
+  return (kind === 'compile' || kind === 'warning') && isCompileInput(input)
+}
+
 async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildContext, kind: ReportKind): Promise<Frame[]> {
   const { options } = ctx
-  if (kind === 'compile' && isCompileInput(input)) {
+  if (locatesByCompileShape(input, kind)) {
     const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
     const snippet = typeof input.frame === 'string' && input.frame
       ? parseCodeFrame(input.frame)

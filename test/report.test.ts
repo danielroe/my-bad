@@ -143,6 +143,51 @@ describe('createReport', () => {
     })
   })
 
+  it('locates a compile-shaped warning, and names it after its kind', async () => {
+    const report = await createReport({
+      message: '<p> cannot be child of <p>, according to HTML specifications.',
+      plugin: 'vite:vue',
+      id: '/proj/app.vue',
+      frame: '1  |  <template>\n2  |    <p><p>x</p></p>\n   |       ^\n3  |  </template>',
+    }, { kind: 'warning' })
+    expect(report).toMatchObject({ kind: 'warning', name: 'Warning', message: '<p> cannot be child of <p>, according to HTML specifications.' })
+    expect(report.frames).toEqual([
+      expect.objectContaining({
+        file: '/proj/app.vue',
+        line: 2,
+        column: 6,
+        type: 'app',
+      }),
+    ])
+    expect((await createReport(new Error('careful'), { kind: 'warning', snippets: false })).name).toBe('Error')
+  })
+
+  it('strips an embedded code frame from a compile-shaped warning message', async () => {
+    const prose = '<p> cannot be child of <p>, according to HTML specifications.'
+    const frame = '1  |  <template>\n2  |    <p><p>x</p></p>\n   |       ^\n3  |  </template>'
+    const report = await createReport({ message: `${prose}\n${frame}`, id: '/proj/app.vue', frame }, { kind: 'warning', loaders: [] })
+    expect(report.message).toBe(prose)
+  })
+
+  it('keeps the compile-shaped location first when sources are given too', async () => {
+    const input = {
+      message: 'Unexpected token',
+      id: '/proj/app.vue',
+      loc: { file: '/proj/app.vue', line: 2, column: 3 },
+      sources: ['/proj/other.vue'],
+    }
+    const loaders = [
+      {
+        name: 'memory',
+        read: () => '<template>\n  <p\n</template>\n',
+      },
+    ]
+    const report = await createReport(input, { kind: 'warning', loaders })
+    expect(report.frames.map(frame => frame.file)).toEqual(['/proj/app.vue', '/proj/other.vue'])
+    const { sources: _, ...located } = input
+    expect(report.id).toBe((await createReport(located, { kind: 'warning', loaders })).id)
+  })
+
   it('derives the location of a compile error from its code frame', async () => {
     const report = await createReport({
       message: 'Interpolation end sign was not found.',
