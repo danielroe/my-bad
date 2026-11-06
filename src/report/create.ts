@@ -3,11 +3,11 @@ import process from 'node:process'
 import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
 import { embeddedSource } from '../loaders/embedded'
-import { fsLoader } from '../loaders/fs'
+import { canonicalPath, fsLoader } from '../loaders/fs'
 import { stripAnsi } from './ansi'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
-import { hasScheme, isFilePath, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
+import { hasScheme, isFilePath, isModuleLocation, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
 import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeSnippet } from './tokenize'
@@ -273,6 +273,8 @@ interface NormalizedError {
   name: string
   message: string
   stack?: string
+  /** `stack` without the header quoting the message. */
+  stackFrames?: string
   code?: string
   diagnostic?: boolean
   hint?: string
@@ -291,6 +293,9 @@ function normalizeInput(input: unknown): NormalizedError {
     const code = typeof error.code === 'string'
       ? error.code
       : undefined
+    const stack = typeof error.stack === 'string'
+      ? error.stack
+      : undefined
     return {
       name: typeof error.name === 'string' && error.name
         ? error.name
@@ -298,9 +303,8 @@ function normalizeInput(input: unknown): NormalizedError {
       message: stripAnsi(typeof error.message === 'string'
         ? error.message
         : String(error.message)),
-      stack: typeof error.stack === 'string'
-        ? error.stack
-        : undefined,
+      stack,
+      stackFrames: stack && withoutHeader(stack, String(error.message)),
       code,
       diagnostic: !!code && error.name === code,
       hint: typeof error.fix === 'string' && error.fix
@@ -326,14 +330,25 @@ function normalizeInput(input: unknown): NormalizedError {
   }
 }
 
+/** V8 and JSC open a stack with the message, whose lines would otherwise parse as frames. */
+function withoutHeader(stack: string, message: string): string {
+  const at = message
+    ? stack.indexOf(message)
+    : -1
+  return at === -1 || stack.slice(0, at).includes('\n')
+    ? stack
+    : stack.slice(at + message.length)
+}
+
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
 const ERROR_NAME_RE = /^(?<name>[A-Z][A-Za-z]*(?:Error|Exception)): (?<message>[\s\S]*)$/
 
 /**
  * Parsers and loaders (oxc, esbuild, rolldown, `jiti`, Vite's config loader)
  * throw a plain `Error` whose stack points at the parser and quote the source
- * position on the last line of the message. All three guards are needed: an
- * ordinary message can end in colon-separated text.
+ * position on the last line of the message (`jiti` leaves no frames at all).
+ * Messages can quote untrusted input, so the position is only taken from an
+ * error with a stack and no frame in application code, for a module inside `cwd`.
  */
 async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext): Promise<CompileErrorInput | undefined> {
   const lines = error.message.split('\n')
@@ -345,7 +360,7 @@ async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext
     return
   }
   const file = normalizeSlashes(groups.file!)
-  if (!isFilePath(file) || await readSource(file, ctx) === undefined) {
+  if (!isFilePath(file) || !isModuleLocation(file) || !raisedByDependency(error) || !isInside(file, ctx.options.cwd) || await readSource(file, ctx) === undefined) {
     return
   }
   const head = lines.slice(0, -1).join('\n').trimEnd()
@@ -362,6 +377,21 @@ async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext
       column: Number(groups.column),
     },
   }
+}
+
+function raisedByDependency(error: NormalizedError): boolean {
+  return error.stackFrames !== undefined && parseRawStackTrace(error.stackFrames).every(trace => classifyFrame({
+    file: trace.source
+      ? toPath(trace.source)
+      : undefined,
+    isNative: trace.isNative,
+  }, []) !== 'app')
+}
+
+function isInside(file: string, dir: string): boolean {
+  const root = canonicalPath(dir).replace(/\/$/, '')
+  const target = canonicalPath(file)
+  return target === root || target.startsWith(`${root}/`)
 }
 
 /**
@@ -536,11 +566,11 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
     return [frame]
   }
 
-  if (!error.stack) {
+  if (!error.stackFrames) {
     return []
   }
 
-  const built = await Promise.all(parseRawStackTrace(error.stack).map(trace => buildStackFrame(trace, ctx)))
+  const built = await Promise.all(parseRawStackTrace(error.stackFrames).map(trace => buildStackFrame(trace, ctx)))
   await attachSnippets(built, ctx)
   return built.map(({ frame }) => {
     addDisplayPaths(frame, options.cwd)
@@ -619,7 +649,7 @@ async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[numb
   }
   frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
 
-  if (frame.type !== 'native' && budget.frames > 0) {
+  if (frame.type !== 'native' && budget.frames > 0 && isModuleLocation(frame.file!)) {
     budget.frames--
     const mapped = await mapFrame(frame, options)
     const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'

@@ -1,5 +1,6 @@
 import type { HotChannel, Plugin, ViteDevServer } from 'vite'
 import type { Channel, ChannelOptions } from '../channel'
+import type { FsLoaderOptions } from '../loaders/fs'
 import type { RenderOverlayOptions, RenderPageOptions } from '../render/html'
 import type { ErrorReport, ReportOptions, ReportPreset, SourceLoader } from '../types'
 import { fileURLToPath } from 'node:url'
@@ -65,6 +66,16 @@ function clientSource(): string {
   return `import { installMyBadClient } from ${JSON.stringify(`/@fs/${file.replace(/^\//, '')}`)}\ninstallMyBadClient(import.meta.hot)\n`
 }
 
+/** Confine disk reads to the files Vite itself would load, following `server.fs`. */
+async function fsBounds(server: ViteDevServer): Promise<FsLoaderOptions> {
+  const vite = await import('vite').catch(() => undefined)
+  return vite?.isFileLoadingAllowed
+    ? {
+        canRead: file => vite.isFileLoadingAllowed(server.config, file),
+      }
+    : { roots: server.config.server.fs.allow }
+}
+
 export function myBad(options: MyBadViteOptions = {}): Plugin {
   const base = (options.base ?? '/__my-bad').replace(/\/$/, '')
   const live = options.channel !== false
@@ -85,7 +96,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
       }
     },
 
-    configureServer(devServer) {
+    async configureServer(devServer) {
       server = devServer
       const channel = createChannel({
         root: devServer.config.server.fs.allow,
@@ -96,8 +107,8 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
       })
       const cwd = options.report?.cwd ?? devServer.config.root
       const loaders = [
-        viteLoader(devServer),
-        fsLoader(),
+        viteLoader(devServer, { fs: false }),
+        fsLoader(await fsBounds(devServer)),
       ]
       const presets = options.presets ?? []
       const assets = options.inlineClient

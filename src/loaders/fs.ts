@@ -213,7 +213,7 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
 }
 
 /** Lexical containment can be escaped through a symlink, so roots and candidates are compared as real paths. */
-function canonicalPath(path: string): string {
+export function canonicalPath(path: string): string {
   try {
     return normalizePath(realpathSync(path))
   }
