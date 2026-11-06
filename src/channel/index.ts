@@ -7,7 +7,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { json } from 'node:stream/consumers'
 import { openInEditor } from './open'
-import { isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
+import { isLoopbackAddress, isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
 import { toHistoryEntry } from './protocol'
 import { concernsClient, scopeFromQuery } from './scope'
 
@@ -27,9 +27,14 @@ export type Sink = (event: ChannelEvent) => void | Promise<void>
 export interface CallerOptions {
   /**
    * Whether the caller may see reports for requests other than its own, and
-   * use privileged actions such as `open`. Default `true`. An untrusted caller
-   * is matched on its `/events` scope, strictly: a report naming a request id
-   * needs that id, not its path.
+   * use privileged actions such as `open`. An untrusted caller is matched on
+   * its `/events` scope, strictly: a report naming a request id needs that id,
+   * not its path.
+   *
+   * Defaults to whether the peer address is loopback: `req.socket.remoteAddress`
+   * for `handler`, `request.ip` for `fetchHandler`. A caller whose address is
+   * unknown is untrusted. Pass it explicitly behind a proxy, where the peer is
+   * the proxy.
    */
   trusted?: boolean
 }
@@ -298,7 +303,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   const channel: Channel = {
     async handler(req, res, caller) {
-      const trusted = caller?.trusted ?? true
+      const trusted = caller?.trusted ?? isLoopbackAddress(req.socket?.remoteAddress)
       const url = new URL(req.url ?? '/', 'http://localhost')
       const matched = route(url.pathname)
       if (!matched) {
@@ -342,7 +347,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     },
 
     async fetchHandler(request, caller) {
-      const trusted = caller?.trusted ?? true
+      const trusted = caller?.trusted ?? isLoopbackAddress((request as { ip?: unknown }).ip)
       const url = new URL(request.url)
       const matched = route(url.pathname)
       if (!matched) {

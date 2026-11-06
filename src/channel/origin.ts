@@ -11,23 +11,35 @@ export interface TrustOptions {
 
 /**
  * Whether a request may run channel actions, i.e. it was not made by a page on
- * another origin. `Sec-Fetch-Site` decides it where the browser sends one; an
- * `Origin` must otherwise name the host being addressed. Either way the host
- * must be an IP literal or allowed, so a DNS-rebound hostname pointing at the
- * machine cannot vouch for itself. Requests with neither header cannot come
- * from a browser (`curl`, editor integrations) and pass.
+ * another origin. The host must be an IP literal or allowed, so a DNS-rebound
+ * hostname pointing at the machine cannot vouch for itself. `Sec-Fetch-Site`
+ * then decides it where the browser sends one; an `Origin` must otherwise name
+ * the host being addressed. Requests with neither header (`curl`, editor
+ * integrations) pass. Every header is chosen by the client, so this does not
+ * tell a local peer from a remote one.
  */
 export function isTrustedRequest(site: string | null | undefined, origin: string | null | undefined, host: string | null | undefined, options: TrustOptions = {}): boolean {
-  if (!site && !origin) {
-    return true
-  }
   if (!host || !isAllowedHost(host, options.allowedHosts)) {
     return false
   }
   if (site) {
     return site === 'same-origin' || site === 'none'
   }
-  return originHost(origin!) === host.toLowerCase()
+  return !origin || originHost(origin) === host.toLowerCase()
+}
+
+const IPV4_LOOPBACK_RE = /^127(?:\.\d{1,3}){3}$/
+
+/** Whether a peer address is loopback: `127.0.0.0/8`, `::1`, or IPv4 loopback mapped to IPv6. */
+export function isLoopbackAddress(address: unknown): boolean {
+  if (typeof address !== 'string') {
+    return false
+  }
+  const normalized = address.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1').replace(/%.*$/, '')
+  if (normalized === '::1') {
+    return true
+  }
+  return IPV4_LOOPBACK_RE.test(normalized.replace(/^::ffff:/, ''))
 }
 
 export function isAllowedHost(host: string, allowedHosts: string[] | true = []): boolean {

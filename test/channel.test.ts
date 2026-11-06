@@ -17,8 +17,11 @@ afterEach(() => {
   }
 })
 
-async function listen(channel: ReturnType<typeof createChannel>): Promise<string> {
+async function listen(channel: ReturnType<typeof createChannel>, peer?: string | null): Promise<string> {
   const server = createServer(async (req, res) => {
+    if (peer !== undefined) {
+      Object.defineProperty(req.socket, 'remoteAddress', { value: peer ?? undefined, configurable: true })
+    }
     if (!(await channel.handler(req, res))) {
       res.writeHead(404).end()
     }
@@ -141,7 +144,7 @@ describe('createChannel', () => {
     const channel = createChannel()
     const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
     const hello = async (query: string): Promise<any> => {
-      const res = await channel.fetchHandler(new Request(`http://localhost/__my-bad/events${query}`))
+      const res = await channel.fetchHandler(new Request(`http://localhost/__my-bad/events${query}`), { trusted: true })
       const reader = res!.body!.getReader()
       const { value } = await reader.read()
       await reader.cancel()
@@ -220,6 +223,49 @@ describe('cross-origin requests', () => {
     expect(opened).toHaveLength(4)
   })
 
+  it('refuses privileged actions from a peer that is not loopback', async () => {
+    const opened: unknown[] = []
+    const channel = createChannel({ open: request => void opened.push(request) })
+    for (const peer of ['192.168.1.20', '172.17.0.1', 'fe80::1', null]) {
+      const url = await listen(channel, peer)
+      expect(await post(url, {})).toBe(403)
+      expect(await post(url, { 'sec-fetch-site': 'same-origin' })).toBe(403)
+      const [hello] = await readEvents(url, 1, AbortSignal.timeout(5000))
+      expect(hello!.data.actions).toEqual([])
+    }
+    expect(opened).toEqual([])
+
+    for (const peer of ['127.0.0.1', '127.1.2.3', '::1', '::ffff:127.0.0.1']) {
+      expect(await post(await listen(channel, peer), {})).toBe(204)
+    }
+    expect(opened).toHaveLength(4)
+  })
+
+  it('refuses requests with neither header addressed to a host that is not allowed', async () => {
+    const channel = createChannel({ open: () => {} })
+    const request = (path: string, init?: RequestInit) => channel.fetchHandler(new Request(`http://rebound.example:3000/__my-bad${path}`, init), { trusted: true }).then(res => res?.status)
+    expect(await request('/events')).toBe(403)
+    expect(await request('/history/nope')).toBe(403)
+    expect(await request('/open', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ file }) })).toBe(403)
+    channel.close()
+  })
+
+  it('trusts a fetch caller by its `ip`', async () => {
+    const opened: unknown[] = []
+    const channel = createChannel({ open: request => void opened.push(request) })
+    const post = (ip?: string) => channel.fetchHandler(Object.assign(new Request('http://127.0.0.1:3000/__my-bad/open', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ file }),
+    }), { ip })).then(res => res?.status)
+    expect(await post('192.168.1.20')).toBe(403)
+    expect(await post()).toBe(403)
+    expect(opened).toEqual([])
+    expect(await post('127.0.0.1')).toBe(204)
+    expect(opened).toHaveLength(1)
+    channel.close()
+  })
+
   it('gates the fetch handler too', async () => {
     const channel = createChannel({ open: () => {} })
     const evil = new Request('http://localhost:3000/__my-bad/open', {
@@ -227,13 +273,13 @@ describe('cross-origin requests', () => {
       headers: { ...JSON_HEADERS, 'sec-fetch-site': 'cross-site' },
       body: JSON.stringify({ file }),
     })
-    expect((await channel.fetchHandler(evil))?.status).toBe(403)
+    expect((await channel.fetchHandler(evil, { trusted: true }))?.status).toBe(403)
     const same = new Request('http://localhost:3000/__my-bad/open', {
       method: 'POST',
       headers: { ...JSON_HEADERS, origin: 'http://localhost:3000', host: 'localhost:3000' },
       body: JSON.stringify({ file }),
     })
-    expect((await channel.fetchHandler(same))?.status).toBe(204)
+    expect((await channel.fetchHandler(same, { trusted: true }))?.status).toBe(204)
     channel.close()
   })
 })
@@ -330,11 +376,11 @@ describe('host validation', () => {
 
   it('refuses browser requests addressed to a non-loopback host', async () => {
     const channel = createChannel({ open: () => {} })
-    const post = (headers: Record<string, string>) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, ...headers }, body })).then(res => res?.status)
+    const post = (headers: Record<string, string>) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, ...headers }, body }), { trusted: true }).then(res => res?.status)
 
     expect(await post({ 'sec-fetch-site': 'same-origin', 'host': 'rebound.example:3000' })).toBe(403)
     expect(await post({ origin: 'http://rebound.example:3000', host: 'rebound.example:3000' })).toBe(403)
-    expect(await post({ host: 'rebound.example:3000' })).toBe(204)
+    expect(await post({ host: 'rebound.example:3000' })).toBe(403)
     expect(await post({ 'sec-fetch-site': 'same-origin', 'host': 'app.localhost:3000' })).toBe(204)
     expect(await post({ 'sec-fetch-site': 'same-origin', 'host': '[::1]:3000' })).toBe(204)
     channel.close()
@@ -342,7 +388,7 @@ describe('host validation', () => {
 
   it('accepts IP-literal hosts', async () => {
     const channel = createChannel({ open: () => {} })
-    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body })).then(res => res?.status)
+    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body }), { trusted: true }).then(res => res?.status)
 
     expect(await post('192.168.1.20:3000')).toBe(204)
     expect(await post('[fe80::1]:3000')).toBe(204)
@@ -352,7 +398,7 @@ describe('host validation', () => {
 
   it('honours allowedHosts', async () => {
     const channel = createChannel({ open: () => {}, allowedHosts: ['.example.dev', 'devbox'] })
-    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body })).then(res => res?.status)
+    const post = (host: string) => channel.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', host }, body }), { trusted: true }).then(res => res?.status)
 
     expect(await post('app.example.dev:3000')).toBe(204)
     expect(await post('example.dev')).toBe(204)
@@ -361,7 +407,7 @@ describe('host validation', () => {
     channel.close()
 
     const any = createChannel({ open: () => {}, allowedHosts: true })
-    expect((await any.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', 'host': 'anything.example' }, body })))?.status).toBe(204)
+    expect((await any.fetchHandler(new Request('http://localhost:3000/__my-bad/open', { method: 'POST', headers: { ...JSON_HEADERS, 'sec-fetch-site': 'same-origin', 'host': 'anything.example' }, body }), { trusted: true }))?.status).toBe(204)
     any.close()
   })
 })
@@ -424,7 +470,7 @@ describe('untrusted callers', () => {
 
     expect((await hello(channel, '?requestId=a&path=/about', false)).history).toMatchObject([{ id: mine.id }])
     expect((await hello(channel, '?requestId=c&path=/other', false)).history).toEqual([])
-    expect((await hello(channel, '?requestId=a&path=/about')).history).toMatchObject([{ id: mine.id }, { id: theirs.id }])
+    expect((await hello(channel, '?requestId=a&path=/about')).history).toMatchObject([{ id: mine.id }])
     expect((await hello(channel, '?requestId=a&path=/about', true)).history).toMatchObject([{ id: mine.id }, { id: theirs.id }])
     channel.close()
   })
@@ -432,7 +478,7 @@ describe('untrusted callers', () => {
   it('withholds the open action and refuses the endpoint', async () => {
     const opened: unknown[] = []
     const channel = createChannel({ open: request => void opened.push(request) })
-    expect((await hello(channel, '?path=/about')).actions).toEqual(['open'])
+    expect((await hello(channel, '?path=/about', true)).actions).toEqual(['open'])
     expect((await hello(channel, '?path=/about', false)).actions).toEqual([])
 
     const post = async (trusted?: boolean): Promise<number> => (await channel.fetchHandler(
@@ -441,7 +487,7 @@ describe('untrusted callers', () => {
     ))!.status
     expect(await post(false)).toBe(403)
     expect(opened).toEqual([])
-    expect(await post()).toBe(204)
+    expect(await post(true)).toBe(204)
     expect(opened).toHaveLength(1)
     channel.close()
   })
@@ -475,7 +521,7 @@ describe('untrusted callers', () => {
     expect(owner).toMatchObject({ current: { id: report.id }, history: [{ id: report.id }] })
     expect(await status('?requestId=a&path=/admin', false)).toBe(200)
 
-    const loopback = await hello(channel, '?path=/admin')
+    const loopback = await hello(channel, '?path=/admin', true)
     expect(loopback).toMatchObject({ current: { id: report.id }, history: [{ id: report.id }] })
     channel.close()
   })
@@ -491,7 +537,7 @@ describe('untrusted callers', () => {
 
     expect(await get(mine.id, '?requestId=a&path=/about', false)).toBe(200)
     expect(await get(theirs.id, '?requestId=a&path=/about', false)).toBe(404)
-    expect(await get(theirs.id, '?requestId=a&path=/about')).toBe(200)
+    expect(await get(theirs.id, '?requestId=a&path=/about', true)).toBe(200)
     expect(await get('nope', '?requestId=a&path=/about', false)).toBe(404)
     channel.close()
   })
@@ -579,7 +625,7 @@ describe('scoped logs', () => {
 
   it('sends every log to a trusted subscriber', async () => {
     const channel = createChannel()
-    expect(await logs(channel, '?requestId=a&path=/about')).toEqual(['unattributed', 'theirs', 'mine'])
+    expect(await logs(channel, '?requestId=a&path=/about', true)).toEqual(['unattributed', 'theirs', 'mine'])
     channel.close()
   })
 
@@ -610,7 +656,7 @@ describe('scoped logs', () => {
 
   it('leaves the frame a trusted subscriber receives unchanged for an unattributed log', async () => {
     const channel = createChannel()
-    const { received, ready } = subscribe(channel, '?requestId=a&path=/about')
+    const { received, ready } = subscribe(channel, '?requestId=a&path=/about', true)
     await ready
     channel.log({ level: 'warn', text: 'careful', timestamp: 5 })
     await new Promise(resolve => setTimeout(resolve, 10))
