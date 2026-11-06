@@ -267,6 +267,8 @@ channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) //
 // the current problems of a long-running source (type checker, linter, audit), replacing any it published before
 channel.setProblems('typecheck', reports, { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
 channel.clearProblems('typecheck') // retire one source (no source retires every one)
+
+const stop = channel.subscribe((event) => {}) // receive every event the `sink` receives, until `stop()`
 ```
 
 Problem sets stay out of `history` and the warning cap, raise no toasts and never take over a page. Republishing the same reports (by id and kind, in order) with the same meta is not broadcast again, so a source can publish after every run. Every page, trusted or not, receives a `problems` event per change carrying the source's error and warning counts but not its reports, and the counts of every set in `hello`. The sink also receives the reports that joined the set (`added`) and the ids of those that left it (`removed`), so a `fileSink` log records a problem when it joins the set rather than on every run. Sets belong to the channel, so a set replayed into a new channel is all `added` again. An empty set shows nothing, though its source stays listed with its meta.

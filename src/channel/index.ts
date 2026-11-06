@@ -109,6 +109,8 @@ export interface Channel {
   readonly current: ErrorReport | undefined
   readonly history: HistoryEntry[]
   getReport: (id: string) => ErrorReport | undefined
+  /** Receive every event the `sink` receives, from now until the returned function is called. */
+  subscribe: (listener: Sink) => () => void
   /** Number of connected clients. */
   readonly clients: number
   close: () => void
@@ -193,6 +195,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const origins = new Map<string, ReportRequest>()
   const live = new Map<string, BuildProgress>()
   const problemSets = new Map<string, ProblemSet>()
+  const listeners = new Set<Sink>()
   /** Ids of the errors not yet cleared, oldest first. */
   const raised = new Set<string>()
   const clients = new Set<Client>()
@@ -313,6 +316,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   function notify(event: ChannelEvent): void {
     if (options.sink) {
       Promise.resolve(options.sink(event)).catch(() => {})
+    }
+    for (const listener of listeners) {
+      try {
+        Promise.resolve(listener(event)).catch(() => {})
+      }
+      catch {}
     }
   }
 
@@ -777,6 +786,11 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       return history()
     },
     getReport: id => reports.get(id),
+    subscribe(listener) {
+      const own = (event: ChannelEvent) => listener(event)
+      listeners.add(own)
+      return () => void listeners.delete(own)
+    },
     get clients() {
       return clients.size
     },
