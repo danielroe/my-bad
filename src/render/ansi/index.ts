@@ -2,6 +2,7 @@ import type { ErrorReport, Frame, Snippet } from '../../types'
 import type { Palette } from './style'
 import process from 'node:process'
 import { hyperlink, link } from 'clickable-path'
+import { stripAnsi as clean } from '../../report/ansi'
 import { clampMessage, DEFAULT_DISPLAY_MESSAGE_LENGTH } from '../../report/message'
 import { displayPath, isFilePath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
@@ -61,11 +62,12 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const width = ctx.width - indent.length
 
   const icon = report.kind === 'warning' ? p.yellow('⚠') : p.red('✖')
-  const name = report.kind === 'warning' ? p.yellow(p.bold(report.name)) : p.red(p.bold(report.name))
-  const meta = [report.code !== report.name && report.code && p.dim(`[${report.code}]`), report.status && p.dim(`(${report.status})`)].filter(Boolean).join(' ')
+  const reportName = clean(report.name)
+  const name = report.kind === 'warning' ? p.yellow(p.bold(reportName)) : p.red(p.bold(reportName))
+  const meta = [report.code !== report.name && report.code && p.dim(`[${clean(report.code)}]`), report.status && p.dim(`(${report.status})`)].filter(Boolean).join(' ')
   const header = depth === 0 ? (ctx.icon ? `${icon} ${name}` : name) : `${p.dim('Caused by:')} ${name}`
   const title = `${header}${meta ? ` ${meta}` : ''}${p.dim(':')} `
-  const { head, rest } = clampMessage(report.message, ctx.maxMessageLength)
+  const { head, rest } = clampMessage(clean(report.message), ctx.maxMessageLength)
   const messageLines = wrap(rest ? `${head}…` : head, width - 2, '')
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)
   for (const line of messageLines.slice(1)) {
@@ -77,17 +79,18 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
 
   if (report.hint) {
     out.push('')
-    for (const [index, line] of wrap(report.hint, width - 4).entries()) {
+    for (const [index, line] of wrap(clean(report.hint), width - 4).entries()) {
       out.push(`${indent}  ${index === 0 ? p.cyan('ℹ') : ' '} ${line}`)
     }
   }
   if (report.docsUrl) {
-    out.push(`${indent}  ${p.dim('→')} ${hyperlink(p.underline(p.cyan(report.docsUrl)), report.docsUrl, { enabled: ctx.hyperlinks })}`)
+    const docsUrl = clean(report.docsUrl)
+    out.push(`${indent}  ${p.dim('→')} ${hyperlink(p.underline(p.cyan(docsUrl)), docsUrl, { enabled: ctx.hyperlinks })}`)
   }
 
   if (report.trace?.length) {
     out.push('')
-    const crumbs = report.trace.map(entry => entry.label).join(p.dim(' › '))
+    const crumbs = report.trace.map(entry => clean(entry.label)).join(p.dim(' › '))
     out.push(`${indent}  ${truncateMiddle(crumbs, width - 2)}`)
   }
 
@@ -111,15 +114,15 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
 
   if (ctx.verbose && report.sections.length) {
     for (const section of report.sections) {
-      out.push('', `${indent}  ${p.bold(section.title)}`)
+      out.push('', `${indent}  ${p.bold(clean(section.title))}`)
       if (typeof section.content === 'string') {
-        for (const line of section.content.split('\n')) {
+        for (const line of clean(section.content).split('\n')) {
           out.push(`${indent}    ${line}`)
         }
       }
       else {
         for (const [key, value] of Object.entries(section.content)) {
-          out.push(`${indent}    ${p.dim(key)} ${stringifyValue(value)}`)
+          out.push(`${indent}    ${p.dim(clean(key))} ${clean(stringifyValue(value))}`)
         }
       }
     }
@@ -167,11 +170,11 @@ function renderFrames(frames: Frame[], ctx: Ctx, indent: string): string[] {
 function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): string {
   const { p } = ctx
   const prefix = [frame.isAsync && 'async', frame.isConstructor && 'new'].filter(Boolean).join(' ')
-  const fn = frame.function ?? (frame.isEval ? 'eval' : '<anonymous>')
+  const fn = clean(frame.function ?? (frame.isEval ? 'eval' : '<anonymous>'))
   const generated = frame.line === undefined && frame.compiled?.line !== undefined ? frame.compiled : undefined
-  const location = frame.file
+  const location = clean(frame.file
     ? `${displayPath(frame, ctx.cwd)}${frame.line !== undefined ? `:${frame.line}${frame.column !== undefined ? `:${frame.column}` : ''}` : ''}`
-    : frame.raw?.trim().replace(/^at\s+/, '') ?? ''
+    : frame.raw?.trim().replace(/^at\s+/, '') ?? '')
   const available = ctx.width - indent.length - 4 - fn.length - (prefix ? prefix.length + 1 : 0)
   const shown = truncateMiddle(location, Math.max(20, available))
   const linked = frame.file && isFilePath(frame.file)
@@ -190,7 +193,7 @@ function renderSnippet(snippet: Snippet, line: number, column: number | undefine
   const gutter = String(last).length
   const codeWidth = ctx.width - indent.length - gutter - 5
   for (let n = first; n <= last; n++) {
-    const raw = snippet.lines[n - snippet.start] ?? ''
+    const raw = clean(snippet.lines[n - snippet.start] ?? '')
     const code = raw.length > codeWidth ? `${raw.slice(0, codeWidth - 1)}…` : (n === line ? colorTokens(snippet, n - snippet.start, p) : raw)
     const number = String(n).padStart(gutter)
     if (n === line) {
@@ -209,17 +212,18 @@ function renderSnippet(snippet: Snippet, line: number, column: number | undefine
 
 function colorTokens(snippet: Snippet, index: number, p: Palette): string {
   return snippetTokens(snippet, index).map((token) => {
+    const text = clean(token.text)
     switch (token.type) {
-      case 'keyword': return p.magenta(token.text)
-      case 'string': return p.green(token.text)
+      case 'keyword': return p.magenta(text)
+      case 'string': return p.green(text)
       case 'number':
-      case 'attribute': return p.yellow(token.text)
-      case 'comment': return p.dim(token.text)
+      case 'attribute': return p.yellow(text)
+      case 'comment': return p.dim(text)
       case 'function':
-      case 'variable': return p.blue(token.text)
-      case 'type': return p.yellow(token.text)
-      case 'tag': return p.red(token.text)
-      default: return token.text
+      case 'variable': return p.blue(text)
+      case 'type': return p.yellow(text)
+      case 'tag': return p.red(text)
+      default: return text
     }
   }).join('')
 }
