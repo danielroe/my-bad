@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ErrorReport, HistoryEntry } from '../types'
-import type { BuildProgress, ChannelEvent, LogEntry, ReportRequest } from './protocol'
+import type { BuildProgress, ChannelEvent, LogEntry, ProblemChanges, ProblemMeta, ProblemSet, ProblemSummary, ReportRequest } from './protocol'
 import type { ClientScope } from './scope'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
@@ -14,7 +14,7 @@ import { concernsClient, scopeFromQuery } from './scope'
 
 export { openInEditor } from './open'
 
-export type { BuildProgress, ChannelEvent, LogEntry, LogLevel, ReportRequest } from './protocol'
+export type { BuildProgress, ChannelEvent, LogEntry, LogLevel, ProblemChanges, ProblemMeta, ProblemSet, ProblemStatus, ProblemSummary, ReportRequest } from './protocol'
 export { toHistoryEntry } from './protocol'
 
 export interface OpenRequest {
@@ -94,6 +94,17 @@ export interface Channel {
   log: (entry: Omit<LogEntry, 'timestamp'> & { timestamp?: number }, requestId?: string, request?: string) => void
   /** Publish build progress. Updates carrying a `source` are resolved against the other live sources; `percent: 100` retires one. */
   progress: (progress: BuildProgress) => void
+  /**
+   * Publish the current problems from a long-running source such as a type
+   * checker or linter, replacing any set it published before. Problems never
+   * take over a page, raise no toasts, and stay out of the history; they reach
+   * every page, which shows their count. An empty set shows nothing.
+   */
+  setProblems: (source: string, reports: ErrorReport[], meta?: ProblemMeta) => void
+  /** Retire the problem set of this source, or of every source without one. */
+  clearProblems: (source?: string) => void
+  /** The problem set of each source. */
+  readonly problems: ProblemSet[]
   /** The newest open error. */
   readonly current: ErrorReport | undefined
   readonly history: HistoryEntry[]
@@ -101,6 +112,39 @@ export interface Channel {
   /** Number of connected clients. */
   readonly clients: number
   close: () => void
+}
+
+function summarize({ reports, ...set }: ProblemSet): ProblemSummary {
+  const warnings = reports.filter(report => report.kind === 'warning').length
+  return {
+    ...set,
+    errors: reports.length - warnings,
+    warnings,
+  }
+}
+
+function sameProblems(a: ProblemSet, b: ProblemSet): boolean {
+  return a.label === b.label
+    && a.group === b.group
+    && a.status === b.status
+    && a.error === b.error
+    && a.url === b.url
+    && sameReports(a.reports, b.reports)
+}
+
+function sameReports(a: ErrorReport[], b: ErrorReport[]): boolean {
+  return a.length === b.length && a.every((report, index) => report.id === b[index]!.id && report.kind === b[index]!.kind)
+}
+
+function problemChanges(previous: ErrorReport[], next: ErrorReport[]): ProblemChanges {
+  const before = new Map(previous.map(report => [report.id, report.kind]))
+  const after = new Set(next.map(report => report.id))
+  return {
+    added: next.filter(report => before.get(report.id) !== report.kind),
+    removed: [
+      ...before.keys(),
+    ].filter(id => !after.has(id)),
+  }
 }
 
 function scopeKey(request: ReportRequest = {}): string {
@@ -148,6 +192,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const reports = new Map<string, ErrorReport>()
   const origins = new Map<string, ReportRequest>()
   const live = new Map<string, BuildProgress>()
+  const problemSets = new Map<string, ProblemSet>()
   /** Ids of the errors not yet cleared, oldest first. */
   const raised = new Set<string>()
   const clients = new Set<Client>()
@@ -291,6 +336,11 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   /** The current error is only announced to the pages it concerns; the rest just learn it happened. */
   function hello(client: Client): string {
     const shown = shownTo(client)
+    const problems = problemSets.size
+      ? [
+          ...problemSets.values(),
+        ].map(summarize)
+      : undefined
     if (!client.trusted) {
       const unprivileged = actions.filter(action => !PRIVILEGED.has(action))
       return encode({
@@ -300,6 +350,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           actions: unprivileged,
           current: shown,
           history: history(client),
+          problems,
         },
       })
     }
@@ -312,6 +363,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           actions,
           current: shown,
           history: history(),
+          problems,
         },
       })
       helloFrames.set(shown?.id ?? '', frame)
@@ -666,6 +718,57 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         live.set(progress.source, progress)
       }
       broadcast({ type: 'build', payload: leastAdvanced(live) ?? progress })
+    },
+    setProblems(source, reports, meta = {}) {
+      const set: ProblemSet = {
+        source,
+        ...(meta.label !== undefined && { label: meta.label }),
+        ...(meta.group !== undefined && { group: meta.group }),
+        ...(meta.status !== undefined && { status: meta.status }),
+        ...(meta.error !== undefined && { error: meta.error }),
+        ...(meta.url !== undefined && { url: meta.url }),
+        reports: [...reports],
+      }
+      const previous = problemSets.get(source)
+      problemSets.set(source, set)
+      if (previous && sameProblems(previous, set)) {
+        return
+      }
+      const changes = problemChanges(previous?.reports ?? [], set.reports)
+      helloFrames.clear()
+      const payload = summarize(set)
+      send(encode({ type: 'problems', payload }))
+      notify({
+        type: 'problems',
+        payload: changes.added.length || changes.removed.length
+          ? {
+              ...payload,
+              ...changes,
+            }
+          : payload,
+      })
+    },
+    clearProblems(source) {
+      if (source === undefined
+        ? !problemSets.size
+        : !problemSets.delete(source)) {
+        return
+      }
+      if (source === undefined) {
+        problemSets.clear()
+      }
+      helloFrames.clear()
+      broadcast({
+        type: 'problems:clear',
+        payload: source === undefined
+          ? {}
+          : { source },
+      })
+    },
+    get problems() {
+      return [
+        ...problemSets.values(),
+      ]
     },
     get current() {
       return reports.get([...raised].at(-1) ?? '')

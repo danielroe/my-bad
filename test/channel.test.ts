@@ -1,4 +1,4 @@
-import type { BuildProgress, OpenRequest } from '../src/channel'
+import type { BuildProgress, ChannelEvent, OpenRequest } from '../src/channel'
 import { mkdir, mkdtemp, realpath, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -1137,5 +1137,242 @@ describe('scoped logs', () => {
     expect(received.filter(event => event.event === 'log').map(event => event.data)).toEqual([
       { level: 'warn', text: 'careful', timestamp: 5 },
     ])
+  })
+})
+
+describe('problem sets', () => {
+  async function hello(channel: ReturnType<typeof createChannel>, trusted?: boolean): Promise<any> {
+    const res = await channel.fetchHandler(new Request('http://localhost/__my-bad/events?requestId=x&path=/x'), { trusted })
+    const reader = res!.body!.getReader()
+    const { value } = await reader.read()
+    await reader.cancel()
+    return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
+  }
+
+  async function problem(message: string, kind: 'error' | 'warning' = 'error') {
+    return {
+      ...await createReport(new Error(message), { loaders: [], snippets: false }),
+      kind,
+    }
+  }
+
+  it('streams counts per source, replacing the set each time, and keeps them out of the history', async () => {
+    const sunk: any[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    const url = await listen(channel)
+    const [a, b, c] = await Promise.all([
+      problem('a'),
+      problem('b', 'warning'),
+      problem('c'),
+    ])
+
+    const controller = new AbortController()
+    const received = readEvents(url, 4, controller.signal)
+    while (channel.clients === 0) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.setProblems('ts', [a, b], { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
+    channel.setProblems('ts', [a, b], { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
+    channel.setProblems('ts', [a, b], { label: 'TypeScript', status: 'checking', url: '/__typecheck/' })
+    channel.setProblems('ts', [b, c], { label: 'TypeScript', status: 'idle' })
+    const [greeting, first, checking, replaced] = await received
+    controller.abort()
+
+    expect(greeting!.data).not.toHaveProperty('problems')
+    expect(first).toEqual({
+      event: 'problems',
+      data: {
+        source: 'ts',
+        label: 'TypeScript',
+        status: 'idle',
+        url: '/__typecheck/',
+        errors: 1,
+        warnings: 1,
+      },
+    })
+    expect(checking!.data).toMatchObject({ status: 'checking', errors: 1, warnings: 1 })
+    expect(replaced!.data).toEqual({
+      source: 'ts',
+      label: 'TypeScript',
+      status: 'idle',
+      errors: 1,
+      warnings: 1,
+    })
+    expect(sunk.map(event => [
+      event.type,
+      event.payload.added?.map((report: { id: string }) => report.id),
+      event.payload.removed,
+    ])).toEqual([
+      [
+        'problems',
+        [a.id, b.id],
+        [],
+      ],
+      ['problems', undefined, undefined],
+      [
+        'problems',
+        [c.id],
+        [a.id],
+      ],
+    ])
+    expect(sunk[2].payload.added).toEqual([c])
+    expect(channel.problems).toEqual([
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        status: 'idle',
+        reports: [b, c],
+      },
+    ])
+    expect(channel.history).toEqual([])
+    expect(channel.current).toBeUndefined()
+    expect((await fetch(`${url}/history/${c.id}`)).status).toBe(404)
+  })
+
+  it('keeps the newest copy of reports republished under the same ids, without telling anyone', async () => {
+    const sunk: ChannelEvent[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    const first = await problem('a')
+    channel.setProblems('ts', [first])
+    const refreshed = {
+      ...first,
+      frames: [
+        { file: '/proj/a.ts', line: 2, type: 'app' as const },
+      ],
+    }
+    channel.setProblems('ts', [refreshed])
+    expect(channel.problems[0]!.reports).toEqual([refreshed])
+    expect(sunk).toHaveLength(1)
+    channel.close()
+  })
+
+  it('republishes a problem whose severity changed under the same id', async () => {
+    const sunk: ChannelEvent[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    const report = await problem('a')
+    channel.setProblems('lint', [report])
+    const warning = { ...report, kind: 'warning' as const }
+    channel.setProblems('lint', [warning])
+    channel.setProblems('lint', [warning])
+    expect(sunk.map(event => event.payload)).toEqual([
+      {
+        source: 'lint',
+        errors: 1,
+        warnings: 0,
+        added: [report],
+        removed: [],
+      },
+      {
+        source: 'lint',
+        errors: 0,
+        warnings: 1,
+        added: [warning],
+        removed: [],
+      },
+    ])
+    channel.close()
+  })
+
+  it('is not capped with warnings, and does not count against them', async () => {
+    const channel = createChannel()
+    const many = await Promise.all(Array.from({ length: 150 }, (_, index) => problem(`problem ${index}`, 'warning')))
+    channel.setProblems('lint', many)
+    const warning = await problem('warning', 'warning')
+    channel.warn(warning)
+    expect(channel.problems[0]!.reports).toHaveLength(150)
+    expect(channel.history.map(entry => entry.id)).toEqual([warning.id])
+    channel.close()
+  })
+
+  it('resyncs late subscribers, trusted or not, since problems concern every page', async () => {
+    const channel = createChannel()
+    channel.setProblems('ts', [await problem('a')], { label: 'TypeScript' })
+    channel.setProblems('lint', [])
+    const summaries = [
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        errors: 1,
+        warnings: 0,
+      },
+      { source: 'lint', errors: 0, warnings: 0 },
+    ]
+    for (const trusted of [true, false]) {
+      expect((await hello(channel, trusted)).problems).toEqual(summaries)
+    }
+
+    channel.setProblems('lint', [], { label: 'ESLint' })
+    const relabelled = [
+      summaries[0],
+      { ...summaries[1], label: 'ESLint' },
+    ]
+    for (const trusted of [true, false]) {
+      expect((await hello(channel, trusted)).problems).toEqual(relabelled)
+    }
+
+    channel.clearProblems('ts')
+    for (const trusted of [true, false]) {
+      expect((await hello(channel, trusted)).problems).toEqual(relabelled.slice(1))
+    }
+    channel.clearProblems()
+    for (const trusted of [true, false]) {
+      expect(await hello(channel, trusted)).not.toHaveProperty('problems')
+    }
+    channel.close()
+  })
+
+  it('carries why a source failed, and republishes when the reason changes', () => {
+    const sunk: ChannelEvent[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    channel.setProblems('ts', [], { label: 'TypeScript', status: 'failed', error: 'no tsconfig' })
+    channel.setProblems('ts', [], { label: 'TypeScript', status: 'failed', error: 'no tsconfig' })
+    channel.setProblems('ts', [], { label: 'TypeScript', status: 'failed', error: 'no typescript' })
+    expect(sunk.map(event => event.payload)).toEqual([
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        status: 'failed',
+        error: 'no tsconfig',
+        errors: 0,
+        warnings: 0,
+      },
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        status: 'failed',
+        error: 'no typescript',
+        errors: 0,
+        warnings: 0,
+      },
+    ])
+    channel.close()
+  })
+
+  it('retires one source or every source', async () => {
+    const sunk: ChannelEvent[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    channel.setProblems('ts', [await problem('a')])
+    channel.setProblems('lint', [await problem('b')])
+    channel.clearProblems('missing')
+    channel.clearProblems('ts')
+    expect(channel.problems.map(set => set.source)).toEqual(['lint'])
+    channel.clearProblems()
+    channel.clearProblems()
+    expect(channel.problems).toEqual([])
+    expect(sunk.filter(event => event.type === 'problems:clear').map(event => event.payload)).toEqual([
+      { source: 'ts' },
+      {},
+    ])
+    channel.close()
   })
 })
