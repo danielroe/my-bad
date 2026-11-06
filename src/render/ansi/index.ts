@@ -68,7 +68,8 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const name = report.kind === 'warning'
     ? p.yellow(p.bold(reportName))
     : p.red(p.bold(reportName))
-  const meta = [report.code !== report.name && report.code && p.dim(`[${clean(report.code)}]`), report.status && p.dim(`(${report.status})`)].filter(Boolean).join(' ')
+  const status = finite(report.status)
+  const meta = [report.code !== report.name && report.code && p.dim(`[${clean(report.code)}]`), status && p.dim(`(${status})`)].filter(Boolean).join(' ')
   const header = depth === 0
     ? (ctx.icon
         ? `${icon} ${name}`
@@ -152,8 +153,9 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
       out.push(...renderReport(nested, ctx, depth + 1))
     }
   }
-  if (report.omittedErrors) {
-    out.push('', `${indent}  ${p.dim(`… and ${report.omittedErrors} more`)}`)
+  const omitted = finite(report.omittedErrors)
+  if (omitted) {
+    out.push('', `${indent}  ${p.dim(`… and ${omitted} more`)}`)
   }
 
   return out
@@ -187,13 +189,14 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
   const { p } = ctx
   const prefix = [frame.isAsync && 'async', frame.isConstructor && 'new'].filter(Boolean).join(' ')
   const fn = clean(frame.function ?? (frame.isEval ? 'eval' : '<anonymous>'))
-  const generated = frame.line === undefined && frame.compiled?.line !== undefined
-    ? frame.compiled
-    : undefined
+  const line = finite(frame.line)
+  const column = finite(frame.column)
+  const generatedLine = finite(frame.compiled?.line)
+  const generatedColumn = finite(frame.compiled?.column)
   const location = clean(frame.file
-    ? `${displayPath(frame, ctx.cwd)}${frame.line !== undefined
-      ? `:${frame.line}${frame.column !== undefined
-        ? `:${frame.column}`
+    ? `${displayPath(frame, ctx.cwd)}${line !== undefined
+      ? `:${line}${column !== undefined
+        ? `:${column}`
         : ''}`
       : ''}`
     : frame.raw?.trim().replace(/^at\s+/, '') ?? '')
@@ -204,15 +207,15 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
   const linked = frame.file && isFilePath(frame.file)
     ? link(frame.file, {
         cwd: ctx.cwd,
-        line: frame.line,
-        column: frame.column,
+        line,
+        column,
         enabled: ctx.hyperlinks,
         formatter: () => shown,
       })
     : shown
-  const note = generated
-    ? ` ${p.dim(`(generated ${generated.line}${generated.column !== undefined
-      ? `:${generated.column}`
+  const note = line === undefined && generatedLine !== undefined
+    ? ` ${p.dim(`(generated ${generatedLine}${generatedColumn !== undefined
+      ? `:${generatedColumn}`
       : ''})`)}`
     : ''
   const text = `${p.dim('at')} ${prefix
@@ -225,6 +228,12 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
   return `${indent}${dim
     ? p.dim(text)
     : text}`
+}
+
+function finite(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined
 }
 
 function renderSnippet(snippet: Snippet, line: number, column: number | undefined, ctx: Ctx, indent: string): string[] {

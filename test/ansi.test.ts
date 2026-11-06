@@ -322,6 +322,66 @@ describe('control characters', () => {
     expect(output.replace(/\u001B\[\d+m|\u001B\]8;;[^\u0007]*\u0007/g, '')).not.toMatch(CONTROL_RE)
   })
 
+  it('only prints finite numeric positions and counts', async () => {
+    const report = await hostileReport()
+    Object.assign(report, { status: `500${PAYLOAD}`, omittedErrors: `3${PAYLOAD}` })
+    report.frames = [
+      {
+        file: '/proj/a.ts',
+        line: `1${PAYLOAD}`,
+        column: `2${PAYLOAD}`,
+        type: 'app',
+      },
+      {
+        file: '/proj/b.ts',
+        compiled: { file: '/proj/b.js', line: `3${PAYLOAD}`, column: `4${PAYLOAD}` },
+        type: 'app',
+      },
+    ] as unknown as ErrorReport['frames']
+    const output = renderAnsi(report, {
+      cwd: '/proj',
+      colors: true,
+      hyperlinks: true,
+      width: 200,
+    })
+    expect(output).toContain('\u001B]8;;file:///proj/a.ts\u0007a.ts\u001B]8;;\u0007')
+    expect(output).toContain('\u001B]8;;file:///proj/b.ts\u0007b.ts\u001B]8;;\u0007')
+    expect(output).not.toContain('generated')
+    // eslint-disable-next-line no-control-regex
+    expect(output.replace(/\u001B\[\d+m|\u001B\]8;;[^\u0007]*\u0007/g, '')).not.toMatch(CONTROL_RE)
+    // eslint-disable-next-line no-control-regex
+    expect(output).not.toMatch(/\u001B\]8;;[^\u0007]*\u001B/)
+  })
+
+  it('keeps a valid line when the column is not a finite number', async () => {
+    const report = await hostileReport()
+    Object.assign(report, { status: Number.NaN, omittedErrors: Infinity })
+    report.frames = [
+      {
+        file: '/proj/a.ts',
+        line: 1,
+        column: `2${PAYLOAD}`,
+        type: 'app',
+      },
+      {
+        file: '/proj/b.ts',
+        compiled: { file: '/proj/b.js', line: 3, column: Number.NaN },
+        type: 'app',
+      },
+    ] as unknown as ErrorReport['frames']
+    const output = renderAnsi(report, {
+      cwd: '/proj',
+      colors: false,
+      hyperlinks: true,
+      width: 200,
+    })
+    expect(output).toContain('\u001B]8;;file:///proj/a.ts#L1\u0007a.ts:1\u001B]8;;\u0007')
+    expect(stripAnsi(output)).toContain('b.ts (generated 3)')
+    expect(output).not.toMatch(/NaN|Infinity/)
+    // eslint-disable-next-line no-control-regex
+    expect(output.replace(/\u001B\]8;;[^\u0007]*\u0007/g, '')).not.toMatch(CONTROL_RE)
+  })
+
   it('removes control characters from markdown', async () => {
     expect(toMarkdown(await hostileReport(), { cwd: '/proj', allFrames: true })).not.toMatch(CONTROL_RE)
   })
