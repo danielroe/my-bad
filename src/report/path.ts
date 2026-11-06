@@ -134,3 +134,24 @@ const LANGS: Record<string, string> = {
 export function langFromFile(file: string): string | undefined {
   return LANGS[extname(file)]
 }
+
+const MODULE_EXTENSIONS = new Set([
+  'js',
+  'mjs',
+  'cjs',
+  'jsx',
+  'ts',
+  'mts',
+  'cts',
+  'tsx',
+  'vue',
+  'svelte',
+  'astro',
+  'marko',
+  'mdx',
+])
+
+/** Whether a location quoted in error text names a module a runtime or bundler could execute, or an id that is not a file. */
+export function isModuleLocation(file: string): boolean {
+  return hasScheme(file) || MODULE_EXTENSIONS.has(extname(file))
+}

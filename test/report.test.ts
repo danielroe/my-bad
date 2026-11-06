@@ -451,17 +451,35 @@ describe('compiled compile errors', () => {
 describe('positions quoted in an error message', () => {
   const dir = resolve(tmpdir(), 'my-bad-quoted-position')
   const file = resolve(dir, 'nuxt.config.ts').replaceAll('\\', '/')
+  const outside = resolve(tmpdir(), 'my-bad-quoted-outside')
+  const secret = resolve(outside, 'secret.ts').replaceAll('\\', '/')
+  const env = resolve(dir, '.env').replaceAll('\\', '/')
 
   beforeAll(async () => {
     await mkdir(dir, { recursive: true })
+    await mkdir(outside, { recursive: true })
     await writeFile(file, 'export default defineNuxtConfig({\n  modules: [],\n  oops\n})\n')
+    await writeFile(secret, 'export const token = "s3cr3t"\n')
+    await writeFile(env, 'TOKEN=1\n')
   })
   afterAll(async () => {
     await rm(dir, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
   })
 
-  it('reports the quoted file as a compile error', async () => {
-    const error = new Error(`ParseError: Unexpected token, expected ","\n ${file}:3:2`)
+  const parserFrames = `\n    at parse (${dir}/node_modules/oxc-parser/index.js:10:5)\n    at async ModuleLoader.import (node:internal/modules/esm/loader:540:24)`
+
+  function parserError(message: string, frames = parserFrames): Error {
+    const error = new Error(message)
+    error.stack = `Error: ${message}${frames}`
+    return error
+  }
+
+  it.each([
+    ['frames in dependencies', parserFrames],
+    ['no frames', ''],
+  ])('reports the quoted file as a compile error from a stack with %s', async (_, frames) => {
+    const error = parserError(`ParseError: Unexpected token, expected ","\n ${file}:3:2`, frames)
     const report = await createReport(error, { cwd: dir })
     expect(report.kind).toBe('compile')
     expect(report.name).toBe('ParseError')
@@ -475,10 +493,71 @@ describe('positions quoted in an error message', () => {
     const single = await createReport(new Error(`${file}:3:2`), { cwd: dir })
     expect(single.kind).toBe('error')
 
-    const relative = await createReport(new Error('ParseError: bad\n nuxt.config.ts:3:2'), { cwd: dir })
+    const relative = await createReport(parserError('ParseError: bad\n nuxt.config.ts:3:2'), { cwd: dir })
     expect(relative.kind).toBe('error')
 
-    const missing = await createReport(new Error(`ParseError: bad\n ${resolve(dir, 'nope.ts').replaceAll('\\', '/')}:3:2`), { cwd: dir })
+    const missing = await createReport(parserError(`ParseError: bad\n ${resolve(dir, 'nope.ts').replaceAll('\\', '/')}:3:2`), { cwd: dir })
     expect(missing.kind).toBe('error')
+  })
+
+  it('ignores a position quoted by application code', async () => {
+    const report = await createReport(new Error(`Invalid payload:\nx\n${file}:3:2`), { cwd: dir })
+    expect(report.kind).toBe('error')
+    expect(report.frames.some(frame => frame.file === file)).toBe(false)
+  })
+
+  it('ignores a quoted file outside cwd', async () => {
+    const report = await createReport(parserError(`ParseError: bad\n ${secret}:1:1`), { cwd: dir })
+    expect(report.kind).toBe('error')
+    expect(report.frames.some(frame => frame.file === secret)).toBe(false)
+  })
+
+  it('ignores a quoted file that is not a module', async () => {
+    const report = await createReport(parserError(`Invalid value:\nx\n${env}:1:1`), { cwd: dir })
+    expect(report.kind).toBe('error')
+    expect(report.frames.some(frame => frame.file === env)).toBe(false)
+  })
+
+  it('does not read a frame that is not a module', async () => {
+    const error = new Error(`Invalid value:\nx\n    at a (${env}:1:1)`)
+    void error.stack
+    error.message = 'Request failed'
+    const report = await createReport(error, { cwd: dir })
+    const frame = report.frames.find(frame => frame.file === env)
+    expect(frame).toBeDefined()
+    expect(frame!.snippet).toBeUndefined()
+  })
+
+  it('reads the original source of a module frame whatever its extension', async () => {
+    const page = `${dir}/page.marko`
+    const error = new Error('boom')
+    error.stack = `Error: boom\n    at render (${dir}/page.mjs:1:1)`
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        {
+          name: 'memory',
+          map: frame => ({
+            ...frame,
+            file: page,
+            line: 1,
+            column: 1,
+          }),
+          read: path => path === page
+            ? '<h1>Hello</h1>\n'
+            : undefined,
+        },
+      ],
+    })
+    expect(report.frames[0]).toMatchObject({ file: page, type: 'app' })
+    expect(report.frames[0]!.snippet!.lines[0]).toBe('<h1>Hello</h1>')
+  })
+
+  it('does not parse frames out of the message', async () => {
+    for (const message of [`Invalid payload: x\n    at a (${secret}:1:1)`, `\n    at a (${secret}:1:1)`]) {
+      const report = await createReport(new Error(message), { cwd: dir })
+      expect(report.frames.some(frame => frame.file === secret)).toBe(false)
+      expect(report.frames[0]!.file).toBe(fileURLToPath(import.meta.url).replaceAll('\\', '/'))
+    }
   })
 })

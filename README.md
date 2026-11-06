@@ -129,7 +129,7 @@ Frames are mapped by loaders, tried in order:
 - `viteLoader(server)` from `my-bad/vite` uses the module graph of a `ViteDevServer`.
 - `passthroughLoader()` only reads sources, for processes whose stacks are already mapped.
 
-A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice.
+A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice. Frames are only mapped and read when they name a module (`.js`, `.ts`, `.vue`, `.svelte` and similar) or an id that is not a file path.
 
 Compile errors from a bundler often point into the module it transformed while naming the source file (rolldown failing to parse a compiled render function, say). Their position and code frame then move to `frame.compiled`, so the generated code is labelled as such rather than shown as the source of your file.
 
@@ -215,7 +215,7 @@ import { myBad, useMyBad } from 'my-bad/vite'
 export default defineConfig({ plugins: [myBad()] })
 ```
 
-The plugin maps frames through Vite's module graph, forwards compile errors from the HMR channel as `kind: 'compile'` reports, mounts the channel at `/__my-bad`, injects a tiny client into `index.html` so a running app shows the overlay, and clears it when the next update succeeds. Use `useMyBad(server)` from your own SSR middleware to build reports and pages with the same configuration.
+The plugin maps frames through Vite's module graph, forwards compile errors from the HMR channel as `kind: 'compile'` reports, mounts the channel at `/__my-bad`, injects a tiny client into `index.html` so a running app shows the overlay, and clears it when the next update succeeds. Use `useMyBad(server)` from your own SSR middleware to build reports and pages with the same configuration. Sources are only read from disk where Vite would load them, following `server.fs.allow` and `server.fs.deny`.
 
 The client script and stylesheet are served from `/__my-bad/client.js` and `/__my-bad/client.css` with content-hashed URLs, rather than inlined into every error page. Pass `inlineClient: true` for self-contained output.
 

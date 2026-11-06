@@ -1,5 +1,8 @@
 import type { ViteDevServer } from 'vite'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer as createHttpServer } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -150,6 +153,42 @@ describe('hmr replay', () => {
     }
     finally {
       hot.send = original
+    }
+  })
+})
+
+describe('source reads', () => {
+  it('only reads sources that vite would serve', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'my-bad-vite-'))
+    const denied = `${root}/src/private.ts`
+    await writeFile(join(outside, 'secret.ts'), 'export const token = 1\n')
+    await writeFile(denied, 'export const token = 1\n')
+    const guarded = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      appType: 'custom',
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        fs: {
+          deny: ['private.ts'],
+        },
+      },
+      plugins: [
+        myBad({ channel: false }),
+      ],
+    })
+    try {
+      const error = new Error('boom')
+      error.stack = `Error: boom\n    at a (${outside.replaceAll('\\', '/')}/secret.ts:1:1)\n    at b (${denied}:1:1)\n    at c (${root}/src/lib.ts:2:1)`
+      const report = await useMyBad(guarded)!.report(error)
+      expect(report.frames.map(frame => !!frame.snippet)).toEqual([false, false, true])
+    }
+    finally {
+      await guarded.close()
+      await rm(outside, { recursive: true, force: true })
+      await rm(denied, { force: true })
     }
   })
 })
