@@ -96,6 +96,66 @@ test.describe('README assets', () => {
     }
   })
 
+  test('badge with problems', async ({ page }) => {
+    const problems = [
+      {
+        source: 'typecheck',
+        label: 'vue-tsc',
+        status: 'idle',
+        url: '/__typecheck/',
+        errors: 3,
+        warnings: 0,
+      },
+      {
+        source: 'lint',
+        label: 'ESLint',
+        status: 'checking',
+        url: '/__lint/',
+        errors: 0,
+        warnings: 2,
+      },
+    ]
+    const events = `event: hello\ndata: ${JSON.stringify({
+      version: '0',
+      actions: [],
+      history: [],
+      problems,
+    })}\n\n`
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>html{color-scheme:light dark}body{margin:0;background:Canvas}</style>${renderBadge({ channel: '/__my-bad' })}</head><body></body></html>`
+    await page.route('http://my-bad.test/**', (route) => {
+      const url = route.request().url()
+      if (url.includes('/__my-bad/events')) {
+        return route.fulfill({
+          headers: { 'content-type': 'text/event-stream' },
+          body: events,
+        })
+      }
+      if (url.includes('/__my-bad/badge.js')) {
+        return route.fulfill({ contentType: 'text/javascript', body: clientAssets.badge })
+      }
+      return route.fulfill({ contentType: 'text/html', body: html })
+    })
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+      await page.goto('http://my-bad.test/')
+      await page.locator('.mb-problems').waitFor()
+      const box = (await page.locator('.mb-problems').boundingBox())!
+      const clip = {
+        x: box.x - 24,
+        y: box.y - 24,
+        width: box.width + 48,
+        height: box.height + 48,
+      }
+      await expect(page).toHaveScreenshot(`badge-problems-${scheme}.png`, {
+        clip,
+        maxDiffPixels: 200,
+        scale: 'device',
+        animations: 'disabled',
+        caret: 'hide',
+      })
+    }
+  })
+
   test('terminal output', async () => {
     const report = await demoReport()
     const svg = await ansiSvg(renderAnsi(report, {
