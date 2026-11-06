@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { clientAssets, createReport } from '../src'
 import { createChannel } from '../src/channel'
 import { escapeCmdArg } from '../src/channel/open'
+import { isLoopbackAddress } from '../src/channel/origin'
 import { assetUrls } from '../src/render/html/assets'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
@@ -554,10 +555,11 @@ describe('cross-origin requests', () => {
       '127.1.2.3',
       '::1',
       '::ffff:127.0.0.1',
+      '::1%lo0',
     ]) {
       expect(await post(await listen(channel, peer), {})).toBe(204)
     }
-    expect(opened).toHaveLength(4)
+    expect(opened).toHaveLength(5)
   })
 
   it('refuses requests with neither header addressed to a host that is not allowed', async () => {
@@ -819,6 +821,15 @@ describe('host validation', () => {
       body,
     }), { trusted: true }))?.status).toBe(204)
     any.close()
+  })
+})
+
+describe('isLoopbackAddress', () => {
+  it('runs in linear time on pathological input', () => {
+    const start = performance.now()
+    expect(isLoopbackAddress(`${'%'.repeat(100_000)}\n1`)).toBe(false)
+    expect(isLoopbackAddress(`[${'['.repeat(100_000)}`)).toBe(false)
+    expect(performance.now() - start).toBeLessThan(200)
   })
 })
 

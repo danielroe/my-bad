@@ -35,7 +35,11 @@ export function isLoopbackAddress(address: unknown): boolean {
   if (typeof address !== 'string') {
     return false
   }
-  const normalized = address.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1').replace(/%.*$/, '')
+  const unbracketed = address.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1')
+  const zone = unbracketed.indexOf('%')
+  const normalized = zone < 0
+    ? unbracketed
+    : unbracketed.slice(0, zone)
   if (normalized === '::1') {
     return true
   }
