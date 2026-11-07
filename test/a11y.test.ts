@@ -663,14 +663,14 @@ describe.each(themes)('badge, theme: $name', (theme) => {
 
   it('meets contrast and target size minimums with no serious axe violations', async () => {
     const page = await openBadge()
-    const samples = (await sampleContrast(page)).filter(sample => sample.selector.includes('mb-dock'))
+    const samples = (await sampleContrast(page)).filter(sample => /mb-dock|mb-problems/.test(sample.selector))
     expect(samples.length).toBeGreaterThan(2)
     const failures = samples.filter(sample => sample.role === 'text'
       ? sample.ratio < 4.5 || sample.fontSize < 12
       : sample.ratio < 3)
     expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
     expect(samples.some(sample => sample.selector.includes('mb-problems'))).toBe(true)
-    for (const target of ['.mb-badge', '.mb-problems']) {
+    for (const target of ['.mb-badge', '.mb-problems', '.mb-problems a']) {
       const size = await page.locator(`my-bad-overlay-badge ${target}`).boundingBox()
       expect(size!.height).toBeGreaterThanOrEqual(24)
     }

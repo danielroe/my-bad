@@ -1148,7 +1148,7 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
-  it('counts problem sets beside the warnings and links to their full list', async () => {
+  it('counts problem sets beside the warnings and links each to its full list', async () => {
     channel.clearWarning()
     channel.clearError()
     channel.clearProblems()
@@ -1157,13 +1157,15 @@ describe('badge', () => {
     channel.setProblems('lint', [], { label: 'ESLint', status: 'checking' })
     const { page, errors } = await open('/badge')
     const problems = page.locator('my-bad-overlay-badge .mb-problems')
+    const entries = problems.locator('.mb-problems-count > *')
     const badge = page.locator('my-bad-overlay-badge .mb-badge')
     await waitFor(() => problems.isVisible(), true)
     expect(await badge.isVisible()).toBe(false)
     expect(await problems.textContent()).toBe('TypeScript 1')
-    expect(await problems.getAttribute('href')).toBe(`${origin}/__typecheck/`)
-    expect(await problems.getAttribute('target')).toBe('_blank')
-    expect(await problems.getAttribute('title')).toBe('TypeScript: 1 error (checking)')
+    const typescript = problems.getByRole('link', { name: 'TypeScript 1' })
+    expect(await typescript.getAttribute('href')).toBe(`${origin}/__typecheck/`)
+    expect(await typescript.getAttribute('target')).toBe('_blank')
+    expect(await typescript.getAttribute('title')).toBe('TypeScript: 1 error')
     expect(await problems.locator('.mb-spin').count()).toBe(1)
     const spinning = () => problems.locator('.mb-spin').evaluate(icon => icon.getAnimations().length)
     expect(await spinning()).toBe(1)
@@ -1176,9 +1178,16 @@ describe('badge', () => {
         ...await report('Unused variable'),
         kind: 'warning',
       },
-    ], { label: 'ESLint', status: 'idle' })
+    ], { label: 'ESLint', status: 'idle', url: '/__lint/' })
     await waitFor(() => problems.textContent(), 'TypeScript 1 · ESLint 1')
-    expect(await problems.getAttribute('title')).toBe('TypeScript: 1 error; ESLint: 1 warning')
+    expect(await entries.evaluateAll(links => links.map(link => [
+      link.textContent,
+      link.getAttribute('href'),
+      (link as HTMLElement).title,
+    ]))).toEqual([
+      ['TypeScript 1', `${origin}/__typecheck/`, 'TypeScript: 1 error'],
+      ['ESLint 1', `${origin}/__lint/`, 'ESLint: 1 warning'],
+    ])
     expect(await problems.locator('.mb-spin').count()).toBe(0)
     expect(await problems.getAttribute('data-kind')).toBe('error')
 
@@ -1191,9 +1200,17 @@ describe('badge', () => {
     expect(link!.x + link!.width).toBeLessThan(pill!.x)
     expect(link!.y).toBe(pill!.y)
 
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], { label: 'ESLint', status: 'checking' })
     channel.clearProblems('ts')
     await waitFor(() => problems.textContent(), 'ESLint 1')
-    expect(await problems.getAttribute('href')).toBeNull()
+    expect(await entries.evaluateAll(items => items.map(item => [item.tagName, (item as HTMLElement).title]))).toEqual([
+      ['SPAN', 'ESLint: 1 warning (checking)'],
+    ])
     expect(await problems.getAttribute('data-kind')).toBe('warning')
     channel.clearProblems()
     await waitFor(() => problems.isVisible(), false)
@@ -1231,7 +1248,7 @@ describe('badge', () => {
     const problems = page.locator('my-bad-overlay-badge .mb-problems')
     await waitFor(() => problems.isVisible(), true)
     expect(await problems.textContent()).toBe('TypeScript failed · ESLint failed')
-    expect(await problems.getAttribute('title')).toBe('TypeScript: failed: Cannot find module \'typescript\'; ESLint: failed')
+    expect(await problems.locator('.mb-problems-count > *').evaluateAll(items => items.map(item => (item as HTMLElement).title))).toEqual(['TypeScript: failed: Cannot find module \'typescript\'', 'ESLint: failed'])
     expect(await problems.getAttribute('data-kind')).toBe('error')
 
     channel.setProblems('ts', [], { label: 'TypeScript', status: 'idle' })
@@ -1257,7 +1274,7 @@ describe('badge', () => {
     const problems = page.locator('my-bad-overlay-badge .mb-problems')
     await waitFor(() => problems.isVisible(), true)
     expect(await problems.textContent()).toBe('Nuxt 3 · Vue 1')
-    expect(await problems.getAttribute('title')).toBe('Nuxt Components: 1 warning; Nuxt Imports: 2 warnings; Vue: 1 warning')
+    expect(await problems.locator('.mb-problems-count > *').evaluateAll(items => items.map(item => (item as HTMLElement).title))).toEqual(['Nuxt Components: 1 warning; Nuxt Imports: 2 warnings', 'Vue: 1 warning'])
 
     channel.setProblems('nuxt:pages', [await warned('Duplicate route name')], {
       label: 'Pages',
@@ -1278,7 +1295,7 @@ describe('badge', () => {
     const { page } = await open('/badge')
     const problems = page.locator('my-bad-overlay-badge .mb-problems')
     await waitFor(() => problems.isVisible(), true)
-    expect(await problems.getAttribute('href')).toBeNull()
+    expect(await problems.locator('a').count()).toBe(0)
     channel.clearProblems()
     await page.close()
   }, 30_000)

@@ -32,7 +32,7 @@ interface Badge {
   host: HTMLElement
   dock: HTMLElement
   button: HTMLButtonElement
-  problems: HTMLAnchorElement
+  problems: HTMLElement
   count: HTMLElement
   latest: HTMLElement
   status: HTMLElement
@@ -380,8 +380,8 @@ function start(state: BadgeState): void {
     const dock = document.createElement('div')
     dock.className = 'mb-dock'
     dock.lang = 'en'
-    dock.innerHTML = '<a class="mb-problems" target="_blank" rel="noopener"><span></span><span class="mb-problems-count"></span></a><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span><span class="mb-badge-latest"></span></button>'
-    const [problems, button] = dock.children as unknown as [HTMLAnchorElement, HTMLButtonElement]
+    dock.innerHTML = '<span class="mb-problems"><span></span><span class="mb-problems-count"></span></span><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span><span class="mb-badge-latest"></span></button>'
+    const [problems, button] = dock.children as unknown as [HTMLElement, HTMLButtonElement]
     button.addEventListener('click', () => void expand())
     const status = document.createElement('div')
     status.className = 'mb-sr-only'
@@ -406,16 +406,15 @@ function start(state: BadgeState): void {
     return !!view && (!dialog || !dialog.hasAttribute('data-hidden'))
   }
 
-  function renderProblems(link: HTMLAnchorElement, listed: ProblemSummary[]): void {
+  function renderProblems(pill: HTMLElement, listed: ProblemSummary[]): void {
     const kind = listed.some(set => set.errors || failed(set))
       ? 'error'
       : 'warning'
     const checking = [
       ...problems.values(),
     ].some(set => set.status === 'checking')
-    const url = safeUrl(listed.find(set => set.url)?.url)
-    link.dataset.kind = kind
-    link.firstElementChild!.outerHTML = ICONS[checking
+    pill.dataset.kind = kind
+    pill.firstElementChild!.outerHTML = ICONS[checking
       ? 'checking'
       : kind]
     const groups = new Map<string, ProblemSummary[]>()
@@ -426,34 +425,39 @@ function start(state: BadgeState): void {
         set,
       ])
     }
-    link.lastElementChild!.textContent = [
+    const entries = [
       ...groups.values(),
     ].map((sets) => {
       const broken = sets.filter(failed).length
       const count = sets.reduce((total, set) => failed(set)
         ? total
         : total + set.errors + set.warnings, 0)
-      return `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
+      const url = safeUrl(sets.find(set => set.url)?.url)
+      const entry = document.createElement(url
+        ? 'a'
+        : 'span')
+      if (url) {
+        Object.assign(entry, { href: url, target: '_blank', rel: 'noopener' })
+      }
+      entry.textContent = `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
         ? 'failed'
         : broken
           ? `${count}, ${broken} failed`
           : count}`
-    }).join(' · ')
-    link.title = `${listed.map(set => `${set.group
-      ? `${set.group} `
-      : ''}${set.label ?? set.source}: ${failed(set)
-      ? `failed${set.error
-        ? `: ${set.error}`
-        : ''}`
-      : counts(set.errors, set.warnings)}`).join('; ')}${checking
-      ? ' (checking)'
-      : ''}`
-    if (url) {
-      link.href = url
-    }
-    else {
-      link.removeAttribute('href')
-    }
+      entry.title = `${sets.map(set => `${set.group
+        ? `${set.group} `
+        : ''}${set.label ?? set.source}: ${failed(set)
+        ? `failed${set.error
+          ? `: ${set.error}`
+          : ''}`
+        : counts(set.errors, set.warnings)}${set.status === 'checking'
+        ? ' (checking)'
+        : ''}`).join('; ')}`
+      return entry
+    })
+    pill.lastElementChild!.replaceChildren(...entries.flatMap((entry, index) => index
+      ? [' · ', entry]
+      : [entry]))
   }
 
   function render(): void {
