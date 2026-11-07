@@ -318,7 +318,9 @@ function normalizeInput(input: unknown): NormalizedError {
         : undefined,
       docsUrl: typeof error.docs === 'string' && error.docs
         ? error.docs
-        : undefined,
+        : typeof error.docsUrl === 'string' && error.docsUrl
+          ? error.docsUrl
+          : undefined,
       sources: Array.isArray(error.sources)
         ? error.sources.filter(source => typeof source === 'string' && source)
         : undefined,

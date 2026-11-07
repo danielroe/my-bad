@@ -58,6 +58,12 @@ describe('diagnostic errors', () => {
     })
   })
 
+  it('reads docsUrl when the error has no docs', async () => {
+    const { docs: _, ...rest } = diagnostic()
+    expect((await createReport({ ...rest, docsUrl: 'https://example.com/e1' }, { cwd: '/proj', loaders })).docsUrl).toBe('https://example.com/e1')
+    expect((await createReport(diagnostic({ docsUrl: 'https://example.com/e1' }), { cwd: '/proj', loaders })).docsUrl).toBe('https://nuxt.com/docs/4.x/errors/e1001')
+  })
+
   it('reads sources with only a line, or only a file', async () => {
     const report = await createReport(diagnostic({
       sources: ['/proj/pages/index.vue:3', '/proj/pages/index.vue'],
