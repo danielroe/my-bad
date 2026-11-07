@@ -6,6 +6,7 @@ import type { ErrorReport, ReportOptions, ReportPreset, SourceLoader } from '../
 import type { DevToolsPlugin } from './devtools'
 import { fileURLToPath } from 'node:url'
 import { createChannel } from '../channel'
+import { isTrustedNodeRequest } from '../channel/origin'
 import { fsLoader } from '../loaders/fs'
 import { badgeState, clientAssets, renderOverlay, renderPage } from '../render/html'
 import { assetUrls } from '../render/html/assets'
@@ -237,7 +238,11 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
         return
       }
 
-      devServer.middlewares.use(`${base}/dock.js`, (_req, res) => {
+      devServer.middlewares.use(`${base}/dock.js`, (req, res) => {
+        if (!isTrustedNodeRequest(req, { allowedHosts: devServer.config.server.allowedHosts })) {
+          res.writeHead(403).end()
+          return
+        }
         dock ??= `import setup from ${JSON.stringify(assetUrls(base).devtools)}\nconst badge = ${JSON.stringify(badgeState({
           ...options.overlay,
           channel: base,

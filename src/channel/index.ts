@@ -514,14 +514,17 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
   }
 
-  /** The docked page and the problem sets in full. Problem sets come from no request, so every caller may read them. */
-  function readResponse(matched: 'panel' | 'problems', method: string | undefined, url: URL): { status: number, headers?: Record<string, string>, body?: string } {
+  /** The docked page, and the problem sets in full for trusted callers. */
+  function readResponse(matched: 'panel' | 'problems', method: string | undefined, url: URL, trusted: boolean): { status: number, headers?: Record<string, string>, body?: string } {
     if (method !== 'GET' && method !== 'HEAD') {
       return { status: 405 }
     }
+    if (matched === 'problems' && !trusted) {
+      return { status: 403 }
+    }
     const body = matched === 'panel'
       ? renderDockedPage({
-          channel: url.pathname.slice(0, -'/panel'.length),
+          channel: url.pathname.slice(0, -'/panel'.length).replace(/^[/\\]+/, '/'),
           embed: url.searchParams.has('embed'),
           drawer: url.searchParams.has('drawer'),
         })
@@ -579,7 +582,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         return true
       }
       if (matched === 'panel' || matched === 'problems') {
-        const { status, headers, body } = readResponse(matched, req.method, url)
+        const { status, headers, body } = readResponse(matched, req.method, url, trusted)
         res.writeHead(status, headers).end(body)
         return true
       }
@@ -644,7 +647,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         return new Response(null, { status: await openStatus(request.headers.get('content-type'), await request.json().catch(() => undefined)) })
       }
       if (matched === 'panel' || matched === 'problems') {
-        const { status, headers, body } = readResponse(matched, request.method, url)
+        const { status, headers, body } = readResponse(matched, request.method, url, trusted)
         return new Response(body ?? null, { status, headers })
       }
       if ('asset' in matched) {

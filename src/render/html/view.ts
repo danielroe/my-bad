@@ -183,7 +183,9 @@ ${renderIndex(state, index, shown)}
     : view
       ? `${renderReport(reportEntries(view.report).find(entry => entry.path === selected)?.report ?? view.report, view, selected)}
   ${renderFallback(view, selected)}`
-      : '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Nothing to report</p><p>Errors, warnings and problems from the dev server show up here as they happen.</p></div>'}
+      : state.withheld && shown?.source && index.problems.some(entry => entry.source === shown.source && entry.errors + entry.warnings)
+        ? '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Problems listed on the dev machine</p><p>The dev server only lists problems on its own machine. Open this page there to see them.</p></div>'
+        : '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Nothing to report</p><p>Errors, warnings and problems from the dev server show up here as they happen.</p></div>'}
   <div class="mb-secondary">${renderSecondaryTools(report, live)}</div>
 </main>
 </div>

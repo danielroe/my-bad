@@ -1310,6 +1310,23 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('points a page whose problem reports are withheld at the dev machine', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    const { page, errors } = await open('/badge')
+    await page.route('**/__my-bad/problems', route => route.fulfill({ status: 403 }))
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Problems listed on the dev machine')
+    expect(await panel.locator('[data-index-source="ts"] .mb-count').textContent()).toBe('1 error')
+    channel.clearProblems()
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    expect(errors.filter(error => !error.includes('403'))).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it('resyncs problem sets that changed while the tab was hidden', async () => {
     channel.clearWarning()
     channel.clearError()

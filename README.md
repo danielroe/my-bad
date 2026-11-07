@@ -237,8 +237,8 @@ const channel = createChannel({
 // Requests with neither header (`curl`, editor integrations) are allowed.
 
 // Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css`, `badge.js` and
-// `devtools.js` (immutable when requested with `?v=`, as `renderBadge` does), the docked view at `panel` and every
-// problem set in full at `problems`
+// `devtools.js` (immutable when requested with `?v=`, as `renderBadge` does), the docked view at `panel` and, to
+// trusted callers, every problem set in full at `problems`
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))
 // or fetch-style: await channel.fetchHandler(request)
 
@@ -247,7 +247,8 @@ server.on('request', (req, res) => channel.handler(req, res).then(handled => han
 // untrusted (a `--host` binding, a connection forwarded into a container): the channel still connects and
 // streams, but its `hello.history` and the `history` payloads hold only the reports that concern the page
 // (a report naming a request id is matched by that id alone, never by path), `/history/:id` answers 404 for
-// any other report, log entries reach it only when attributed to a request that concerns it, and
+// any other report, `/problems` answers 403 (problem sets reach it as counts only), log entries reach it only
+// when attributed to a request that concerns it, and
 // privileged actions such as `open` are neither advertised nor accepted, so the
 // page opens an `editor://` URL on the machine running the browser instead.
 // Pass `trusted` explicitly behind a proxy, where the peer address is the proxy's.

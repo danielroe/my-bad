@@ -497,6 +497,16 @@ describe('client assets', () => {
     })))?.status).toBe(403)
     channel.close()
   })
+
+  it('keeps the docked page\'s assets on the dev server for a path starting with several slashes', async () => {
+    const channel = createChannel()
+    for (const path of ['//evil.example/panel', '///evil.example/panel']) {
+      const html = await (await channel.fetchHandler(new Request(`http://localhost${path}`), { trusted: false }))!.text()
+      expect(html).toContain(`<script src="${assetUrls('/evil.example').script}"></script>`)
+      expect(html).not.toContain('//evil.example')
+    }
+    channel.close()
+  })
 })
 
 describe('cross-origin requests', () => {
@@ -1175,9 +1185,9 @@ describe('problem sets', () => {
     }
   }
 
-  it('serves every set in full, to untrusted callers too', async () => {
+  it('serves every set in full to trusted callers only', async () => {
     const channel = createChannel()
-    const read = async () => (await channel.fetchHandler(new Request('http://localhost/__my-bad/problems'), { trusted: false }))!.json()
+    const read = async () => (await channel.fetchHandler(new Request('http://localhost/__my-bad/problems'), { trusted: true }))!.json()
     expect(await read()).toEqual([])
     const type = await problem('Type mismatch')
     channel.setProblems('ts', [type], { label: 'TypeScript', url: '/__ts' })
@@ -1189,6 +1199,8 @@ describe('problem sets', () => {
         url: '/__ts',
       },
     ])
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/problems'), { trusted: false }))?.status).toBe(403)
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/problems')))?.status).toBe(403)
     channel.clearProblems('ts')
     expect(await read()).toEqual([])
     channel.close()

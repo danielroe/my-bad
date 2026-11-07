@@ -2,7 +2,7 @@ import type { DevToolsPluginOptions } from '@vitejs/devtools-kit'
 import type { Plugin, ViteDevServer } from 'vite'
 import type { DevToolsPlugin } from '../src/vite/devtools'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { createServer as createHttpServer } from 'node:http'
+import { createServer as createHttpServer, get as httpGet } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -240,6 +240,18 @@ describe('devtools', () => {
         theme: { name: 'Bad' },
       })
       expect(panel).toContain('{"mode":"docked","channel":"/__bad","embed":true')
+      const rebound = await new Promise<number>((resolve, reject) => {
+        httpGet({
+          host: '127.0.0.1',
+          port,
+          path: '/__bad/dock.js',
+          headers: { host: `evil.example:${port}` },
+        }, (res) => {
+          res.resume()
+          resolve(res.statusCode!)
+        }).on('error', reject)
+      })
+      expect(rebound).toBe(403)
     }
     finally {
       http.close()

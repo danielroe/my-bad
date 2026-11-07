@@ -63,6 +63,8 @@ export interface DockedState extends Omit<PageState, 'mode' | 'report'> {
   drawer?: boolean
   /** The embedding page's host can switch to another dock. */
   docks?: boolean
+  /** The channel withholds problem reports from this page, which is not on the dev server's machine. */
+  withheld?: boolean
 }
 
 /** What a docked view lists. Problem sets carry their reports once fetched. */

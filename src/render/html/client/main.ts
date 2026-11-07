@@ -1139,9 +1139,12 @@ function connectDocked(m: Mount, d: Docked): void {
       return fetching
     }
     fetching = fetch(`${d.state.channel}/problems`)
-      .then(res => res.ok
-        ? res.json() as Promise<ProblemSet[]>
-        : [])
+      .then((res) => {
+        d.state.withheld = res.status === 403
+        return res.ok
+          ? res.json() as Promise<ProblemSet[]>
+          : []
+      })
       .catch(() => [])
       .then((sets) => {
         d.sets = new Map(sets.map(set => [set.source, set]))
