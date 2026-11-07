@@ -27,8 +27,43 @@ export interface ReportRequest {
   request?: string
 }
 
+/** `checking` while a source is producing a new set, `idle` once it has published it, `failed` when it could not. */
+export type ProblemStatus = 'checking' | 'idle' | 'failed'
+
+export interface ProblemMeta {
+  /** Name of the source as shown to the user, e.g. `TypeScript`. */
+  label?: string
+  /** Sources sharing a group are counted together in the badge under this name, e.g. `Nuxt`. */
+  group?: string
+  /** No status means `idle`. */
+  status?: ProblemStatus
+  /** Why the source failed, with `status: 'failed'`. */
+  error?: string
+  /** URL of a page listing the problems in full. */
+  url?: string
+}
+
+/** A problem set as pages receive it: its counts, without the reports. */
+export interface ProblemSummary extends ProblemMeta {
+  source: string
+  errors: number
+  warnings: number
+}
+
+export interface ProblemChanges {
+  /** Reports new to the set, or whose kind changed, in full. */
+  added: ErrorReport[]
+  /** Ids of the reports no longer in the set. */
+  removed: string[]
+}
+
+export interface ProblemSet extends ProblemMeta {
+  source: string
+  reports: ErrorReport[]
+}
+
 export type ChannelEvent
-  = | { type: 'hello', payload: { version: string, actions: string[], current?: ErrorReport, history?: HistoryEntry[] } }
+  = | { type: 'hello', payload: { version: string, actions: string[], current?: ErrorReport, history?: HistoryEntry[], problems?: ProblemSummary[] } }
     | { type: 'error:set', payload: { report: ErrorReport, history: HistoryEntry[] } & ReportRequest }
     | { type: 'history', payload: { history: HistoryEntry[] } }
     | { type: 'error:clear', payload: { id?: string } }
@@ -36,6 +71,9 @@ export type ChannelEvent
     | { type: 'warning:clear', payload: { id?: string, history: HistoryEntry[] } }
     | { type: 'log', payload: LogEntry & ReportRequest }
     | { type: 'build', payload: BuildProgress }
+    /** Sinks also get the reports that joined the set and the ids of those that left it. */
+    | { type: 'problems', payload: ProblemSummary & Partial<ProblemChanges> }
+    | { type: 'problems:clear', payload: { source?: string } }
 
 export function toHistoryEntry(report: ErrorReport): HistoryEntry {
   return {

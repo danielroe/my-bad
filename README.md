@@ -60,7 +60,7 @@ else {
 
 ### Diagnostics
 
-An error that carries its own guidance is read without any configuration. `fix` becomes the report's `hint`, a `docs` URL becomes `docsUrl`, and `sources` (`file:line:column` strings) become app frames with snippets, or a `Sources` section when they cannot be resolved to a readable file. An error named after its own `code` is treated as self-describing: the heading shows the code once, and presets leave its `docsUrl` alone, including when it has none.
+An error that carries its own guidance is read without any configuration. `fix` becomes the report's `hint`, a `docs` (or `docsUrl`) URL becomes `docsUrl`, and `sources` (`file:line:column`, `file:line` or bare `file` strings) become app frames, with snippets where they have a line, or a `Sources` section when they cannot be resolved to a readable file. An error named after its own `code` is treated as self-describing: the heading shows the code once, and presets leave its `docsUrl` alone, including when it has none.
 
 ```ts
 class Diagnostic extends Error {
@@ -107,11 +107,18 @@ Theme overrides stay inline, so a shared stylesheet still themes per response.
 
 ### Badge
 
-`renderBadge` renders a small loader for every dev page, which shows errors and warnings as they arrive; its ~9kB script comes from the channel at `{channel}/badge.js`. It renders nothing until something concerns the page. An error mounts the overlay, minimised unless `startMinimized: false`, loading it from the channel. Warnings show a small count in the corner the overlay docks to, which expands into a panel beside the page when clicked; with no error to show, the panel leaves the page usable, and moves on to the next warning as each one is retired. The count stands in for the overlay whenever it is hidden or cleared.
+`renderBadge` renders a small loader for every dev page, which shows errors, warnings and problem sets as they arrive; its ~11kB script comes from the channel at `{channel}/badge.js`. It renders nothing until something concerns the page. An error mounts the overlay, minimised unless `startMinimized: false`, loading it from the channel. Warnings show a small count in the corner the overlay docks to, which expands into a panel beside the page when clicked; with no error to show, the panel leaves the page usable, and moves on to the next warning as each one is retired. The count stands in for the overlay whenever it is hidden or cleared.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-dark.png">
   <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-light.png" alt="A small pill in the corner of a page reading 2 warnings, followed by the newest one: NUXT_B4025: <NuxtLink> has both to and href" width="470">
+</picture>
+
+Problem sets from type checkers, linters and compilers (see `setProblems` below) are counted per source, or per `group` of sources, in a second pill beside it, which spins while a source is checking, reads `failed` for a source that could not run, and opens the source's `url` in a new tab. They never mount the overlay.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-dark.png">
+  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-light.png" alt="A small pill in the corner of a page reading vue-tsc 3, ESLint 2, with a spinner while ESLint is checking" width="203">
 </picture>
 
 ```ts
@@ -256,7 +263,50 @@ channel.clearWarning(report.id) // retire it: pages drop it from their count and
 channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer of trusted callers
 channel.log({ level: 'warn', text: 'careful' }, requestId, `${method} ${url}`) // also streamed to the pages that request concerns
 channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) // progress bar
+
+// the current problems of a long-running source (type checker, linter, audit), replacing any it published before
+channel.setProblems('typecheck', reports, { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
+channel.clearProblems('typecheck') // retire one source (no source retires every one)
+
+const stop = channel.subscribe((event) => {}) // receive every event the `sink` receives, until `stop()`
 ```
+
+Problem sets stay out of `history` and the warning cap, raise no toasts and never take over a page. Republishing the same reports (by id and kind, in order) with the same meta is not broadcast again, so a source can publish after every run. Every page, trusted or not, receives a `problems` event per change carrying the source's error and warning counts but not its reports, and the counts of every set in `hello`. The sink also receives the reports that joined the set (`added`) and the ids of those that left it (`removed`), so a `fileSink` log records a problem when it joins the set rather than on every run. Sets belong to the channel, so a set replayed into a new channel is all `added` again. An empty set shows nothing, though its source stays listed with its meta.
+
+With no `status` a source is idle; `status: 'checking'` shows a spinner while it runs, and `status: 'failed'` with an `error` reason replaces its count with `failed`, giving the reason in the pill's title. Sources with the same `group` are counted together under that name (`Nuxt 3`), each listed in the title. `channel.problems` returns every set in full.
+
+A report's id hashes its name, message and the file, line and column of its first app frame, so build reports with `createReport` and pass the location: a compile-shaped input (`{ message, id, loc, frame }`) or `sources`, with `kind: 'warning'` for warnings, which are then named `Warning` unless the input has a name.
+
+#### Problems from another tool
+
+A host feeds a tool's diagnostics in by mapping each run's results to reports and publishing the whole set. Any tool with a run lifecycle fits: a linter in watch mode, an a11y audit, or the server `api.subscribe` of vite-plugin-checker.
+
+```ts
+import type { ErrorReport } from 'my-bad'
+import { createReport } from 'my-bad'
+
+const meta = { label: 'ESLint', url: '/__lint/' }
+let reports: ErrorReport[] = []
+
+linter.on('start', () => channel.setProblems('lint', reports, { ...meta, status: 'checking' }))
+linter.on('results', async (results) => {
+  reports = await Promise.all(results.map(result => createReport({
+    name: 'ESLint',
+    message: result.message,
+    code: result.ruleId,
+    sources: [`${result.file}:${result.line}:${result.column}`],
+  }, {
+    kind: result.severity === 2
+      ? 'error'
+      : 'warning'
+  })))
+  channel.setProblems('lint', reports, meta)
+})
+linter.on('crash', error => channel.setProblems('lint', reports, { ...meta, status: 'failed', error: error.message }))
+linter.on('close', () => channel.clearProblems('lint'))
+```
+
+The badge stays silent while a clean run checks, shows `ESLint 3` once there is something to count, and opens `url` for the full list. Problems show on the pages that render the badge (`renderBadge`).
 
 ### Vite
 
