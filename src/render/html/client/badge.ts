@@ -428,9 +428,17 @@ function start(state: BadgeState): void {
     }
     link.lastElementChild!.textContent = [
       ...groups.values(),
-    ].map(sets => `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${sets.every(failed)
-      ? 'failed'
-      : sets.reduce((total, set) => total + set.errors + set.warnings, 0)}`).join(' · ')
+    ].map((sets) => {
+      const broken = sets.filter(failed).length
+      const count = sets.reduce((total, set) => failed(set)
+        ? total
+        : total + set.errors + set.warnings, 0)
+      return `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
+        ? 'failed'
+        : broken
+          ? `${count}, ${broken} failed`
+          : count}`
+    }).join(' · ')
     link.title = `${listed.map(set => `${set.group
       ? `${set.group} `
       : ''}${set.label ?? set.source}: ${failed(set)

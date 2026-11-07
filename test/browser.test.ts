@@ -1258,6 +1258,15 @@ describe('badge', () => {
     await waitFor(() => problems.isVisible(), true)
     expect(await problems.textContent()).toBe('Nuxt 3 · Vue 1')
     expect(await problems.getAttribute('title')).toBe('Nuxt Components: 1 warning; Nuxt Imports: 2 warnings; Vue: 1 warning')
+
+    channel.setProblems('nuxt:pages', [await warned('Duplicate route name')], {
+      label: 'Pages',
+      group: 'Nuxt',
+      status: 'failed',
+      error: 'Could not scan pages',
+    })
+    await waitFor(() => problems.textContent(), 'Nuxt 3, 1 failed · Vue 1')
+    expect(await problems.getAttribute('data-kind')).toBe('error')
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
