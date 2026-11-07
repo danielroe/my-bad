@@ -2,7 +2,7 @@ import type { BuildProgress, ChannelEvent, ProblemSet, ProblemSummary } from '..
 import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { BadgeFocus, Dock, DockedIndex, DockedState, PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
-import { escapeHtml } from '../escape'
+import { escapeHtml, safeUrl } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
 import { themeStyles } from '../theme'
 import { dockedSummary, ICONS, pagerIndex, renderDocked, renderIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
@@ -894,6 +894,10 @@ function dockedMount(state: DockedState, root: HTMLElement): Mount {
   }
 }
 
+function closeDrawer(): void {
+  window.parent.postMessage({ type: 'my-bad:close' }, location.origin)
+}
+
 /** How long an embedded view waits for the badge of the page embedding it, which may start after it. */
 const EMBED_TIMEOUT = 3000
 
@@ -923,6 +927,7 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
     ? await embedding()
     : undefined
   const page = source?.snapshot?.().overlay
+  d.state.docks = !!source?.host?.dock
   if (page) {
     const settings = {
       cwd: page.cwd,
@@ -994,10 +999,17 @@ function refreshIndex(m: Mount, d: Docked): void {
 }
 
 function sameFocus(a: BadgeFocus | undefined, b: BadgeFocus | undefined): boolean {
-  return a?.id === b?.id && a?.source === b?.source
+  return a?.id === b?.id && a?.source === b?.source && !a?.list === !b?.list
 }
 
 async function findReport(m: Mount, d: Docked, focus: BadgeFocus): Promise<{ focus: BadgeFocus, report?: ErrorReport } | undefined> {
+  if (focus.source && focus.list) {
+    return safeUrl(d.summaries.get(focus.source)?.url)
+      ? {
+          focus: { source: focus.source, list: true },
+        }
+      : findReport(m, d, { source: focus.source })
+  }
   if (focus.source) {
     const reports = d.sets.get(focus.source)?.reports ?? []
     const report = focus.id
@@ -1087,10 +1099,14 @@ async function selectDocked(m: Mount, focus: BadgeFocus | undefined): Promise<vo
 function settleDocked(m: Mount, d: Docked): Promise<void> | void {
   const shown = d.shown
   const open = shown && (shown.source
-    ? d.summaries.has(shown.source) && (!shown.id || d.sets.get(shown.source)?.reports.some(report => report.id === shown.id))
+    ? d.summaries.has(shown.source) && (shown.list || !shown.id || d.sets.get(shown.source)?.reports.some(report => report.id === shown.id))
     : d.current?.id === shown.id || d.history.some(entry => entry.id === shown.id && entry.kind === 'warning'))
   if (open) {
-    if (shown.source && !shown.id && d.sets.get(shown.source)?.reports.length) {
+    if (shown.source && shown.list && m.root.querySelector('.mb-docked-list')?.getAttribute('src') !== safeUrl(d.summaries.get(shown.source)?.url)) {
+      d.shown = undefined
+      return selectDocked(m, shown)
+    }
+    if (shown.source && !shown.id && !shown.list && d.sets.get(shown.source)?.reports.length) {
       return selectDocked(m, { source: shown.source })
     }
     if (shown.source && shown.id) {
@@ -1209,7 +1225,7 @@ function connectDocked(m: Mount, d: Docked): void {
     if (event.source !== window.parent || event.origin !== location.origin || data?.type !== 'my-bad:select') {
       return
     }
-    const focus = { id: data.id, source: data.source }
+    const focus = { id: data.id, source: data.source, list: data.list }
     window.parent.postMessage({ type: 'my-bad:selected' }, location.origin)
     if (ready) {
       void selectDocked(m, focus)
@@ -1689,6 +1705,18 @@ function bind(m: Mount): void {
         return void navigateHistory(m, Number(target.dataset.dir))
       case 'select':
         return void selectDocked(m, { id: target.dataset.id, source: target.dataset.source })
+      case 'list': {
+        const source = target.dataset.source
+        const dock = source === undefined
+          ? undefined
+          : m.docked?.summaries.get(source)?.devtoolsDock
+        const host = embeddingSource()?.host
+        return dock && host?.dock
+          ? host.dock(dock)
+          : void selectDocked(m, { source, list: true })
+      }
+      case 'close-docked':
+        return closeDrawer()
       case 'dismiss-toast': {
         event.stopPropagation()
         const toast = target.closest<HTMLElement>('[data-toast]')
@@ -1774,6 +1802,17 @@ if (m?.docked) {
   m.root.innerHTML = renderDocked(m.docked.state, dockedIndex(m.docked))
   activate(m)
   const docked = m.docked
+  if (docked.state.drawer) {
+    addEventListener('keydown', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : undefined
+      const layered = !!m.root.querySelector('.mb-cause-picker[open], .mb-history[open], [data-menu-list]:not([hidden]), [data-logs]:not([hidden]), dialog[open]') || !!target?.closest('[data-toast]')
+      if (event.key === 'Escape' && !layered) {
+        closeDrawer()
+      }
+    }, true)
+  }
   whenReady(() => void adoptPage(m, docked).then(() => connectDocked(m, docked)))
 }
 else if (m) {

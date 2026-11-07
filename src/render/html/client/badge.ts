@@ -1,9 +1,10 @@
 import type { ChannelEvent, ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
-import type { BadgeState, PageState } from '../state'
+import type { BadgeFocus, BadgeState, PageState } from '../state'
 import styles from 'virtual:my-bad-badge-styles'
 import { THEME_STORAGE_KEY } from '../state'
 import { firstLine, plural } from '../summary'
+import { focusSender } from './frame'
 
 type Payload<T extends ChannelEvent['type']> = Extract<ChannelEvent, { type: T }>['payload']
 
@@ -74,16 +75,6 @@ function failed(set: ProblemSummary): boolean {
   return set.status === 'failed'
 }
 
-function safeUrl(url: string | undefined): string | undefined {
-  try {
-    const resolved = url && new URL(url, location.href)
-    return resolved && /^https?:$/.test(resolved.protocol)
-      ? resolved.href
-      : undefined
-  }
-  catch {}
-}
-
 function start(state: BadgeState): void {
   const overlay = state.overlay
   const tag = overlay.tag ?? 'my-bad-overlay'
@@ -114,6 +105,8 @@ function start(state: BadgeState): void {
   let loading = false
   let pending: ErrorReport | undefined
   let badge: Badge | undefined
+  let drawer: { root: HTMLElement, frame: HTMLIFrameElement, source?: string } | undefined
+  const send = focusSender(() => drawer?.frame.contentWindow)
   let host: MyBadSharedSource['host']
   let hostWait = state.awaitHost
     ? new Promise<void>((resolve) => {
@@ -143,6 +136,7 @@ function start(state: BadgeState): void {
     get: () => host,
     set: (value: MyBadSharedSource['host']) => {
       host = value
+      closeDrawer()
       render()
     },
   })
@@ -392,6 +386,53 @@ function start(state: BadgeState): void {
     document.body.append(host, json, script)
   }
 
+  function openDrawer(focus: BadgeFocus): void {
+    if (!badge) {
+      return
+    }
+    if (!drawer) {
+      const root = document.createElement('div')
+      root.className = 'mb-drawer'
+      root.setAttribute('role', 'dialog')
+      root.setAttribute('aria-label', 'Problems')
+      const frame = document.createElement('iframe')
+      frame.title = 'Problems'
+      frame.src = `${overlay.channel}/panel?embed&drawer`
+      root.append(frame)
+      badge.host.shadowRoot!.append(root)
+      drawer = { root, frame }
+    }
+    drawer.source = focus.source
+    drawer.root.dataset.dock = badge.dock.dataset.dock
+    send(focus)
+    drawer.frame.focus()
+  }
+
+  function closeDrawer(): void {
+    if (!drawer) {
+      return
+    }
+    const { root, source } = drawer
+    drawer = undefined
+    root.remove()
+    const pill = [
+      ...badge?.problems.querySelectorAll<HTMLElement>('[data-source]') ?? [],
+    ].find(entry => entry.dataset.source === source)
+    const next = pill ?? badge?.button
+    next?.focus()
+  }
+
+  addEventListener('message', (event) => {
+    if (drawer && event.origin === location.origin && event.source === drawer.frame.contentWindow && (event.data as { type?: string } | undefined)?.type === 'my-bad:close') {
+      closeDrawer()
+    }
+  })
+  addEventListener('keydown', (event) => {
+    if (drawer && event.key === 'Escape') {
+      closeDrawer()
+    }
+  })
+
   function scheme(): string {
     const remembered = storage(THEME_STORAGE_KEY)
     return overlay.theme?.scheme ?? (remembered === 'light' || remembered === 'dark'
@@ -462,20 +503,13 @@ function start(state: BadgeState): void {
       const count = sets.reduce((total, set) => failed(set)
         ? total
         : total + set.errors + set.warnings, 0)
-      const url = safeUrl(sets.find(set => set.url)?.url)
-      const host = target.host
-      const entry = document.createElement(host
-        ? 'button'
-        : url
-          ? 'a'
-          : 'span')
-      if (host) {
-        Object.assign(entry, { type: 'button' })
-        entry.addEventListener('click', () => host.open({ source: sets[0]!.source }))
-      }
-      else if (url) {
-        Object.assign(entry, { href: url, target: '_blank', rel: 'noopener' })
-      }
+      const focus = { source: sets[0]!.source }
+      const entry = document.createElement('button')
+      entry.type = 'button'
+      entry.dataset.source = focus.source
+      entry.addEventListener('click', () => target.host
+        ? target.host.open(focus)
+        : openDrawer(focus))
       entry.textContent = `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
         ? 'failed'
         : broken

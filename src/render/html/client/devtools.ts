@@ -5,6 +5,7 @@ import type { ErrorReport } from '../../../types'
 import type { BadgeFocus, BadgeSnapshot, BadgeState } from '../state'
 import { displayPath } from '../../../report/path'
 import { countsLabel, dockedCounts, firstLine, plural, reportLocation } from '../summary'
+import { focusSender } from './frame'
 
 type Activation = BadgeFocus & { open?: string }
 type MessageAction = NonNullable<DevToolsMessageEntryInput['actions']>[number]
@@ -27,34 +28,16 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
   }
   const source = await badgeSource()
 
-  let pending: BadgeFocus | undefined
-  const deliver = () => {
-    const frame = ctx.current.domElements.iframe?.contentWindow
-    if (pending && frame) {
-      frame.postMessage({ type: 'my-bad:select', ...pending }, location.origin)
-    }
-  }
-  addEventListener('message', (event) => {
-    if (event.origin !== location.origin || event.source !== ctx.current.domElements.iframe?.contentWindow) {
-      return
-    }
-    const type = (event.data as { type?: string } | undefined)?.type
-    if (type === 'my-bad:ready') {
-      deliver()
-    }
-    else if (type === 'my-bad:selected') {
-      pending = undefined
-    }
-  })
+  const send = focusSender(() => ctx.current.domElements.iframe?.contentWindow)
   const show = async (focus: BadgeFocus) => {
-    pending = focus
     if (!await ctx.docks.switchEntry(dockId)) {
       ctx.panel.session.open = true
     }
-    deliver()
+    send(focus)
   }
   source.host = {
     open: focus => void show(focus),
+    dock: id => void ctx.docks.switchEntry(id),
   }
   dispatchEvent(new Event('my-bad:host'))
 
@@ -73,8 +56,7 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
     if (url) {
       open(url, '_blank', 'noopener')
     }
-    pending = { id: params.id, source: params.source }
-    deliver()
+    send({ id: params.id, source: params.source, list: params.list })
   })
 
   const registration = ctx.docks.register({ ...entry }, true)
@@ -114,7 +96,10 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
         ...describe(current, snapshot),
         level: 'error',
         notify: !errors.has(current.id),
-        actions: actions(dockId, { id: current.id }, current.docsUrl, 'Docs'),
+        actions: [
+          showAction(dockId, { id: current.id }),
+          ...docsAction(dockId, { id: current.id }, current.docsUrl),
+        ],
       })
       errors.add(current.id)
     }
@@ -164,7 +149,10 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
           ? 'loading'
           : 'idle',
         notify: fresh,
-        actions: actions(dockId, { source: summary.source }, summary.url, 'Full list'),
+        actions: [
+          showAction(dockId, { source: summary.source }),
+          ...listAction(dockId, summary),
+        ],
       })
     }
     for (const key of seen.keys()) {
@@ -304,31 +292,52 @@ function where(report: ErrorReport, snapshot: BadgeSnapshot): string | undefined
     : undefined
 }
 
-function actions(dockId: string, focus: BadgeFocus, url: string | undefined, label: string): MessageAction[] {
-  const list: MessageAction[] = [
-    {
-      id: 'show',
-      label: 'Show',
-      kind: 'activate',
-      activate: {
-        dockId,
-        params: { ...focus },
-      },
+function showAction(dockId: string, focus: BadgeFocus): MessageAction {
+  return {
+    id: 'show',
+    label: 'Show',
+    kind: 'activate',
+    activate: {
+      dockId,
+      params: { ...focus },
     },
-  ]
-  const href = safeUrl(url)
-  if (href) {
-    list.push({
-      id: 'open',
-      label,
-      kind: 'activate',
-      activate: {
-        dockId,
-        params: { ...focus, open: href },
-      },
-    })
   }
-  return list
+}
+
+function docsAction(dockId: string, focus: BadgeFocus, url: string | undefined): MessageAction[] {
+  const href = safeUrl(url)
+  return href
+    ? [
+        {
+          id: 'open',
+          label: 'Docs',
+          kind: 'activate',
+          activate: {
+            dockId,
+            params: { ...focus, open: href },
+          },
+        },
+      ]
+    : []
+}
+
+function listAction(dockId: string, set: Pick<ProblemSet, 'source' | 'url' | 'devtoolsDock'>): MessageAction[] {
+  const activate = set.devtoolsDock
+    ? { dockId: set.devtoolsDock }
+    : safeUrl(set.url) && {
+      dockId,
+      params: { source: set.source, list: true },
+    }
+  return activate
+    ? [
+        {
+          id: 'list',
+          label: 'Full list',
+          kind: 'activate',
+          activate,
+        },
+      ]
+    : []
 }
 
 function safeUrl(url: unknown): string | undefined {

@@ -215,13 +215,15 @@ export function badgeState(options: RenderBadgeOptions): { state: BadgeState, sr
 /**
  * The page a channel serves at `{channel}/panel`: every open error, warning and
  * problem set, each shown the way the overlay shows it. With `embed`, it takes
- * the scope, theme and paths of the badge on the page embedding it.
+ * the scope, theme and paths of the badge on the page embedding it. With
+ * `drawer`, it has a button closing the badge's drawer it is shown in.
  */
-export function renderDockedPage(options: { channel: string, embed?: boolean }): string {
+export function renderDockedPage(options: { channel: string, embed?: boolean, drawer?: boolean }): string {
   const state: DockedState = {
     mode: 'docked',
     channel: options.channel,
     embed: options.embed,
+    drawer: options.drawer,
     version: __MY_BAD_VERSION__,
   }
   const asset = (key: 'script' | 'styles') => `${options.channel}/${key === 'script'

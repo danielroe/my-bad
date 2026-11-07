@@ -1194,6 +1194,22 @@ describe('problem sets', () => {
     channel.close()
   })
 
+  it('republishes a set when only its devtools dock changes', async () => {
+    const sunk: any[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    channel.setProblems('ts', [], { devtoolsDock: 'checker' })
+    channel.setProblems('ts', [], { devtoolsDock: 'checker' })
+    channel.setProblems('ts', [], { devtoolsDock: 'other' })
+    channel.setProblems('ts', [])
+    expect(sunk.filter(event => event.type === 'problems').map(event => event.payload.devtoolsDock)).toEqual(['checker', 'other', undefined])
+    expect((await hello(channel)).problems).toEqual([
+      { source: 'ts', errors: 0, warnings: 0 },
+    ])
+    channel.close()
+  })
+
   it('streams counts per source, replacing the set each time, and keeps them out of the history', async () => {
     const sunk: any[] = []
     const channel = createChannel({

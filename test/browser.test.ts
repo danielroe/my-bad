@@ -1197,7 +1197,7 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
-  it('counts problem sets beside the warnings and links each to its full list', async () => {
+  it('counts problem sets beside the warnings', async () => {
     channel.clearWarning()
     channel.clearError()
     channel.clearProblems()
@@ -1211,10 +1211,7 @@ describe('badge', () => {
     await waitFor(() => problems.isVisible(), true)
     expect(await badge.isVisible()).toBe(false)
     expect(await problems.textContent()).toBe('TypeScript 1')
-    const typescript = problems.getByRole('link', { name: 'TypeScript 1' })
-    expect(await typescript.getAttribute('href')).toBe(`${origin}/__typecheck/`)
-    expect(await typescript.getAttribute('target')).toBe('_blank')
-    expect(await typescript.getAttribute('title')).toBe('TypeScript: 1 error')
+    expect(await problems.getByRole('button', { name: 'TypeScript 1' }).getAttribute('title')).toBe('TypeScript: 1 error')
     expect(await problems.locator('.mb-spin').count()).toBe(1)
     const spinning = () => problems.locator('.mb-spin').evaluate(icon => icon.getAnimations().length)
     expect(await spinning()).toBe(1)
@@ -1229,13 +1226,12 @@ describe('badge', () => {
       },
     ], { label: 'ESLint', status: 'idle', url: '/__lint/' })
     await waitFor(() => problems.textContent(), 'TypeScript 1 · ESLint 1')
-    expect(await entries.evaluateAll(links => links.map(link => [
-      link.textContent,
-      link.getAttribute('href'),
-      (link as HTMLElement).title,
+    expect(await entries.evaluateAll(items => items.map(item => [
+      item.textContent,
+      (item as HTMLElement).title,
     ]))).toEqual([
-      ['TypeScript 1', `${origin}/__typecheck/`, 'TypeScript: 1 error'],
-      ['ESLint 1', `${origin}/__lint/`, 'ESLint: 1 warning'],
+      ['TypeScript 1', 'TypeScript: 1 error'],
+      ['ESLint 1', 'ESLint: 1 warning'],
     ])
     expect(await problems.locator('.mb-spin').count()).toBe(0)
     expect(await problems.getAttribute('data-kind')).toBe('error')
@@ -1258,7 +1254,7 @@ describe('badge', () => {
     channel.clearProblems('ts')
     await waitFor(() => problems.textContent(), 'ESLint 1')
     expect(await entries.evaluateAll(items => items.map(item => [item.tagName, (item as HTMLElement).title]))).toEqual([
-      ['SPAN', 'ESLint: 1 warning (checking)'],
+      ['BUTTON', 'ESLint: 1 warning (checking)'],
     ])
     expect(await problems.getAttribute('data-kind')).toBe('warning')
     channel.clearProblems()
@@ -1266,6 +1262,50 @@ describe('badge', () => {
     expect(await badge.isVisible()).toBe(true)
     channel.clearWarning()
     await waitFor(() => badge.isVisible(), false)
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('opens a problem set in a drawer beside the badge, with its full list', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const mismatch = await report('Type mismatch')
+    channel.setProblems('ts', [mismatch], { label: 'TypeScript', url: '/__typecheck/' })
+    const { page, errors } = await open('/badge')
+    await page.route('**/__typecheck/', route => route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html lang="en"><title>Type check</title><h1>Type check</h1></html>' }))
+    const pill = page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' })
+    const drawer = page.locator('my-bad-overlay-badge .mb-drawer')
+    const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
+    const focused = () => pill.evaluate(el => (el.getRootNode() as ShadowRoot).activeElement === el)
+    await pill.click()
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    expect(await drawer.getAttribute('data-dock')).toBe('bottom-right')
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+
+    await panel.getByRole('button', { name: 'Show the full list' }).click()
+    await waitFor(() => panel.locator('.mb-docked-list').getAttribute('src').catch(() => null), '/__typecheck/')
+    expect(await panel.getByRole('link', { name: 'Open in a new tab' }).getAttribute('href')).toBe('/__typecheck/')
+    expect(await panel.getByRole('button', { name: 'Show the full list' }).getAttribute('aria-pressed')).toBe('true')
+    await panel.frameLocator('.mb-docked-list').getByRole('heading', { name: 'Type check' }).waitFor()
+    expect((await panel.locator('.mb-docked-list').boundingBox())!.height).toBeGreaterThan(300)
+
+    channel.setProblems('ts', [mismatch], { label: 'TypeScript', url: '/__typecheck/?all' })
+    await waitFor(() => panel.locator('.mb-docked-list').getAttribute('src').catch(() => null), '/__typecheck/?all')
+    channel.setProblems('ts', [mismatch], { label: 'TypeScript' })
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    expect(await panel.locator('.mb-docked-list').count()).toBe(0)
+
+    await panel.getByRole('button', { name: 'Close' }).click()
+    await waitFor(() => drawer.count(), 0)
+    expect(await focused()).toBe(true)
+
+    await pill.click()
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    await page.keyboard.press('Escape')
+    await waitFor(() => drawer.count(), 0)
+    expect(await focused()).toBe(true)
+    channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
   }, 30_000)
@@ -1729,7 +1769,7 @@ describe('devtools dock', () => {
   interface Calls {
     switched: string[]
     badges: Array<{ badge?: string, badgeVariant?: string, title?: string }>
-    messages: Record<string, { message: string, level: string, status?: string, notify?: boolean, filePosition?: unknown, actions?: Array<{ id: string, activate: { params: Record<string, unknown> } }> }>
+    messages: Record<string, { message: string, level: string, status?: string, notify?: boolean, filePosition?: unknown, actions?: Array<{ id: string, activate: { dockId: string, params?: Record<string, unknown> } }> }>
     added: string[]
     removed: string[]
   }
@@ -1761,14 +1801,20 @@ describe('devtools dock', () => {
       notify: true,
       filePosition: { file: `${proj}/src/handler.ts`, line: 2, column: 3 },
     })
-    expect(problems.actions!.map(action => [action.id, action.activate.params])).toEqual([
+    expect(problems.actions!.map(action => [action.id, action.activate])).toEqual([
       [
         'show',
-        { source: 'ts' },
+        {
+          dockId: 'my-bad',
+          params: { source: 'ts' },
+        },
       ],
       [
-        'open',
-        { source: 'ts', open: `${origin}/__typecheck/` },
+        'list',
+        {
+          dockId: 'my-bad',
+          params: { source: 'ts', list: true },
+        },
       ],
     ])
 
@@ -1821,6 +1867,37 @@ describe('devtools dock', () => {
     channel.setProblems('ts', [await report('Type mismatch'), await report('Another mismatch')], { label: 'TypeScript' })
     await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.notify, true)
     channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('opens a problem set\'s full list in the dock it names, or embeds its url', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript', url: '/__typecheck/', devtoolsDock: 'checker' })
+    channel.setProblems('lint', [await report('Unused variable')], { label: 'ESLint', url: '/__lint/' })
+    const { page, errors, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.actions?.at(-1)?.activate.dockId, 'checker')
+    expect((await calls()).messages['my-bad:problems:lint']?.actions?.at(-1)?.activate).toEqual({
+      dockId: 'my-bad',
+      params: { source: 'lint', list: true },
+    })
+
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    const panel = page.frameLocator('iframe')
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    await panel.locator('[data-index-source="ts"]').getByRole('button', { name: 'Show the full list' }).click()
+    await waitFor(async () => (await calls()).switched.at(-1), 'checker')
+    expect(await panel.locator('.mb-docked-list').count()).toBe(0)
+
+    await panel.locator('[data-index-source="lint"]').getByRole('button', { name: 'Show the full list' }).click()
+    await waitFor(() => panel.locator('.mb-docked-list').getAttribute('src').catch(() => null), '/__lint/')
+    await page.evaluate(() => (window as unknown as { devtools: { activate: (params: unknown) => void } }).devtools.activate({ source: 'ts' }))
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    await page.evaluate(() => (window as unknown as { devtools: { activate: (params: unknown) => void } }).devtools.activate({ source: 'lint', list: true }))
+    await waitFor(() => panel.locator('.mb-docked-list').getAttribute('src').catch(() => null), '/__lint/')
+    channel.clearProblems()
+    expect(errors).toEqual([])
     await page.close()
   }, 30_000)
 

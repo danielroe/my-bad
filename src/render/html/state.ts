@@ -59,6 +59,10 @@ export interface DockedState extends Omit<PageState, 'mode' | 'report'> {
   mode: 'docked'
   /** Take the scope, theme and paths of the badge on the embedding page. */
   embed?: boolean
+  /** Shown in the badge's drawer, which the view can close. */
+  drawer?: boolean
+  /** The embedding page's host can switch to another dock. */
+  docks?: boolean
 }
 
 /** What a docked view lists. Problem sets carry their reports once fetched. */
@@ -84,6 +88,8 @@ export interface BadgeSnapshot {
 export interface BadgeFocus {
   id?: string
   source?: string
+  /** Show the problem set's full list rather than one of its reports. */
+  list?: boolean
 }
 
 export interface BadgeState {

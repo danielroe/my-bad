@@ -132,6 +132,7 @@ function sameProblems(a: ProblemSet, b: ProblemSet): boolean {
     && a.status === b.status
     && a.error === b.error
     && a.url === b.url
+    && a.devtoolsDock === b.devtoolsDock
     && sameReports(a.reports, b.reports)
 }
 
@@ -522,6 +523,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       ? renderDockedPage({
           channel: url.pathname.slice(0, -'/panel'.length),
           embed: url.searchParams.has('embed'),
+          drawer: url.searchParams.has('drawer'),
         })
       : JSON.stringify([
           ...problemSets.values(),
@@ -776,6 +778,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         ...(meta.status !== undefined && { status: meta.status }),
         ...(meta.error !== undefined && { error: meta.error }),
         ...(meta.url !== undefined && { url: meta.url }),
+        ...(meta.devtoolsDock !== undefined && { devtoolsDock: meta.devtoolsDock }),
         reports: [...reports],
       }
       const previous = problemSets.get(source)
