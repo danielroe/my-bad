@@ -60,7 +60,7 @@ else {
 
 ### Diagnostics
 
-An error that carries its own guidance is read without any configuration. `fix` becomes the report's `hint`, a `docs` URL becomes `docsUrl`, and `sources` (`file:line:column`, `file:line` or bare `file` strings) become app frames, with snippets where they have a line, or a `Sources` section when they cannot be resolved to a readable file. An error named after its own `code` is treated as self-describing: the heading shows the code once, and presets leave its `docsUrl` alone, including when it has none.
+An error that carries its own guidance is read without any configuration. `fix` becomes the report's `hint`, a `docs` (or `docsUrl`) URL becomes `docsUrl`, and `sources` (`file:line:column`, `file:line` or bare `file` strings) become app frames, with snippets where they have a line, or a `Sources` section when they cannot be resolved to a readable file. An error named after its own `code` is treated as self-describing: the heading shows the code once, and presets leave its `docsUrl` alone, including when it has none.
 
 ```ts
 class Diagnostic extends Error {
