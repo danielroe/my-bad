@@ -169,6 +169,40 @@ describe('createReport', () => {
     expect(report.message).toBe(prose)
   })
 
+  it('keeps a declared location ahead of the stack, and drops the stack of a compile error', async () => {
+    const input = {
+      name: 'TypeError',
+      message: 'x is undefined',
+      id: '/proj/app.vue',
+      loc: { file: '/proj/app.vue', line: 2, column: 3 },
+      stack: 'TypeError: x is undefined\n    at render (/proj/node_modules/dep/index.js:10:5)',
+    }
+    const report = await createReport(input, { kind: 'error', loaders: [], snippets: false })
+    expect(report.kind).toBe('error')
+    expect(report.frames.map(frame => [frame.file, frame.line, frame.type])).toEqual([
+      ['/proj/app.vue', 2, 'app'],
+      ['/proj/node_modules/dep/index.js', 10, 'vendor'],
+    ])
+
+    for (const kind of ['compile', undefined] as const) {
+      const compiled = await createReport({
+        ...input,
+        sources: ['/proj/other.vue'],
+      }, {
+        kind,
+        loaders: [
+          {
+            name: 'memory',
+            read: () => 'a\nb\n',
+          },
+        ],
+        snippets: false,
+      })
+      expect(compiled.kind).toBe('compile')
+      expect(compiled.frames.map(frame => frame.file)).toEqual(['/proj/app.vue', '/proj/other.vue'])
+    }
+  })
+
   it('keeps the compile-shaped location first when sources are given too', async () => {
     const input = {
       message: 'Unexpected token',
