@@ -387,7 +387,8 @@ function start(state: BadgeState): void {
   }
 
   function openDrawer(focus: BadgeFocus): void {
-    if (!badge) {
+    const panel = new URL(`${overlay.channel}/panel?embed&drawer`, location.href)
+    if (!badge || !/^https?:$/.test(panel.protocol)) {
       return
     }
     if (!drawer) {
@@ -397,7 +398,7 @@ function start(state: BadgeState): void {
       root.setAttribute('aria-label', 'Problems')
       const frame = document.createElement('iframe')
       frame.title = 'Problems'
-      frame.src = `${overlay.channel}/panel?embed&drawer`
+      frame.src = panel.href
       root.append(frame)
       badge.host.shadowRoot!.append(root)
       drawer = { root, frame }
