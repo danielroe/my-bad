@@ -294,7 +294,9 @@ linter.on('results', async (results) => {
     name: 'ESLint',
     message: result.message,
     code: result.ruleId,
-    sources: [`${result.file}:${result.line}:${result.column}`],
+    sources: [
+      [result.file, result.line, result.column].filter(part => part !== undefined).join(':')
+    ],
   }, {
     kind: result.severity === 2
       ? 'error'
