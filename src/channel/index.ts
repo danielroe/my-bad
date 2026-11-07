@@ -6,6 +6,7 @@ import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { json } from 'node:stream/consumers'
+import { renderDockedPage } from '../render/html'
 import { ASSET_FILES, assetHash } from '../render/html/assets'
 import { openInEditor } from './open'
 import { isLoopbackAddress, isTrustedFetchRequest, isTrustedNodeRequest } from './origin'
@@ -405,9 +406,15 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     return false
   }
 
-  function route(pathname: string): 'events' | 'open' | { history: string } | { asset: keyof typeof ASSET_FILES } | undefined {
+  function route(pathname: string): 'events' | 'open' | 'panel' | 'problems' | { history: string } | { asset: keyof typeof ASSET_FILES } | undefined {
     if (pathname.endsWith('/events')) {
       return 'events'
+    }
+    if (pathname.endsWith('/panel')) {
+      return 'panel'
+    }
+    if (pathname.endsWith('/problems')) {
+      return 'problems'
     }
     const asset = ASSET_KEYS.find(key => pathname.endsWith(`/${ASSET_FILES[key][0]}`))
     if (asset) {
@@ -506,6 +513,30 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
   }
 
+  /** The docked page and the problem sets in full. Problem sets come from no request, so every caller may read them. */
+  function readResponse(matched: 'panel' | 'problems', method: string | undefined, url: URL): { status: number, headers?: Record<string, string>, body?: string } {
+    if (method !== 'GET' && method !== 'HEAD') {
+      return { status: 405 }
+    }
+    const body = matched === 'panel'
+      ? renderDockedPage({
+          channel: url.pathname.slice(0, -'/panel'.length),
+          embed: url.searchParams.has('embed'),
+        })
+      : JSON.stringify([
+          ...problemSets.values(),
+        ])
+    return {
+      status: 200,
+      headers: matched === 'panel'
+        ? { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }
+        : JSON_HEADERS,
+      body: method === 'HEAD'
+        ? undefined
+        : body,
+    }
+  }
+
   const channel: Channel = {
     async handler(req, res, caller) {
       const trusted = caller?.trusted ?? isLoopbackAddress(req.socket?.remoteAddress)
@@ -543,6 +574,11 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         }
         const body = await json(req).catch(() => undefined)
         res.writeHead(await openStatus(req.headers['content-type'], body)).end()
+        return true
+      }
+      if (matched === 'panel' || matched === 'problems') {
+        const { status, headers, body } = readResponse(matched, req.method, url)
+        res.writeHead(status, headers).end(body)
         return true
       }
       if ('asset' in matched) {
@@ -604,6 +640,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           return new Response(null, { status: 405 })
         }
         return new Response(null, { status: await openStatus(request.headers.get('content-type'), await request.json().catch(() => undefined)) })
+      }
+      if (matched === 'panel' || matched === 'problems') {
+        const { status, headers, body } = readResponse(matched, request.method, url)
+        return new Response(body ?? null, { status, headers })
       }
       if ('asset' in matched) {
         const { status, headers, body } = assetResponse(matched.asset, request.method, url)

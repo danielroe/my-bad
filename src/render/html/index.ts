@@ -1,10 +1,11 @@
 import type { ErrorReport, HistoryEntry } from '../../types'
-import type { BadgeState, Dock, PageState, Theme } from './state'
+import type { BadgeState, Dock, DockedState, PageState, Theme } from './state'
 import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
 import { clampMessage } from '../../report/message'
-import { assetUrls } from './assets'
+import { assetHash, assetUrls } from './assets'
 import { escapeHtml, escapeScript } from './escape'
 import { THEME_STORAGE_KEY } from './state'
+import { themeStyles } from './theme'
 import { renderView } from './view'
 
 export { clientAssets } from './assets'
@@ -77,36 +78,21 @@ export interface RenderBadgeOptions extends Omit<RenderOverlayOptions, 'assets' 
   assets?: ClientAssets & { badge?: string }
   /** Mount the overlay for an error minimised, regardless of the user's remembered preference. Default `true`. */
   startMinimized?: boolean
+  /**
+   * Milliseconds to wait for Vite DevTools to take over the badge before
+   * mounting the overlay for an error, when the page has a my-bad dock.
+   * Default `0`.
+   */
+  awaitHost?: number
 }
 
-const CSS_VAR_RE = /^--[\w-]+$/
 const TAG_RE = /^[a-z][a-z0-9]*-[a-z0-9-]+$/
-
-/** Theme overrides, with custom property names and values validated. */
-function themeStyles(theme: Theme | undefined, selector: string): string {
-  const vars: string[] = []
-  if (theme?.accent) {
-    vars.push(`--mb-accent:${cssValue(theme.accent)}`)
-  }
-  for (const [name, value] of Object.entries(theme?.vars ?? {})) {
-    if (CSS_VAR_RE.test(name)) {
-      vars.push(`${name}:${cssValue(value)}`)
-    }
-  }
-  return `${vars.length
-    ? `${selector}{${vars.join(';')}}\n`
-    : ''}${theme?.css ?? ''}`
-}
 
 /** The built-in stylesheet, inlined unless it is served separately. */
 function sheet(assets: ClientAssets | undefined): string {
   return assets?.styles
     ? ''
     : getClientStyles()
-}
-
-function cssValue(value: string): string {
-  return String(value).replace(/[;{}<]/g, '')
 }
 
 /** Applies the remembered or preferred colour scheme before first paint. */
@@ -203,19 +189,60 @@ function overlayState(options: RenderOverlayOptions): Omit<PageState, 'report'> 
  * It dispatches `my-bad:error:clear` on `window` when the page's error clears.
  */
 export function renderBadge(options: RenderBadgeOptions): string {
+  const { state, src } = badgeState(options)
+  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script defer src="${escapeHtml(src)}"></script>`
+}
+
+/** The state `renderBadge` embeds, and the URL of the badge script. */
+export function badgeState(options: RenderBadgeOptions): { state: BadgeState, src: string } {
   const served = assetUrls(options.channel)
   const script = options.assets?.script ?? served.script
   const styles = options.assets?.styles ?? served.styles
-  const badge = options.assets?.badge ?? served.badge
-  const state: BadgeState = {
-    overlay: overlayState({
-      ...options,
-      startMinimized: options.startMinimized ?? true,
-      assets: { script, styles },
-    }),
-    script,
+  return {
+    state: {
+      overlay: overlayState({
+        ...options,
+        startMinimized: options.startMinimized ?? true,
+        assets: { script, styles },
+      }),
+      script,
+      awaitHost: options.awaitHost || undefined,
+    },
+    src: options.assets?.badge ?? served.badge,
   }
-  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script defer src="${escapeHtml(badge)}"></script>`
+}
+
+/**
+ * The page a channel serves at `{channel}/panel`: every open error, warning and
+ * problem set, each shown the way the overlay shows it. With `embed`, it takes
+ * the scope, theme and paths of the badge on the page embedding it.
+ */
+export function renderDockedPage(options: { channel: string, embed?: boolean }): string {
+  const state: DockedState = {
+    mode: 'docked',
+    channel: options.channel,
+    embed: options.embed,
+    version: __MY_BAD_VERSION__,
+  }
+  const asset = (key: 'script' | 'styles') => `${options.channel}/${key === 'script'
+    ? 'client.js'
+    : 'client.css'}?v=${assetHash(key)}`
+  return `<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>my-bad</title>
+${THEME_BOOTSTRAP}<link rel="stylesheet" href="${escapeHtml(asset('styles'))}">
+<style>html{background:var(--mb-bg)}html,body{margin:0;min-height:100%}</style>
+</head>
+<body>
+<div class="mb-root" data-my-bad-root data-docked></div>
+<script type="application/json">${escapeScript(JSON.stringify(state))}</script>
+<script src="${escapeHtml(asset('script'))}"></script>
+</body>
+</html>`
 }
 
 /** Insert the overlay before `</body>`, or append it. Avoids `String.replace`, whose `$` patterns would corrupt the inlined script. */

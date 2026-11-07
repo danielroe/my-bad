@@ -3,14 +3,18 @@ import type { Channel, ChannelOptions } from '../channel'
 import type { FsLoaderOptions } from '../loaders/fs'
 import type { RenderOverlayOptions, RenderPageOptions } from '../render/html'
 import type { ErrorReport, ReportOptions, ReportPreset, SourceLoader } from '../types'
+import type { DevToolsPlugin } from './devtools'
 import { fileURLToPath } from 'node:url'
 import { createChannel } from '../channel'
 import { fsLoader } from '../loaders/fs'
-import { clientAssets, renderOverlay, renderPage } from '../render/html'
+import { badgeState, clientAssets, renderOverlay, renderPage } from '../render/html'
 import { assetUrls } from '../render/html/assets'
 import { createReport } from '../report/create'
+import { registerDock } from './devtools'
 import { viteLoader } from './loader'
 
+export { myBadDevTools } from './devtools'
+export type { MyBadDevToolsOptions } from './devtools'
 export { viteLoader } from './loader'
 export type { ViteLoaderOptions } from './loader'
 
@@ -29,6 +33,8 @@ export interface MyBadViteOptions {
   inlineClient?: boolean
   /** Replace Vite's built-in error overlay for compile errors. Default `true`. */
   replaceOverlay?: boolean
+  /** Add a dock to Vite DevTools when it is installed, opened from the badge. Default `true`. */
+  devtools?: boolean
 }
 
 export interface MyBadContext {
@@ -53,17 +59,22 @@ export function useMyBad(server: ViteDevServer): MyBadContext | undefined {
   return contexts.get(server.config)
 }
 
+/** How long the overlay waits for the DevTools client to take over the badge. An untrusted DevTools client never does. */
+const HOST_TIMEOUT = 3000
+
 const CLIENT_ID = 'virtual:my-bad/client'
 const RESOLVED_CLIENT_ID = `\0${CLIENT_ID}`
 /** Browser URL for the virtual module, following Vite's `\0` encoding. */
 const CLIENT_URL = `/@id/__x00__${CLIENT_ID}`
 
 /** Import the client that ships next to this module by absolute path, so the project never resolves `my-bad` itself. */
-function clientSource(): string {
+function clientSource(awaitHost: number): string {
   const file = fileURLToPath(new URL(import.meta.url.endsWith('.ts')
     ? './client.ts'
     : './client.mjs', import.meta.url))
-  return `import { installMyBadClient } from ${JSON.stringify(`/@fs/${file.replace(/^\//, '')}`)}\ninstallMyBadClient(import.meta.hot)\n`
+  return `import { installMyBadClient } from ${JSON.stringify(`/@fs/${file.replace(/^\//, '')}`)}\ninstallMyBadClient(import.meta.hot${awaitHost
+    ? `, { awaitHost: ${awaitHost} }`
+    : ''})\n`
 }
 
 /** Confine disk reads to the files Vite itself would load, following `server.fs`. */
@@ -81,10 +92,21 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
   const live = options.channel !== false
   let server: ViteDevServer | undefined
   let ctx: MyBadContext | undefined
+  let dock: string | undefined
+  let docked = false
 
-  return {
+  const plugin: DevToolsPlugin = {
     name: 'my-bad',
     apply: 'serve',
+
+    devtools: {
+      setup(devtools) {
+        if (live && options.devtools !== false) {
+          registerDock(devtools, { channel: base, clientScript: `${base}/dock.js` })
+          docked = true
+        }
+      },
+    },
 
     config() {
       if (live && options.replaceOverlay !== false) {
@@ -215,6 +237,18 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
         return
       }
 
+      devServer.middlewares.use(`${base}/dock.js`, (_req, res) => {
+        dock ??= `import setup from ${JSON.stringify(assetUrls(base).devtools)}\nconst badge = ${JSON.stringify(badgeState({
+          ...options.overlay,
+          channel: base,
+          cwd,
+          assets,
+        }))}\nexport default ctx => setup(ctx, { badge })\n`
+        res.setHeader('content-type', 'text/javascript; charset=utf-8')
+        res.setHeader('cache-control', 'no-cache')
+        res.end(dock)
+      })
+
       devServer.middlewares.use(base, (req, res, next) => {
         req.url = `${base}${req.url ?? ''}`
         channel.handler(req, res).then(handled => handled || next()).catch(next)
@@ -251,7 +285,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
 
     async load(id) {
       if (id === RESOLVED_CLIENT_ID) {
-        return clientSource()
+        return clientSource(docked ? HOST_TIMEOUT : 0)
       }
     },
 
@@ -268,4 +302,5 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
       ]
     },
   }
+  return plugin
 }

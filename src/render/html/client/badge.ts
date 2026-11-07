@@ -3,6 +3,7 @@ import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { BadgeState, PageState } from '../state'
 import styles from 'virtual:my-bad-badge-styles'
 import { THEME_STORAGE_KEY } from '../state'
+import { firstLine, plural } from '../summary'
 
 type Payload<T extends ChannelEvent['type']> = Extract<ChannelEvent, { type: T }>['payload']
 
@@ -65,16 +66,6 @@ function storage(key: string): string | null {
   }
 }
 
-function firstLine(report: ErrorReport): string {
-  return `${report.name}: ${report.message.split('\n')[0]}`
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1
-    ? ''
-    : 's'}`
-}
-
 function counts(errors: number, warnings: number): string {
   return [errors && plural(errors, 'error'), warnings && plural(warnings, 'warning')].filter(Boolean).join(', ')
 }
@@ -123,6 +114,38 @@ function start(state: BadgeState): void {
   let loading = false
   let pending: ErrorReport | undefined
   let badge: Badge | undefined
+  let host: MyBadSharedSource['host']
+  let hostWait = state.awaitHost
+    ? new Promise<void>((resolve) => {
+        const timer = setTimeout(done, state.awaitHost)
+        addEventListener('my-bad:host', done)
+        function done() {
+          clearTimeout(timer)
+          removeEventListener('my-bad:host', done)
+          hostWait = undefined
+          resolve()
+        }
+      })
+    : undefined
+
+  target.snapshot = () => ({
+    ready: !!hello.version,
+    connected,
+    actions: hello.actions,
+    overlay,
+    current,
+    history,
+    problems: [
+      ...problems.values(),
+    ],
+  })
+  Object.defineProperty(target, 'host', {
+    get: () => host,
+    set: (value: MyBadSharedSource['host']) => {
+      host = value
+      render()
+    },
+  })
 
   const warnings = () => history.filter(entry => entry.kind === 'warning')
   const forward = (type: string, payload?: unknown) => target.dispatchEvent(payload === undefined
@@ -140,7 +163,7 @@ function start(state: BadgeState): void {
     }, LATEST_MS)
     announcement = `${report.kind === 'warning'
       ? 'Warning'
-      : 'Error'}: ${firstLine(report)}`
+      : 'Error'}: ${report.name}: ${firstLine(report.message)}`
   }
 
   function setHistory(next: HistoryEntry[]): void {
@@ -320,6 +343,10 @@ function start(state: BadgeState): void {
   }
 
   async function expand(): Promise<void> {
+    if (target.host) {
+      target.host.open({ id: (current ?? warnings().at(-1))?.id })
+      return
+    }
     const report = current ?? await latestWarning()
     if (!report) {
       return
@@ -334,11 +361,14 @@ function start(state: BadgeState): void {
 
   /** Once the page is parsed, so an overlay rendered into it has had the chance to attach first. */
   function mountError(): void {
-    whenParsed(() => {
-      if (current && !attached && !document.querySelector(tag)) {
+    const mount = () => {
+      if (current && !attached && !target.host && !document.querySelector(tag)) {
         load(current)
       }
-    })
+    }
+    whenParsed(() => hostWait
+      ? void hostWait.then(mount)
+      : mount())
   }
 
   function load(report: ErrorReport): void {
@@ -433,10 +463,17 @@ function start(state: BadgeState): void {
         ? total
         : total + set.errors + set.warnings, 0)
       const url = safeUrl(sets.find(set => set.url)?.url)
-      const entry = document.createElement(url
-        ? 'a'
-        : 'span')
-      if (url) {
+      const host = target.host
+      const entry = document.createElement(host
+        ? 'button'
+        : url
+          ? 'a'
+          : 'span')
+      if (host) {
+        Object.assign(entry, { type: 'button' })
+        entry.addEventListener('click', () => host.open({ source: sets[0]!.source }))
+      }
+      else if (url) {
         Object.assign(entry, { href: url, target: '_blank', rel: 'noopener' })
       }
       entry.textContent = `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
@@ -495,7 +532,7 @@ function start(state: BadgeState): void {
     const kind = current ? 'error' : 'warning'
     const summary = counts(current ? 1 : 0, count)
     const detail = latest
-      ? firstLine(latest)
+      ? `${latest.name}: ${firstLine(latest.message)}`
       : ''
     button.dataset.kind = kind
     button.firstElementChild!.outerHTML = ICONS[kind]
@@ -529,6 +566,7 @@ function start(state: BadgeState): void {
 }
 
 const state = readJson<BadgeState>(document.currentScript?.previousElementSibling)
-if (state?.overlay.channel && typeof EventSource !== 'undefined' && !window.__MY_BAD_CLIENT__ && !window.__MY_BAD_SOURCE__) {
+if (state?.overlay.channel && typeof EventSource !== 'undefined' && (state.hosted || !window.__MY_BAD_CLIENT__) && !window.__MY_BAD_SOURCE__) {
   start(state)
+  dispatchEvent(new Event('my-bad:badge'))
 }

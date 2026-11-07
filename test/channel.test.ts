@@ -478,6 +478,25 @@ describe('client assets', () => {
     expect(await head!.text()).toBe('')
     channel.close()
   })
+
+  it('serves the DevTools script and the docked page under the channel base', async () => {
+    const channel = createChannel()
+    const script = await channel.fetchHandler(new Request(`http://localhost${assetUrls('/__my-bad').devtools}`), { trusted: false })
+    expect(script?.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(await script!.text()).toMatch(/export\s*\{/)
+    const panel = await channel.fetchHandler(new Request('http://localhost/base/__my-bad/panel?embed'), { trusted: false })
+    expect(panel?.status).toBe(200)
+    expect(panel?.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    const html = await panel!.text()
+    expect(html).toContain('{"mode":"docked","channel":"/base/__my-bad","embed":true')
+    expect(html).toContain(`<script src="${assetUrls('/base/__my-bad').script}"></script>`)
+    expect(html).toContain(`<link rel="stylesheet" href="${assetUrls('/base/__my-bad').styles}">`)
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/panel', { method: 'POST' })))?.status).toBe(405)
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/panel', {
+      headers: { 'sec-fetch-site': 'cross-site' },
+    })))?.status).toBe(403)
+    channel.close()
+  })
 })
 
 describe('cross-origin requests', () => {
@@ -1155,6 +1174,25 @@ describe('problem sets', () => {
       kind,
     }
   }
+
+  it('serves every set in full, to untrusted callers too', async () => {
+    const channel = createChannel()
+    const read = async () => (await channel.fetchHandler(new Request('http://localhost/__my-bad/problems'), { trusted: false }))!.json()
+    expect(await read()).toEqual([])
+    const type = await problem('Type mismatch')
+    channel.setProblems('ts', [type], { label: 'TypeScript', url: '/__ts' })
+    expect(await read()).toEqual([
+      {
+        source: 'ts',
+        reports: [type],
+        label: 'TypeScript',
+        url: '/__ts',
+      },
+    ])
+    channel.clearProblems('ts')
+    expect(await read()).toEqual([])
+    channel.close()
+  })
 
   it('streams counts per source, replacing the set each time, and keeps them out of the history', async () => {
     const sunk: any[] = []

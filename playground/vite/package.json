@@ -7,5 +7,8 @@
   },
   "dependencies": {
     "vite": "^8.2.2"
+  },
+  "devDependencies": {
+    "@vitejs/devtools": "^0.8.2"
   }
 }

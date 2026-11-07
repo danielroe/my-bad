@@ -7,6 +7,9 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { clientAssets, createReport, renderBadge, renderOverlay, renderPage } from '../src'
 import { createChannel } from '../src/channel'
+import { badgeState } from '../src/render/html'
+import { assetUrls } from '../src/render/html/assets'
+import { escapeScript } from '../src/render/html/escape'
 
 let browser: Browser
 let close: () => void
@@ -35,6 +38,37 @@ async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000)
   } while (Date.now() - start < timeout)
   throw new Error(`Timed out waiting for ${JSON.stringify(expected)}, last value ${JSON.stringify(last)}`)
 }
+
+/** Stands in for the Vite DevTools client: runs the dock's client script against a recording context. */
+const devtoolsHost = `
+const calls = { switched: [], badges: [], messages: {}, added: [], removed: [] }
+const entryMeta = { id: 'my-bad', type: 'iframe', title: 'my-bad', icon: 'ph:bug', url: '/__my-bad/panel?embed' }
+const listeners = []
+const ctx = {
+  current: { entryMeta, domElements: { get iframe() { return document.querySelector('iframe') } } },
+  panel: { session: { open: false } },
+  docks: {
+    async switchEntry(id) {
+      calls.switched.push(id)
+      if (!document.querySelector('iframe')) {
+        const iframe = document.createElement('iframe')
+        iframe.src = entryMeta.url
+        iframe.style.cssText = 'width:1000px;height:600px'
+        document.body.append(iframe)
+      }
+      return true
+    },
+    register: () => ({ update: patch => calls.badges.push(patch) }),
+  },
+  messages: {
+    async add(input) { calls.messages[input.id] = input; calls.added.push(input.id) },
+    async remove(id) { delete calls.messages[id]; calls.removed.push(id) },
+  },
+  rpc: { sharedState: { async get() { return { on: (_, listener) => listeners.push(listener) } } } },
+}
+window.devtools = { calls, activate: params => listeners.forEach(listener => listener({ activation: { dockId: 'my-bad', params } })) }
+const { default: setup } = await import(${JSON.stringify(assetUrls('/__my-bad').devtools)})
+`
 
 async function report(message: string) {
   const error = new Error(message)
@@ -68,6 +102,21 @@ beforeAll(async () => {
     if (req.url === '/badge.js') {
       res.setHeader('content-type', 'text/javascript')
       res.end(clientAssets.badge)
+      return
+    }
+    if (req.url === '/devtools-host') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '/__my-bad' })}</head><body><h1 id="user">User page</h1><script type="module">${devtoolsHost}await setup(ctx)</script></body></html>`)
+      return
+    }
+    if (req.url === '/devtools-host-bare') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><body><h1 id="user">User page</h1><script type="module">${devtoolsHost}await setup(ctx, { badge: ${escapeScript(JSON.stringify(badgeState({ cwd: proj, channel: '/__my-bad' })))} })</script></body></html>`)
+      return
+    }
+    if (req.url === '/badge-await') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '/__my-bad', awaitHost: 1500 })}</head><body><h1 id="user">User page</h1></body></html>`)
       return
     }
     if (req.url?.startsWith('/badge')) {
@@ -1672,6 +1721,255 @@ describe('accessibility', () => {
     await page.getByRole('button', { name: 'Open original source in your editor', exact: true }).first().click()
     await waitFor(() => openRequests.length, requests + 1)
     expect(openRequests.at(-1)).toEqual({ file: `${proj}/src/handler.ts`, line: 2, column: 3 })
+    await page.close()
+  }, 30_000)
+})
+
+describe('devtools dock', () => {
+  interface Calls {
+    switched: string[]
+    badges: Array<{ badge?: string, badgeVariant?: string, title?: string }>
+    messages: Record<string, { message: string, level: string, status?: string, notify?: boolean, filePosition?: unknown, actions?: Array<{ id: string, activate: { params: Record<string, unknown> } }> }>
+    added: string[]
+    removed: string[]
+  }
+
+  async function open(path: string) {
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${origin}${path}`)
+    const calls = () => page.evaluate(() => (window as unknown as { devtools: { calls: Calls } }).devtools.calls)
+    return { page, errors, calls }
+  }
+
+  it('hands the badge to the dock, and mirrors its counts and reports as DevTools messages', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const typeError = await report('Type mismatch')
+    channel.setProblems('ts', [typeError], { label: 'TypeScript', url: '/__typecheck/' })
+    const { page, errors, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).badges.at(-1)?.badge, '1')
+    expect((await calls()).badges.at(-1)).toEqual({ badge: '1', badgeVariant: 'danger', title: 'my-bad (1 error)' })
+    const problems = (await calls()).messages['my-bad:problems:ts']!
+    expect(problems).toMatchObject({
+      message: 'TypeScript: 1 error',
+      level: 'error',
+      notify: true,
+      filePosition: { file: `${proj}/src/handler.ts`, line: 2, column: 3 },
+    })
+    expect(problems.actions!.map(action => [action.id, action.activate.params])).toEqual([
+      [
+        'show',
+        { source: 'ts' },
+      ],
+      [
+        'open',
+        { source: 'ts', open: `${origin}/__typecheck/` },
+      ],
+    ])
+
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    expect((await calls()).switched).toEqual(['my-bad'])
+    const panel = page.frameLocator('iframe')
+    const current = panel.locator('.mb-index-item[aria-current="true"]')
+    await waitFor(() => current.textContent().catch(() => ''), 'Error: Type mismatchsrc/handler.ts:2:3')
+    expect(await panel.locator('.mb-message').textContent()).toBe('Type mismatch')
+    expect(await panel.locator('[data-docked-count]').textContent()).toBe('1 error')
+
+    const thrown = await report('Render failed')
+    channel.setError(thrown)
+    await waitFor(async () => (await calls()).messages[`my-bad:error:${thrown.id}`]?.message, 'Error: Render failed')
+    expect((await calls()).messages[`my-bad:error:${thrown.id}`]).toMatchObject({ level: 'error', notify: true })
+    expect((await calls()).badges.at(-1)).toEqual({ badge: '2', badgeVariant: 'danger', title: 'my-bad (2 errors)' })
+    await waitFor(() => panel.locator('.mb-message').textContent(), 'Render failed')
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+
+    await page.evaluate(() => (window as unknown as { devtools: { activate: (params: unknown) => void } }).devtools.activate({ source: 'ts' }))
+    await waitFor(() => panel.locator('.mb-message').textContent(), 'Type mismatch')
+    await panel.locator('.mb-index-item', { hasText: 'Render failed' }).click()
+    await waitFor(() => panel.locator('.mb-message').textContent(), 'Render failed')
+
+    channel.clearError()
+    await waitFor(async () => (await calls()).removed.includes(`my-bad:error:${thrown.id}`), true)
+    await waitFor(() => panel.locator('.mb-message').textContent(), 'Type mismatch')
+    const added = (await calls()).added.length
+    channel.setProblems('ts', [typeError], { label: 'TypeScript', url: '/__typecheck/' })
+    await page.waitForTimeout(200)
+    expect((await calls()).added.length).toBe(added)
+    expect(Object.keys((await calls()).messages)).toEqual(['my-bad:problems:ts'])
+
+    channel.clearProblems()
+    await waitFor(async () => Object.keys((await calls()).messages).length, 0)
+    expect((await calls()).badges.at(-1)).toEqual({ badge: undefined, badgeVariant: 'warning', title: 'my-bad' })
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('does not notify again for reports it already announced, across a reload', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    const { page, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.notify, true)
+    await page.reload()
+    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.notify, false)
+    channel.setProblems('ts', [await report('Type mismatch'), await report('Another mismatch')], { label: 'TypeScript' })
+    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.notify, true)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('marks a problem set message as loading while it is checked, without notifying again', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const reports = [await report('Type mismatch')]
+    channel.setProblems('ts', reports, { label: 'TypeScript' })
+    const { page, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.status, 'idle')
+    channel.setProblems('ts', reports, { label: 'TypeScript', status: 'checking' })
+    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.status, 'loading')
+    expect((await calls()).messages['my-bad:problems:ts']?.notify).toBe(false)
+    channel.setProblems('ts', reports, { label: 'TypeScript', status: 'idle' })
+    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.status, 'idle')
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('mounts the badge itself on a page that renders none, and opens the dock from it', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const { page, errors, calls } = await open('/devtools-host-bare')
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_SOURCE__?.host), true)
+    channel.setError(await report('Injected badge error'))
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => badge.isVisible(), true)
+    await badge.click()
+    expect((await calls()).switched).toEqual(['my-bad'])
+    await waitFor(() => page.frameLocator('iframe').locator('.mb-message').textContent().catch(() => ''), 'Injected badge error')
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+    expect(await page.locator('my-bad-overlay-badge').count()).toBe(1)
+    channel.clearError()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('lists warnings, and moves on when the one shown is retired', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    const earlier = {
+      ...await report('Earlier warning'),
+      kind: 'warning' as const,
+    }
+    const latest = {
+      ...await report('Latest warning'),
+      kind: 'warning' as const,
+    }
+    channel.warn(earlier)
+    channel.warn(latest)
+    const { page, errors, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).badges.at(-1)?.badge, '2')
+    expect((await calls()).badges.at(-1)).toEqual({ badge: '2', badgeVariant: 'warning', title: 'my-bad (2 warnings)' })
+    expect((await calls()).messages).toEqual({})
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
+    const panel = page.frameLocator('iframe')
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Latest warning')
+    await panel.locator('.mb-index-item', { hasText: 'Earlier warning' }).click()
+    await waitFor(() => panel.locator('.mb-message').textContent(), 'Earlier warning')
+    channel.clearWarning(earlier.id)
+    await waitFor(() => panel.locator('.mb-message').textContent(), 'Latest warning')
+    await waitFor(() => panel.locator('[data-docked-count]').textContent(), '1 warning')
+    channel.clearWarning(latest.id)
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('waits for a host before mounting the overlay for an error, and mounts it when none takes over', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    await page.goto(`${origin}/badge-await`)
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_SOURCE__?.snapshot?.().ready), true)
+    channel.setError(await report('Late host'))
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').isVisible(), true)
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+    await waitFor(() => page.locator('my-bad-overlay').count(), 1)
+    await page.addScriptTag({ type: 'module', content: `${devtoolsHost}await setup(ctx)` })
+    await waitFor(() => page.locator('my-bad-overlay').count(), 0)
+    channel.setError(await report('After the host'))
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
+    await waitFor(() => page.frameLocator('iframe').locator('.mb-message').textContent().catch(() => ''), 'After the host')
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+    channel.clearError()
+    await page.close()
+  }, 30_000)
+
+  it('hands an error to a host that starts while the badge waits for one', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    await page.goto(`${origin}/badge-await`)
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_SOURCE__?.snapshot?.().ready), true)
+    channel.setError(await report('Taken over'))
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').isVisible(), true)
+    await page.addScriptTag({ type: 'module', content: `${devtoolsHost}await setup(ctx)` })
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_SOURCE__?.host), true)
+    await page.waitForTimeout(1800)
+    expect(await page.locator('my-bad-overlay').count()).toBe(0)
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
+    await waitFor(() => page.frameLocator('iframe').locator('.mb-message').textContent().catch(() => ''), 'Taken over')
+    channel.clearError()
+    await page.close()
+  }, 30_000)
+
+  it('follows an empty problem set that it shows once reports arrive', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [], { label: 'TypeScript', status: 'failed', error: 'Checker crashed' })
+    const { page, errors, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).badges.at(-1)?.badgeVariant, 'danger')
+    await page.locator('my-bad-overlay-badge .mb-problems button').first().click()
+    const panel = page.frameLocator('iframe')
+    await waitFor(() => panel.locator('[data-docked-count]').textContent().catch(() => ''), '1 error')
+    await waitFor(() => panel.locator('.mb-message').count(), 0)
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    channel.setProblems('ts', [], { label: 'TypeScript', status: 'idle' })
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    await waitFor(async () => Object.keys((await calls()).messages).length, 0)
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('shows only the errors in scope of the embedding page', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    const mine = await report('Host request failed')
+    const other = await report('Different request failed')
+    channel.setError(other, undefined, 'GET /different-page')
+    channel.setError(mine, undefined, 'GET /devtools-host')
+    const { page, errors } = await open('/devtools-host')
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
+    const panel = page.frameLocator('iframe')
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Host request failed')
+    await waitFor(() => panel.locator('[data-docked-count]').textContent(), '1 error')
+    expect(await panel.locator('.mb-index-item', { hasText: 'Different request failed' }).count()).toBe(0)
+    expect(errors).toEqual([])
+    channel.clearError()
     await page.close()
   }, 30_000)
 })

@@ -1,3 +1,4 @@
+import type { ProblemSummary } from '../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../types'
 
 /** `localStorage` key holding the colour scheme the user picked. */
@@ -27,7 +28,7 @@ export type Dock = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
 
 export interface PageState {
   environment?: string
-  mode: 'page' | 'overlay'
+  mode: 'page' | 'overlay' | 'docked'
   report: ErrorReport
   cwd?: string
   /** Base path of the live channel, e.g. `/__my-bad`. Enables SSE and actions. */
@@ -53,9 +54,45 @@ export interface PageState {
   version: string
 }
 
+/** The view docked into a host such as a DevTools panel: every open report, one shown in full. */
+export interface DockedState extends Omit<PageState, 'mode' | 'report'> {
+  mode: 'docked'
+  /** Take the scope, theme and paths of the badge on the embedding page. */
+  embed?: boolean
+}
+
+/** What a docked view lists. Problem sets carry their reports once fetched. */
+export interface DockedIndex {
+  current?: ErrorReport
+  history: HistoryEntry[]
+  problems: Array<ProblemSummary & { reports?: ErrorReport[] }>
+}
+
+/** What the badge has received from the channel, for a script that attaches after it connected. */
+export interface BadgeSnapshot {
+  /** Whether the channel has greeted the badge, so the rest reflects it. */
+  ready: boolean
+  connected: boolean
+  actions: string[]
+  overlay: BadgeState['overlay']
+  current?: ErrorReport
+  history: HistoryEntry[]
+  problems: ProblemSummary[]
+}
+
+/** Which report or problem set to show. */
+export interface BadgeFocus {
+  id?: string
+  source?: string
+}
+
 export interface BadgeState {
   /** The overlay the badge expands into, short of its report. */
   overlay: Omit<PageState, 'report'>
   /** URL of the overlay client script. */
   script: string
+  /** Start even when an overlay client is already listening, because a host such as DevTools mounted the badge. */
+  hosted?: boolean
+  /** Milliseconds to wait for a host such as DevTools to take over before mounting the overlay for an error. */
+  awaitHost?: number
 }

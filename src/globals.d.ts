@@ -6,6 +6,10 @@ interface MyBadSharedSource extends EventTarget {
   /** Absolute `/events` URL, scope included. */
   readonly url: string
   close: () => void
+  /** What the badge has received so far, for a script that attaches after it connected. */
+  snapshot?: () => import('./render/html/state').BadgeSnapshot
+  /** Set by a host that shows details itself, such as a DevTools dock. The badge then opens it instead of the overlay. */
+  host?: { open: (focus: import('./render/html/state').BadgeFocus) => void }
 }
 
 interface Window {

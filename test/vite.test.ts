@@ -1,12 +1,14 @@
-import type { ViteDevServer } from 'vite'
+import type { DevToolsPluginOptions } from '@vitejs/devtools-kit'
+import type { Plugin, ViteDevServer } from 'vite'
+import type { DevToolsPlugin } from '../src/vite/devtools'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer as createHttpServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { myBad, useMyBad, viteLoader } from '../src/vite'
+import { afterAll, beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
+import { myBad, myBadDevTools, useMyBad, viteLoader } from '../src/vite'
 
 const root = fileURLToPath(new URL('./fixtures/vite-ssr/', import.meta.url)).replace(/\/$/, '')
 
@@ -174,6 +176,96 @@ describe('hmr replay', () => {
     finally {
       hot.send = original
     }
+  })
+})
+
+describe('devtools', () => {
+  function setup(plugin: Plugin) {
+    const docks: unknown[] = []
+    ;(plugin as DevToolsPlugin).devtools?.setup({
+      docks: {
+        register: entry => docks.push(entry),
+      },
+    })
+    return docks
+  }
+
+  it('accepts the Vite DevTools setup context', () => {
+    expectTypeOf<NonNullable<DevToolsPlugin['devtools']>>().toExtend<DevToolsPluginOptions>()
+  })
+
+  it('registers a dock that the badge opens, with its script served by the plugin', async () => {
+    const plugin = myBad({
+      base: '/__bad',
+      overlay: {
+        theme: { name: 'Bad' },
+      },
+    })
+    const docked = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      appType: 'custom',
+      server: { middlewareMode: true, hmr: false },
+      plugins: [plugin],
+    })
+    const http = createHttpServer(docked.middlewares)
+    try {
+      const load = (plugin.load as (id: string) => Promise<string>).bind({})
+      expect(await load('\0virtual:my-bad/client')).toMatch(/installMyBadClient\(import\.meta\.hot\)\n$/)
+      expect(setup(plugin)).toEqual([
+        {
+          id: 'my-bad',
+          type: 'iframe',
+          title: 'my-bad',
+          icon: 'ph:bug-beetle-duotone',
+          url: '/__bad/panel?embed',
+          clientScript: { importFrom: '/__bad/dock.js', eager: true },
+        },
+      ])
+      expect(await load('\0virtual:my-bad/client')).toContain('installMyBadClient(import.meta.hot, { awaitHost: 3000 })')
+
+      await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve))
+      const { port } = http.address() as { port: number }
+      const [dock, panel] = await Promise.all([
+        fetch(`http://127.0.0.1:${port}/__bad/dock.js`).then(res => res.text()),
+        fetch(`http://127.0.0.1:${port}/__bad/panel?embed`).then(res => res.text()),
+      ])
+      expect(dock).toMatch(/^import setup from "\/__bad\/devtools\.js\?v=\w+"\n/)
+      const badge = JSON.parse(dock.match(/^const badge = (.*)$/m)![1]!)
+      expect(badge.src).toMatch(/^\/__bad\/badge\.js\?v=\w+$/)
+      expect(badge.state.overlay).toMatchObject({
+        channel: '/__bad',
+        cwd: root,
+        theme: { name: 'Bad' },
+      })
+      expect(panel).toContain('{"mode":"docked","channel":"/__bad","embed":true')
+    }
+    finally {
+      http.close()
+      await docked.close()
+    }
+  })
+
+  it('registers no dock when asked not to, or without the channel', () => {
+    expect(setup(myBad({ devtools: false }))).toEqual([])
+    expect(setup(myBad({ channel: false }))).toEqual([])
+  })
+
+  it('registers a dock for a channel served elsewhere', () => {
+    expect(setup(myBadDevTools({ channel: '/__nuxt_error', title: 'Nuxt errors' }))).toEqual([
+      {
+        id: 'my-bad',
+        type: 'iframe',
+        title: 'Nuxt errors',
+        icon: 'ph:bug-beetle-duotone',
+        url: '/__nuxt_error/panel?embed',
+        clientScript: {
+          importFrom: expect.stringMatching(/^\/__nuxt_error\/devtools\.js\?v=\w+$/),
+          eager: true,
+        },
+      },
+    ])
   })
 })
 

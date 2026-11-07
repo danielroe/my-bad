@@ -51,7 +51,7 @@ import { createReport, renderAnsi, renderBadge, renderOverlay, renderPage, injec
 import { createChannel, openInEditor } from 'my-bad/channel'
 import { nuxtPreset, vuePreset, envPreset } from 'my-bad/presets'
 import { fileSink } from 'my-bad/sinks'
-import { myBad, useMyBad, viteLoader } from 'my-bad/vite'
+import { myBad, myBadDevTools, useMyBad, viteLoader } from 'my-bad/vite'
 import { installMyBadClient } from 'my-bad/vite/client'
 
 const report = await createReport(new Error('packed'), { presets: [nuxtPreset()] })
@@ -60,7 +60,9 @@ const overlay = renderOverlay(report)
 const ansi = renderAnsi(report, { colors: false })
 const badge = renderBadge({ channel: '/__my-bad' })
 const served = await createChannel().fetchHandler(new Request('http://localhost/__my-bad/badge.js'))
-for (const [name, value] of Object.entries({ createChannel, openInEditor, vuePreset, envPreset, fileSink, myBad, useMyBad, viteLoader, installMyBadClient, fsLoader, sourceMapLoader, injectOverlay })) {
+const devtools = await createChannel().fetchHandler(new Request('http://localhost/__my-bad/devtools.js'))
+const panel = await createChannel().fetchHandler(new Request('http://localhost/__my-bad/panel?embed'))
+for (const [name, value] of Object.entries({ createChannel, openInEditor, vuePreset, envPreset, fileSink, myBad, myBadDevTools, useMyBad, viteLoader, installMyBadClient, fsLoader, sourceMapLoader, injectOverlay })) {
   if (typeof value !== 'function') throw new Error(name + ' is not a function')
 }
 if (!page.includes('packed') || !page.includes('<style>') || !page.includes('mb-root')) throw new Error('page is incomplete')
@@ -68,6 +70,8 @@ if (!overlay.startsWith('<my-bad-overlay>')) throw new Error('overlay is incompl
 if (!ansi.includes('packed')) throw new Error('ansi is incomplete')
 if (!badge.includes('/__my-bad/badge.js?v=')) throw new Error('badge is incomplete')
 if (!(await served.text()).includes('__MY_BAD_SOURCE__')) throw new Error('channel does not serve the badge')
+if (!(await devtools.text()).includes('export')) throw new Error('channel does not serve the DevTools script')
+if (!(await panel.text()).includes('"mode":"docked"')) throw new Error('channel does not serve the panel')
 console.log('ok', page.length, 'bytes')
 `)
   const { stdout: result } = await run(process.execPath, ['check.mjs'], { cwd: dir })
