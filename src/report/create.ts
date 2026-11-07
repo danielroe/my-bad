@@ -187,16 +187,13 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   const kind = options.kind ?? (quoted || isCompileInput(input)
     ? 'compile'
     : 'error')
-  const frames = await buildFrames(quoted ?? input, error, ctx, kind)
+  const located = quoted ?? (isCompileInput(input)
+    ? input
+    : undefined)
+  const frames = await buildFrames(located ?? input, error, ctx, kind)
 
   const sources = await buildSourceFrames(error.sources, ctx)
-  // A compile shape names the position itself, while a stack is the thrower's, so `sources` lead only a stack.
-  if (locatesByCompileShape(quoted ?? input, kind)) {
-    frames.push(...sources.frames)
-  }
-  else {
-    frames.unshift(...sources.frames)
-  }
+  frames.splice(located ? 1 : 0, 0, ...sources.frames)
 
   const sections: Section[] = []
   if (sources.unresolved.length) {
@@ -222,7 +219,7 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
       : error.name),
     message: truncate(quoted
       ? quoted.message
-      : locatesByCompileShape(input, kind)
+      : located
         ? stripEmbeddedFrame(error.message)
         : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
@@ -499,94 +496,104 @@ function mergeFrameLoc(declared: { file?: string, line: number, column: number }
   }
 }
 
-/** A compile-shaped input locates a warning too, so it is read the same way for both kinds. */
-function locatesByCompileShape(input: unknown, kind: ReportKind): input is CompileErrorInput {
-  return (kind === 'compile' || kind === 'warning') && isCompileInput(input)
+/** A declared location leads the stack, except for a compile error, whose stack only points at the compiler. */
+async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildContext, kind: ReportKind): Promise<Frame[]> {
+  if (!isCompileInput(input)) {
+    return stackFrames(error, ctx)
+  }
+  const located = await compileFrame(input, ctx)
+  return kind === 'compile'
+    ? [located]
+    : [
+        located,
+        ...await stackFrames(error, ctx),
+      ]
 }
 
-async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildContext, kind: ReportKind): Promise<Frame[]> {
+async function compileFrame(input: CompileErrorInput, ctx: BuildContext): Promise<Frame> {
   const { options } = ctx
-  if (locatesByCompileShape(input, kind)) {
-    const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
-    const snippet = typeof input.frame === 'string' && input.frame
-      ? parseCodeFrame(input.frame)
-      : undefined
-    const frameLoc = typeof input.frame === 'string'
-      ? locFromCodeFrame(input.frame)
-      : undefined
-    const declared = compileLoc(input)
-    const loc = snippet && frameLoc
-      ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start])
-      : declared ?? frameLoc ?? labelled
-    const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
-    const file = rawFile
-      ? resolveFile(rawFile, options.cwd)
-      : undefined
-    if (snippet && file) {
-      snippet.lang ??= langFromFile(file)
-    }
-
-    const marker = compiledMarker(input, options)
-    const explicit = marker === false || marker === undefined
-      ? undefined
-      : (typeof marker === 'object'
-          ? marker
-          : {})
-    let generated = explicit !== undefined
-    if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
-      const contents = await readSource(file, ctx)
-      generated = contents !== undefined && caretLineMatchesSource(snippet, frameLoc.line, contents) === false
-    }
-
-    if (generated) {
-      const source = explicit?.sourceLoc
-      const sourceFile = source?.file
-        ? resolveFile(source.file, options.cwd)
-        : file
-      const frame: Frame = {
-        ...(sourceFile && { file: sourceFile }),
-        ...(source && {
-          line: source.line,
-          ...(source.column !== undefined && { column: source.column }),
-        }),
-        type: 'app',
-        ...(file && {
-          compiled: {
-            file,
-            ...(loc && { line: loc.line, column: loc.column }),
-            ...withSnippet(finishSnippet(snippet, loc?.column, ctx)),
-          },
-        }),
-      }
-      if (frame.file && frame.line !== undefined && options.snippets) {
-        setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
-      }
-      addDisplayPaths(frame, options.cwd)
-      return [frame]
-    }
-
-    const frame: Frame = {
-      ...(file && { file }),
-      ...(loc && { line: loc.line, column: loc.column }),
-      type: 'app',
-      ...(snippet && { snippet }),
-    }
-    if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
-      setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
-    }
-    else if (frame.snippet) {
-      const finished = finishSnippet(frame.snippet, frame.column, ctx)
-      if (finished) {
-        frame.snippet = finished
-      }
-      else {
-        delete frame.snippet
-      }
-    }
-    addDisplayPaths(frame, options.cwd)
-    return [frame]
+  const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
+  const snippet = typeof input.frame === 'string' && input.frame
+    ? parseCodeFrame(input.frame)
+    : undefined
+  const frameLoc = typeof input.frame === 'string'
+    ? locFromCodeFrame(input.frame)
+    : undefined
+  const declared = compileLoc(input)
+  const loc = snippet && frameLoc
+    ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start])
+    : declared ?? frameLoc ?? labelled
+  const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
+  const file = rawFile
+    ? resolveFile(rawFile, options.cwd)
+    : undefined
+  if (snippet && file) {
+    snippet.lang ??= langFromFile(file)
   }
 
+  const marker = compiledMarker(input, options)
+  const explicit = marker === false || marker === undefined
+    ? undefined
+    : (typeof marker === 'object'
+        ? marker
+        : {})
+  let generated = explicit !== undefined
+  if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
+    const contents = await readSource(file, ctx)
+    generated = contents !== undefined && caretLineMatchesSource(snippet, frameLoc.line, contents) === false
+  }
+
+  if (generated) {
+    const source = explicit?.sourceLoc
+    const sourceFile = source?.file
+      ? resolveFile(source.file, options.cwd)
+      : file
+    const frame: Frame = {
+      ...(sourceFile && { file: sourceFile }),
+      ...(source && {
+        line: source.line,
+        ...(source.column !== undefined && { column: source.column }),
+      }),
+      type: 'app',
+      ...(file && {
+        compiled: {
+          file,
+          ...(loc && { line: loc.line, column: loc.column }),
+          ...withSnippet(finishSnippet(snippet, loc?.column, ctx)),
+        },
+      }),
+    }
+    if (frame.file && frame.line !== undefined && options.snippets) {
+      setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
+    }
+    addDisplayPaths(frame, options.cwd)
+    return frame
+  }
+
+  const frame: Frame = {
+    ...(file && { file }),
+    ...(loc && { line: loc.line, column: loc.column }),
+    type: 'app',
+    ...(snippet && { snippet }),
+  }
+  if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
+    setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
+  }
+  else if (frame.snippet) {
+    const finished = finishSnippet(frame.snippet, frame.column, ctx)
+    if (finished) {
+      frame.snippet = finished
+    }
+    else {
+      delete frame.snippet
+    }
+  }
+  addDisplayPaths(frame, options.cwd)
+  return frame
+}
+
+async function stackFrames(error: NormalizedError, ctx: BuildContext): Promise<Frame[]> {
+  const { options } = ctx
   if (!error.stackFrames) {
     return []
   }
