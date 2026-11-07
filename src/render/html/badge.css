@@ -1,26 +1,39 @@
 @import './tokens.css';
 
-.mb-badge {
+.mb-dock {
   position: fixed; right: 16px; bottom: 16px; z-index: 2147483000;
+  display: flex; gap: 8px; justify-content: flex-end;
+  max-width: calc(100vw - 32px);
+  direction: ltr;
+}
+.mb-dock[data-dock$='left'] { right: auto; left: 16px; flex-direction: row-reverse; }
+.mb-dock[data-dock^='top'] { bottom: auto; top: 16px; }
+.mb-dock[hidden], .mb-dock [hidden] { display: none; }
+.mb-badge, .mb-problems {
   box-sizing: border-box;
   display: inline-flex; align-items: center; gap: 8px;
-  max-width: min(440px, calc(100vw - 32px)); height: 30px; margin: 0; padding: 0 12px;
+  min-width: 0; max-width: 440px; height: 30px; margin: 0; padding: 0 12px;
   color: var(--mb-fg); background: var(--mb-bg);
   border: 1px solid var(--mb-line-strong); border-radius: 999px;
   box-shadow: var(--mb-shadow);
-  font: 500 12px/1.4 var(--mb-font-sans); text-align: left;
-  direction: ltr;
+  font: 500 12px/1.4 var(--mb-font-sans); text-align: left; text-decoration: none;
   cursor: pointer;
 }
-.mb-badge[hidden] { display: none; }
-.mb-badge[data-dock='bottom-left'] { right: auto; left: 16px; }
-.mb-badge[data-dock='top-right'] { bottom: auto; top: 16px; }
-.mb-badge[data-dock='top-left'] { right: auto; left: 16px; bottom: auto; top: 16px; }
+.mb-problems { cursor: default; }
+.mb-problems a { display: inline-flex; align-items: center; min-height: 24px; padding: 0 3px; color: inherit; text-decoration: none; border-radius: 4px; }
+.mb-problems a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-badge:hover { background: var(--mb-surface-2); }
-.mb-badge:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; }
-.mb-badge svg { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--mb-warning); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mb-badge[data-kind='error'] svg { stroke: var(--mb-error); }
+.mb-badge:focus-visible, .mb-problems a:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; }
+.mb-problems a:focus-visible { outline-offset: -2px; }
+.mb-dock svg { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--mb-warning); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mb-dock [data-kind='error'] svg { stroke: var(--mb-error); }
+.mb-dock .mb-spin { animation: mb-spin 1s linear infinite; }
+@keyframes mb-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .mb-dock .mb-spin { animation: none; }
+}
 .mb-badge-count { flex: none; }
-.mb-badge-latest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mb-fg-muted); }
+.mb-badge-latest, .mb-problems-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-badge-latest { color: var(--mb-fg-muted); }
 .mb-badge-latest:empty { display: none; }
 .mb-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

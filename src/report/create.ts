@@ -187,12 +187,13 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   const kind = options.kind ?? (quoted || isCompileInput(input)
     ? 'compile'
     : 'error')
-  const frames = await buildFrames(quoted ?? input, error, ctx, kind)
+  const located = quoted ?? (isCompileInput(input)
+    ? input
+    : undefined)
+  const frames = await buildFrames(located ?? input, error, ctx, kind)
 
   const sources = await buildSourceFrames(error.sources, ctx)
-  if (sources.frames.length) {
-    frames.unshift(...sources.frames)
-  }
+  frames.splice(located ? 1 : 0, 0, ...sources.frames)
 
   const sections: Section[] = []
   if (sources.unresolved.length) {
@@ -213,10 +214,12 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   const report: ErrorReport = {
     id: '',
     kind,
-    name: quoted?.name ?? error.name,
+    name: quoted?.name ?? (error.unnamed && kind === 'warning'
+      ? 'Warning'
+      : error.name),
     message: truncate(quoted
       ? quoted.message
-      : kind === 'compile'
+      : located
         ? stripEmbeddedFrame(error.message)
         : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
@@ -258,7 +261,7 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
   }
 
   const top = frames.find(frame => frame.type === 'app') ?? frames[0]
-  report.id = fnv1a64Base36(`${report.name}\n${report.message}\n${top?.file ?? ''}:${top?.line ?? ''}`)
+  report.id = fnv1a64Base36(`${report.name}\n${report.message}\n${top?.file ?? ''}:${top?.line ?? ''}:${top?.column ?? ''}`)
   return report
 }
 
@@ -271,6 +274,8 @@ function nestedContext(ctx: BuildContext): BuildContext {
 
 interface NormalizedError {
   name: string
+  /** No name was given, so `name` is the default. */
+  unnamed?: boolean
   message: string
   stack?: string
   /** `stack` without the header quoting the message. */
@@ -300,6 +305,7 @@ function normalizeInput(input: unknown): NormalizedError {
       name: typeof error.name === 'string' && error.name
         ? error.name
         : 'Error',
+      ...(!(typeof error.name === 'string' && error.name) && { unnamed: true }),
       message: stripAnsi(typeof error.message === 'string'
         ? error.message
         : String(error.message)),
@@ -312,7 +318,9 @@ function normalizeInput(input: unknown): NormalizedError {
         : undefined,
       docsUrl: typeof error.docs === 'string' && error.docs
         ? error.docs
-        : undefined,
+        : typeof error.docsUrl === 'string' && error.docsUrl
+          ? error.docsUrl
+          : undefined,
       sources: Array.isArray(error.sources)
         ? error.sources.filter(source => typeof source === 'string' && source)
         : undefined,
@@ -326,6 +334,7 @@ function normalizeInput(input: unknown): NormalizedError {
   }
   return {
     name: 'Error',
+    unnamed: true,
     message: stripAnsi(stringifyValue(input, 2)),
   }
 }
@@ -341,6 +350,7 @@ function withoutHeader(stack: string, message: string): string {
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
+const SOURCE_RE = /^(?<file>(?:[a-z]:)?[^\s:][^:]*)(?::(?<line>\d+)(?::(?<column>\d+))?)?$/i
 const ERROR_NAME_RE = /^(?<name>[A-Z][A-Za-z]*(?:Error|Exception)): (?<message>[\s\S]*)$/
 
 /**
@@ -395,7 +405,8 @@ function isInside(file: string, dir: string): boolean {
 }
 
 /**
- * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`.
+ * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`,
+ * `file:line` or a bare `file`.
  * Only entries that parse and can be read become frames; the rest are listed verbatim
  * so nothing the thrower reported is lost.
  */
@@ -403,7 +414,7 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
   const frames: Frame[] = []
   const unresolved: string[] = []
   for (const source of sources ?? []) {
-    const groups = TRAILING_POSITION_RE.exec(source)?.groups
+    const groups = SOURCE_RE.exec(source.trim())?.groups
     const raw = groups
       ? normalizeSlashes(groups.file!)
       : undefined
@@ -416,12 +427,16 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
     }
     const frame: Frame = {
       file,
-      line: Number(groups!.line),
-      column: Number(groups!.column),
+      ...(groups!.line && {
+        line: Number(groups!.line),
+      }),
+      ...(groups!.column && {
+        column: Number(groups!.column),
+      }),
       type: 'app',
     }
-    if (ctx.options.snippets) {
-      setSnippet(frame, await loadSnippet(file, frame.line!, frame.column, ctx))
+    if (ctx.options.snippets && frame.line) {
+      setSnippet(frame, await loadSnippet(file, frame.line, frame.column, ctx))
     }
     addDisplayPaths(frame, ctx.options.cwd)
     frames.push(frame)
@@ -483,89 +498,104 @@ function mergeFrameLoc(declared: { file?: string, line: number, column: number }
   }
 }
 
+/** A declared location leads the stack, except for a compile error, whose stack only points at the compiler. */
 async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildContext, kind: ReportKind): Promise<Frame[]> {
+  if (!isCompileInput(input)) {
+    return stackFrames(error, ctx)
+  }
+  const located = await compileFrame(input, ctx)
+  return kind === 'compile'
+    ? [located]
+    : [
+        located,
+        ...await stackFrames(error, ctx),
+      ]
+}
+
+async function compileFrame(input: CompileErrorInput, ctx: BuildContext): Promise<Frame> {
   const { options } = ctx
-  if (kind === 'compile' && isCompileInput(input)) {
-    const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
-    const snippet = typeof input.frame === 'string' && input.frame
-      ? parseCodeFrame(input.frame)
-      : undefined
-    const frameLoc = typeof input.frame === 'string'
-      ? locFromCodeFrame(input.frame)
-      : undefined
-    const declared = compileLoc(input)
-    const loc = snippet && frameLoc
-      ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start])
-      : declared ?? frameLoc ?? labelled
-    const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
-    const file = rawFile
-      ? resolveFile(rawFile, options.cwd)
-      : undefined
-    if (snippet && file) {
-      snippet.lang ??= langFromFile(file)
-    }
-
-    const marker = compiledMarker(input, options)
-    const explicit = marker === false || marker === undefined
-      ? undefined
-      : (typeof marker === 'object'
-          ? marker
-          : {})
-    let generated = explicit !== undefined
-    if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
-      const contents = await readSource(file, ctx)
-      generated = contents !== undefined && caretLineMatchesSource(snippet, frameLoc.line, contents) === false
-    }
-
-    if (generated) {
-      const source = explicit?.sourceLoc
-      const sourceFile = source?.file
-        ? resolveFile(source.file, options.cwd)
-        : file
-      const frame: Frame = {
-        ...(sourceFile && { file: sourceFile }),
-        ...(source && {
-          line: source.line,
-          ...(source.column !== undefined && { column: source.column }),
-        }),
-        type: 'app',
-        ...(file && {
-          compiled: {
-            file,
-            ...(loc && { line: loc.line, column: loc.column }),
-            ...withSnippet(finishSnippet(snippet, loc?.column, ctx)),
-          },
-        }),
-      }
-      if (frame.file && frame.line !== undefined && options.snippets) {
-        setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
-      }
-      addDisplayPaths(frame, options.cwd)
-      return [frame]
-    }
-
-    const frame: Frame = {
-      ...(file && { file }),
-      ...(loc && { line: loc.line, column: loc.column }),
-      type: 'app',
-      ...(snippet && { snippet }),
-    }
-    if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
-      setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
-    }
-    else if (frame.snippet) {
-      const finished = finishSnippet(frame.snippet, frame.column, ctx)
-      if (finished) {
-        frame.snippet = finished
-      }
-      else {
-        delete frame.snippet
-      }
-    }
-    addDisplayPaths(frame, options.cwd)
-    return [frame]
+  const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
+  const snippet = typeof input.frame === 'string' && input.frame
+    ? parseCodeFrame(input.frame)
+    : undefined
+  const frameLoc = typeof input.frame === 'string'
+    ? locFromCodeFrame(input.frame)
+    : undefined
+  const declared = compileLoc(input)
+  const loc = snippet && frameLoc
+    ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start])
+    : declared ?? frameLoc ?? labelled
+  const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
+  const file = rawFile
+    ? resolveFile(rawFile, options.cwd)
+    : undefined
+  if (snippet && file) {
+    snippet.lang ??= langFromFile(file)
   }
 
+  const marker = compiledMarker(input, options)
+  const explicit = marker === false || marker === undefined
+    ? undefined
+    : (typeof marker === 'object'
+        ? marker
+        : {})
+  let generated = explicit !== undefined
+  if (!generated && marker !== false && snippet && frameLoc && file && options.snippets) {
+    const contents = await readSource(file, ctx)
+    generated = contents !== undefined && caretLineMatchesSource(snippet, frameLoc.line, contents) === false
+  }
+
+  if (generated) {
+    const source = explicit?.sourceLoc
+    const sourceFile = source?.file
+      ? resolveFile(source.file, options.cwd)
+      : file
+    const frame: Frame = {
+      ...(sourceFile && { file: sourceFile }),
+      ...(source && {
+        line: source.line,
+        ...(source.column !== undefined && { column: source.column }),
+      }),
+      type: 'app',
+      ...(file && {
+        compiled: {
+          file,
+          ...(loc && { line: loc.line, column: loc.column }),
+          ...withSnippet(finishSnippet(snippet, loc?.column, ctx)),
+        },
+      }),
+    }
+    if (frame.file && frame.line !== undefined && options.snippets) {
+      setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
+    }
+    addDisplayPaths(frame, options.cwd)
+    return frame
+  }
+
+  const frame: Frame = {
+    ...(file && { file }),
+    ...(loc && { line: loc.line, column: loc.column }),
+    type: 'app',
+    ...(snippet && { snippet }),
+  }
+  if (!frame.snippet && frame.file && frame.line !== undefined && options.snippets) {
+    setSnippet(frame, await loadSnippet(frame.file, frame.line, frame.column, ctx))
+  }
+  else if (frame.snippet) {
+    const finished = finishSnippet(frame.snippet, frame.column, ctx)
+    if (finished) {
+      frame.snippet = finished
+    }
+    else {
+      delete frame.snippet
+    }
+  }
+  addDisplayPaths(frame, options.cwd)
+  return frame
+}
+
+async function stackFrames(error: NormalizedError, ctx: BuildContext): Promise<Frame[]> {
+  const { options } = ctx
   if (!error.stackFrames) {
     return []
   }

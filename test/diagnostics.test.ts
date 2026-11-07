@@ -58,6 +58,52 @@ describe('diagnostic errors', () => {
     })
   })
 
+  it('reads docsUrl when the error has no docs', async () => {
+    const { docs: _, ...rest } = diagnostic()
+    expect((await createReport({ ...rest, docsUrl: 'https://example.com/e1' }, { cwd: '/proj', loaders })).docsUrl).toBe('https://example.com/e1')
+    expect((await createReport(diagnostic({ docsUrl: 'https://example.com/e1' }), { cwd: '/proj', loaders })).docsUrl).toBe('https://nuxt.com/docs/4.x/errors/e1001')
+  })
+
+  it('reads sources with only a line, or only a file', async () => {
+    const report = await createReport(diagnostic({
+      sources: ['/proj/pages/index.vue:3', '/proj/pages/index.vue'],
+    }), { cwd: '/proj', loaders })
+    expect(report.frames.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        file: '/proj/pages/index.vue',
+        line: 3,
+        type: 'app',
+        snippet: expect.objectContaining({
+          start: expect.any(Number),
+        }),
+      }),
+      { file: '/proj/pages/index.vue', type: 'app' },
+    ])
+    expect(report.sections.some(section => section.id === 'sources')).toBe(false)
+  })
+
+  it('tells apart the same diagnostic at different files, lines and columns', async () => {
+    const sources = [
+      '/proj/pages/index.vue',
+      '/proj/pages/index.vue:2:16',
+      '/proj/pages/index.vue:2:20',
+      '/proj/pages/index.vue:3:16',
+      '/proj/pages/other.vue',
+    ]
+    const read = (file: string) => file.startsWith('/proj/pages/')
+      ? SOURCE
+      : undefined
+    const ids = await Promise.all(sources.map(async source => (await createReport(diagnostic({
+      sources: [source],
+    }), {
+      cwd: '/proj',
+      loaders: [
+        { name: 'memory', read },
+      ],
+    })).id))
+    expect(new Set(ids).size).toBe(sources.length)
+  })
+
   it('does not mark an ordinary coded error as a diagnostic', async () => {
     const report = await createReport(Object.assign(new Error('x'), { code: 'ERR_MODULE_NOT_FOUND' }), { cwd: '/proj', loaders: [], snippets: false })
     expect(report.diagnostic).toBeUndefined()

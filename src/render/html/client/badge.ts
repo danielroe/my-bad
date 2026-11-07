@@ -1,4 +1,4 @@
-import type { ChannelEvent } from '../../../channel/protocol'
+import type { ChannelEvent, ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { BadgeState, PageState } from '../state'
 import styles from 'virtual:my-bad-badge-styles'
@@ -15,11 +15,14 @@ const TYPES: Array<ChannelEvent['type']> = [
   'warning:clear',
   'log',
   'build',
+  'problems',
+  'problems:clear',
 ]
 
 const ICONS = {
   warning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg>',
   error: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>',
+  checking: '<svg class="mb-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
 }
 
 /** How long a new warning or error is spelled out next to the count. */
@@ -27,7 +30,9 @@ const LATEST_MS = 6000
 
 interface Badge {
   host: HTMLElement
+  dock: HTMLElement
   button: HTMLButtonElement
+  problems: HTMLElement
   count: HTMLElement
   latest: HTMLElement
   status: HTMLElement
@@ -70,6 +75,24 @@ function plural(count: number, noun: string): string {
     : 's'}`
 }
 
+function counts(errors: number, warnings: number): string {
+  return [errors && plural(errors, 'error'), warnings && plural(warnings, 'warning')].filter(Boolean).join(', ')
+}
+
+function failed(set: ProblemSummary): boolean {
+  return set.status === 'failed'
+}
+
+function safeUrl(url: string | undefined): string | undefined {
+  try {
+    const resolved = url && new URL(url, location.href)
+    return resolved && /^https?:$/.test(resolved.protocol)
+      ? resolved.href
+      : undefined
+  }
+  catch {}
+}
+
 function start(state: BadgeState): void {
   const overlay = state.overlay
   const tag = overlay.tag ?? 'my-bad-overlay'
@@ -89,6 +112,7 @@ function start(state: BadgeState): void {
   let current: ErrorReport | undefined
   let history: HistoryEntry[] = []
   const reports = new Map<string, ErrorReport>()
+  const problems = new Map<string, ProblemSummary>()
   let latest: ErrorReport | undefined
   let latestTimer: ReturnType<typeof setTimeout> | undefined
   let announcement = ''
@@ -149,6 +173,10 @@ function start(state: BadgeState): void {
     }
     hello = payload
     current = payload.current
+    problems.clear()
+    for (const set of payload.problems ?? []) {
+      problems.set(set.source, set)
+    }
     setHistory(payload.history ?? [])
     mountError()
   }
@@ -212,6 +240,17 @@ function start(state: BadgeState): void {
         }
         break
       }
+      case 'problems':
+        problems.set(payload.source, payload)
+        break
+      case 'problems:clear':
+        if (payload.source === undefined) {
+          problems.clear()
+        }
+        else {
+          problems.delete(payload.source)
+        }
+        break
     }
     forward(type, payload)
     render()
@@ -338,20 +377,22 @@ function start(state: BadgeState): void {
     const shadow = host.attachShadow({ mode: 'open' })
     const style = document.createElement('style')
     style.textContent = `${styles}${overlay.styles ?? ''}`
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'mb-badge'
-    button.lang = 'en'
-    button.innerHTML = '<span></span><span class="mb-badge-count"></span><span class="mb-badge-latest"></span>'
+    const dock = document.createElement('div')
+    dock.className = 'mb-dock'
+    dock.lang = 'en'
+    dock.innerHTML = '<span class="mb-problems"><span></span><span class="mb-problems-count"></span></span><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span><span class="mb-badge-latest"></span></button>'
+    const [problems, button] = dock.children as unknown as [HTMLElement, HTMLButtonElement]
     button.addEventListener('click', () => void expand())
     const status = document.createElement('div')
     status.className = 'mb-sr-only'
     status.setAttribute('role', 'status')
-    shadow.append(style, button, status)
+    shadow.append(style, dock, status)
     const [, count, latest] = button.children as unknown as HTMLElement[]
     return {
       host,
+      dock,
       button,
+      problems,
       count: count!,
       latest: latest!,
       status,
@@ -365,13 +406,72 @@ function start(state: BadgeState): void {
     return !!view && (!dialog || !dialog.hasAttribute('data-hidden'))
   }
 
+  function renderProblems(pill: HTMLElement, listed: ProblemSummary[]): void {
+    const kind = listed.some(set => set.errors || failed(set))
+      ? 'error'
+      : 'warning'
+    const checking = [
+      ...problems.values(),
+    ].some(set => set.status === 'checking')
+    pill.dataset.kind = kind
+    pill.firstElementChild!.outerHTML = ICONS[checking
+      ? 'checking'
+      : kind]
+    const groups = new Map<string, ProblemSummary[]>()
+    for (const set of listed) {
+      const key = set.group ?? `\0${set.source}`
+      groups.set(key, [
+        ...groups.get(key) ?? [],
+        set,
+      ])
+    }
+    const entries = [
+      ...groups.values(),
+    ].map((sets) => {
+      const broken = sets.filter(failed).length
+      const count = sets.reduce((total, set) => failed(set)
+        ? total
+        : total + set.errors + set.warnings, 0)
+      const url = safeUrl(sets.find(set => set.url)?.url)
+      const entry = document.createElement(url
+        ? 'a'
+        : 'span')
+      if (url) {
+        Object.assign(entry, { href: url, target: '_blank', rel: 'noopener' })
+      }
+      entry.textContent = `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
+        ? 'failed'
+        : broken
+          ? `${count}, ${broken} failed`
+          : count}`
+      entry.title = `${sets.map(set => `${set.group
+        ? `${set.group} `
+        : ''}${set.label ?? set.source}: ${failed(set)
+        ? `failed${set.error
+          ? `: ${set.error}`
+          : ''}`
+        : counts(set.errors, set.warnings)}${set.status === 'checking'
+        ? ' (checking)'
+        : ''}`).join('; ')}`
+      return entry
+    })
+    pill.lastElementChild!.replaceChildren(...entries.flatMap((entry, index) => index
+      ? [' · ', entry]
+      : [entry]))
+  }
+
   function render(): void {
     const count = warnings().length
-    const show = (current || count) && !overlayShown()
-    if (!show || !document.body) {
+    const shown = overlayShown()
+    const listed = [
+      ...problems.values(),
+    ].filter(set => set.errors + set.warnings || failed(set))
+    const showErrors = !!(current || count) && !shown
+    const showProblems = !!listed.length && !shown
+    if (!(showErrors || showProblems) || !document.body) {
       announcement = ''
       if (badge) {
-        badge.button.hidden = true
+        badge.dock.hidden = true
       }
       return
     }
@@ -379,20 +479,29 @@ function start(state: BadgeState): void {
     if (!badge.host.isConnected) {
       document.body.append(badge.host)
     }
+    const { button, dock } = badge
+    dock.hidden = false
+    dock.dataset.dock = storage('my-bad:overlay:dock') ?? overlay.dock ?? 'bottom-right'
+    badge.problems.hidden = !showProblems
+    if (showProblems) {
+      renderProblems(badge.problems, listed)
+    }
+    badge.host.setAttribute('data-theme', scheme())
+    button.hidden = !showErrors
+    if (!showErrors) {
+      announcement = ''
+      return
+    }
     const kind = current ? 'error' : 'warning'
-    const summary = [current && '1 error', count && plural(count, 'warning')].filter(Boolean).join(', ')
+    const summary = counts(current ? 1 : 0, count)
     const detail = latest
       ? firstLine(latest)
       : ''
-    const { button } = badge
-    button.hidden = false
     button.dataset.kind = kind
-    button.dataset.dock = storage('my-bad:overlay:dock') ?? overlay.dock ?? 'bottom-right'
     button.firstElementChild!.outerHTML = ICONS[kind]
     badge.count.textContent = summary
     badge.latest.textContent = detail
     button.title = `Show ${summary}`
-    badge.host.setAttribute('data-theme', scheme())
     if (announcement) {
       const { status } = badge
       const text = announcement
