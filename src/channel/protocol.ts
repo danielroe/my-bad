@@ -33,7 +33,7 @@ export type ProblemStatus = 'checking' | 'idle' | 'failed'
 export interface ProblemMeta {
   /** Name of the source as shown to the user, e.g. `TypeScript`. */
   label?: string
-  /** Sources sharing a group are counted together in the badge under this name, e.g. `Nuxt`. */
+  /** Sources sharing a group are counted together in the badge under this name, e.g. `Nuxt`, as one entry linking to the first `url` among them. */
   group?: string
   /** No status means `idle`. */
   status?: ProblemStatus
