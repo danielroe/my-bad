@@ -34,13 +34,15 @@ Pass each request under the channel base path to the handler. The handler resolv
 With a Node.js server, or Connect-style middleware:
 
 ```ts
-app.use('/__my-bad', (req, res, next) => {
-  req.url = `/__my-bad${req.url}`
+app.use((req, res, next) => {
+  if (!req.url?.startsWith('/__my-bad/')) {
+    return next()
+  }
   channel.handler(req, res).then(handled => handled || next()).catch(next)
 })
 ```
 
-Connect removes the mount path from `req.url`, so this example adds it back. The handler needs the full path.
+The handler needs the full path, so this example doesn't mount the middleware on a path. Connect removes the mount path from `req.url`.
 
 With a Fetch API server, `fetchHandler` resolves `undefined` for paths it doesn't handle:
 
@@ -90,6 +92,8 @@ Any other caller is untrusted, including a caller whose address is unknown. This
 - Log entries reach the page only when they belong to a request that concerns it.
 - The channel neither offers nor accepts `open`. The page opens an `editor://` URL on the machine that runs the browser instead.
 
+Errors from no request, and every warning, concern every page. Untrusted callers receive them in full, with their messages and source snippets.
+
 Behind a proxy, the peer address is the address of the proxy. In that case, pass `trusted` yourself:
 
 ```ts
@@ -138,11 +142,17 @@ channel.setDevTools(true)
 
 ### Errors and requests
 
-An error can name the request that it came from, with a `requestId` and a `request` such as `GET /widgets`. It then reaches only the pages that the request concerns, and replaces only earlier errors from the same request. Other pages list it in their history.
+An error can name the request that it came from, with a `requestId` and a `request` such as `GET /widgets`. It then reaches only the pages that the request concerns, and replaces only earlier errors from the same request. Other trusted pages list it in their history.
 
 An error from no request reaches every page, and replaces every open error. Compile errors and client runtime errors usually have no request.
 
-A page rendered with a `requestId` matches errors by that id. A page without one matches errors by its path.
+The channel matches an error to a page like this:
+
+- An error with a `requestId` matches a page rendered with the same `requestId`.
+- An error with a `requestId` matches a trusted page rendered without one by its path. It never matches an untrusted page by path.
+- An error with only a `request` matches any page by its path, even a page rendered with a `requestId`.
+
+To keep errors on the page they belong to, pass the same id to `setError` and to the renderer.
 
 ### Logs
 
@@ -161,12 +171,12 @@ Several tools can report progress at the same time. Give each one a `source`. Th
 | `problems` | Every problem set, with its reports. |
 | `getReport(id)` | A stored report. |
 | `clients` | The number of connected pages. |
-| `subscribe(listener)` | Receive every event from now on. Returns a function that stops it. |
+| `subscribe(listener)` | Receive the events that a sink receives, from now on. Returns a function that stops it. |
 | `close()` | Stop the keepalive and disconnect every page. |
 
 ## Record events with sinks
 
-A sink receives every event that the channel publishes. Use one to log events, write them to a file, or pass them to a coding agent.
+A sink receives the events that the channel publishes, as listed below. Use one to log events, write them to a file, or pass them to a coding agent.
 
 ```ts
 import { combineSinks, fileSink } from 'my-bad/sinks'
@@ -181,7 +191,7 @@ const channel = createChannel({
 
 `fileSink(path)` appends each event as a line of JSON, with a timestamp. By default, it records every event except `build`. Pass `{ types }` to choose the event types. `combineSinks` passes each event to several sinks.
 
-The channel publishes these event types:
+Pages receive these event types:
 
 | Type | Sent when |
 | --- | --- |
@@ -195,6 +205,8 @@ The channel publishes these event types:
 | `build` | Build progress is published. |
 | `problems` | A problem set changes. |
 | `problems:clear` | A problem set is retired. |
+
+Sinks and `subscribe` listeners receive every type except `hello` and `history`. The channel sends those two to a single page.
 
 ## Open files in an editor
 

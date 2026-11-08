@@ -48,10 +48,12 @@ const ssr: Plugin = {
       }
       catch (error) {
         const ctx = useMyBad(server)!
-        const report = await ctx.emit(error)
+        const requestId = crypto.randomUUID()
+        const report = await ctx.report(error)
+        ctx.channel.setError(report, requestId, `${req.method} ${req.url}`)
         res.statusCode = 500
         res.setHeader('content-type', 'text/html')
-        res.end(ctx.page(report))
+        res.end(ctx.page(report, { requestId }))
       }
     })
   },
@@ -65,6 +67,8 @@ export default defineConfig({
   ]
 })
 ```
+
+The request id keeps the error on the page of the request that failed. `ctx.emit(error)` publishes an error to every page, and pushes it to the in-app overlay. See [Errors and requests](./channel.md#errors-and-requests).
 
 `useMyBad(server)` returns `undefined` until the plugin has configured the server. The context has these members:
 
@@ -83,7 +87,7 @@ To show the badge on your server-rendered pages, add `renderBadge({ channel: ctx
 
 ## Add Vite DevTools
 
-If you use [Vite DevTools](https://devtools.vite.dev/guide/), `myBad()` adds a `my-bad` dock to it. You don't need to configure `my-bad`.
+If you use [Vite DevTools](https://devtools.vite.dev/guide/), `myBad()` adds a `my-bad` dock to it. You don't need to configure `my-bad`. Vite DevTools requires Vite 8.3 or later.
 
 To add the dock:
 
@@ -134,6 +138,7 @@ A framework can serve the channel from its own dev server instead of the Vite pl
 ```ts
 import { myBadDevTools } from 'my-bad/vite'
 import { defineConfig } from 'vite'
+import { channel } from './dev-server'
 
 export default defineConfig({
   devtools: true,
@@ -146,7 +151,7 @@ export default defineConfig({
 })
 ```
 
-Call `channel.setDevTools(true)` from `onRegister`. If the channel lives in another process, relay the call to it. `myBad()` does this for its own channel.
+In this example, `./dev-server` stands for the module that creates your channel. Call `channel.setDevTools(true)` from `onRegister`. If the channel lives in another process, relay the call to it. `myBad()` does this for its own channel.
 
 `myBadDevTools` takes these options:
 

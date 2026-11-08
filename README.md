@@ -47,7 +47,7 @@ Compile errors now open in an overlay, with frames mapped through the Vite modul
 
 ### Add Vite DevTools
 
-If you use [Vite DevTools](https://devtools.vite.dev/guide/), `myBad()` adds a dock to it. You don't need to configure `my-bad`. Install `@vitejs/devtools`, then enable DevTools in the same config:
+If you use [Vite DevTools](https://devtools.vite.dev/guide/), `myBad()` adds a dock to it. You don't need to configure `my-bad`. Vite DevTools requires Vite 8.3 or later. Install `@vitejs/devtools`, then enable DevTools in the same config:
 
 ```ts
 import { myBad } from 'my-bad/vite'
@@ -98,19 +98,22 @@ To keep pages live, add the channel and the badge. The [dev server guide](https:
 Type checkers, linters, and audits can publish their current diagnostics as a problem set. Every page that renders the badge shows a count for each tool, and opens the problems beside the page:
 
 ```ts
+import { ESLint } from 'eslint'
 import { createProblemReport } from 'my-bad'
 
-channel.setProblems('lint', results.map(result => createProblemReport({
+const results = await new ESLint().lintFiles(['src'])
+
+channel.setProblems('eslint', results.flatMap(result => result.messages.map(message => createProblemReport({
   name: 'ESLint',
-  message: result.message,
-  code: result.ruleId,
-  file: result.file,
-  line: result.line,
-  column: result.column,
-  kind: result.severity === 2
+  message: message.message,
+  code: message.ruleId ?? undefined,
+  file: result.filePath,
+  line: message.line,
+  column: message.column,
+  kind: message.severity === 2
     ? 'error'
     : 'warning',
-})), { label: 'ESLint', url: '/__lint/' })
+}))), { label: 'ESLint' })
 ```
 
 <picture>

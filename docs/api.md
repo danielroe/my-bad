@@ -15,7 +15,7 @@ This page lists the runtime exports of each entry point, with a link to the page
 | `renderBadge(options)` | Renders the badge loader for every page. See [Badge](./rendering.md#badge). |
 | `renderAnsi(report, options?)` | Renders a report for the terminal. See [Terminal output](./rendering.md#terminal-output). |
 | `toMarkdown(report, options?)` | Renders a report as Markdown. See [Markdown and JSON](./rendering.md#markdown-and-json). |
-| `serializeReport(report, options?)` | Returns a copy of a report with relative paths, for JSON responses. |
+| `serializeReport(report, options?)` | Returns a copy of a report for JSON responses, with paths inside `cwd` made relative. See [Markdown and JSON](./rendering.md#markdown-and-json). |
 | `clientAssets` | The client script, stylesheet, and badge script, as strings. See [Serve the client assets separately](./rendering.md#serve-the-client-assets-separately). |
 | `fsLoader(options?)` | Reads sources and source maps from disk. See [Map frames to original sources](./reports.md#map-frames-to-original-sources). |
 | `sourceMapLoader(options)` | Maps frames through source maps held in memory. |

@@ -72,7 +72,7 @@ To add `my-bad` to a Node.js server:
    }))
    ```
 
-   The request id links the page to the error. The channel then sends this page only the errors from its own request, and errors from no request at all.
+   The request id links the page to the error. The channel then sends this page the errors from its own request, and errors from no request. See [Errors and requests](./channel.md#errors-and-requests).
 
 4. Add the badge to every page that your server renders:
 
@@ -86,7 +86,7 @@ To add `my-bad` to a Node.js server:
    </html>`
    ```
 
-   The badge renders nothing until an error, a warning, or a problem concerns the page.
+   The badge renders nothing until an error, a warning, or a problem concerns the page. Without a `requestId`, the badge matches errors from a request by the path of the page. On untrusted pages, it never matches an error with a `requestId` this way. To match those errors, render the badge with a `requestId`, and publish errors from that request with the same id.
 
 5. Retire the error when the code that failed changes, for example after a rebuild succeeds:
 

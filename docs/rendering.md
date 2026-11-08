@@ -36,7 +36,7 @@ With a `channel`, the page connects to the [live channel](./channel.md). It swap
 | --- | --- | --- |
 | `cwd` | | Directory that paths are shown relative to. |
 | `channel` | | Base path of the live channel, for example `/__my-bad`. Without it, the page is static. |
-| `requestId` | | Id of the request that the page was rendered for. The channel then sends the page only errors from that request, and errors from no request. Without it, the channel matches the page path against the request. |
+| `requestId` | | Id of the request that the page was rendered for. The channel uses it to match errors to the page. See [Errors and requests](./channel.md#errors-and-requests). |
 | `history` | | Entries to list before the page connects to the channel. `channel.history` holds every stored report, so don't pass it to pages that untrusted callers can load. |
 | `environment` | | Where the error happened, for example `Server` or `Client`. Shown next to the error name. |
 | `theme` | | See [Theming](#theming). |
@@ -137,7 +137,7 @@ An overlay rendered into the same page with the same `tag` joins the badge, inst
 
 ### Mix versions of my-bad
 
-A page can come from a different version of `my-bad` than the channel, for example when a framework CLI owns the channel. The channel serves its own build of the scripts, so the badge and overlay still match it.
+A page can come from a different version of `my-bad` than the channel, for example when a framework CLI owns the channel. The badge loads its scripts from the channel, so the badge and the overlay that it mounts match the channel. `renderPage` and `renderOverlay` inline the scripts of their own version, unless you pass `assets` with the URLs that the channel serves.
 
 The channel caches a script forever when the request names the hash of its build in `?v=`. With any other hash, it serves the script uncached. A channel from a version without `badge.js` responds with a 404, so pass `assets` when you don't control the version of the channel.
 
@@ -178,7 +178,7 @@ const markdown = toMarkdown(report, { cwd })
 
 Pass `allFrames: true` to include vendor and native frames.
 
-`serializeReport` returns a copy of the report with paths relative to `cwd`, for JSON responses:
+`serializeReport` returns a copy of the report for JSON responses. With `cwd`, it rewrites the file paths of frames and the component trace inside `cwd` as relative paths. It leaves other paths as they are, including the raw stack and the raw text of each frame:
 
 ```ts
 import { serializeReport } from 'my-bad'
@@ -186,7 +186,7 @@ import { serializeReport } from 'my-bad'
 res.end(JSON.stringify(serializeReport(report, { cwd })))
 ```
 
-Pass `snippets: false` to drop source snippets and keep the payload small.
+Pass `snippets: false` to drop the source snippet of each frame. The snippet of compiled code, in `frame.compiled.snippet`, stays.
 
 ## Serve the client assets separately
 

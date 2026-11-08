@@ -78,7 +78,7 @@ An error named after its own `code` describes itself. The heading shows the code
 | `maxErrors` | `20` | Related errors kept at each level. |
 | `maxMessageLength` | `10000` | Characters of each message. |
 | `maxRawStackLength` | `50000` | Characters of each raw stack. |
-| `maxSectionLength` | `50000` | Characters of each section. |
+| `maxSectionLength` | `50000` | Characters of the Data section, built from `error.data`. Sections from presets aren't limited. |
 
 ## Map frames to original sources
 
@@ -91,7 +91,7 @@ Without `loaders`, `createReport` uses the loaders of its presets, and then `fsL
 | `fsLoader()` | Code on disk with `.map` files or inline `sourceMappingURL` comments, such as Nitro dev builds or tsdown and Rollup output. |
 | `sourceMapLoader({ getSourceMap })` | Maps held in memory by a module runner, such as `nitroApp.ssrSourceMaps.getSourceMap` in Nuxt or `runner.moduleCache.getSourceMap` in vite-node. |
 | `viteLoader(server)` | The module graph of a Vite dev server. Import it from `my-bad/vite`. |
-| `passthroughLoader()` | Stacks that are already mapped, for example by `node --enable-source-maps`. It only reads sources. |
+| `passthroughLoader()` | Stacks that are already mapped, for example by `node --enable-source-maps`. It only reads sources, at any path. For stacks from untrusted input, use `fsLoader({ roots, sidecar: false, inline: false })`. |
 
 ### Confine what loaders read
 
@@ -111,7 +111,7 @@ Some locations come from the text of an error, rather than a stack. Examples are
 
 ### How frames are mapped
 
-`my-bad` maps a frame only when the map has a segment on that exact line. It never maps a stack that is already mapped a second time. It maps and reads only frames that name a module or an id that isn't a file path. Modules include `.js`, `.ts`, `.vue`, and `.svelte` files.
+`my-bad` maps a frame only when the map has a segment on that exact line, so a nearby segment doesn't map an original position again. A segment on the same line still maps it. For stacks that are already mapped, use `passthroughLoader()`. `my-bad` maps and reads only frames that name a module or an id that isn't a file path. Modules include `.js`, `.ts`, `.vue`, and `.svelte` files.
 
 ### Loader options
 
@@ -131,7 +131,7 @@ Some locations come from the text of an error, rather than a stack. Examples are
 | `getSourceMap(file)` | | Returns the map of a generated file, or nothing when the file is unknown. Required. |
 | `getCode(file)` | | Returns the generated code, so the compiled snippet can be shown. |
 | `getVersion(file)` | | Returns a token that changes when the map changes. Maps are cached while the token stays the same. Without it, every lookup calls `getSourceMap`. |
-| `fs` | `true` | Read original sources from disk for snippets. |
+| `fs` | `true` | Read sources from disk for snippets, at any absolute path. `roots` of an `fsLoader` later in the list don't confine these reads. Pass `false` if stacks can come from untrusted input. |
 | `sourcesContent` | `true` | Use the `sourcesContent` of the map for snippets. Pass a function to decide for each source. |
 | `base(file)` | Directory of the file | Directory that relative sources in the map resolve against. |
 
@@ -169,10 +169,15 @@ throw Object.assign(error, { compiled: true })
 
 `my-bad` honours the marker wherever the error sits in the chain, including as a deeply nested `cause`. For example, a compile error wrapped in an `HTTPError` keeps its marker.
 
-You can also pass `compiled` as an option for the top-level error. Add `sourceLoc` when you have mapped the position back to the source, to show a source snippet next to the compiled one:
+You can also pass `compiled` as an option for a top-level compile error, one with a `loc` or a code `frame`. Add `sourceLoc` when you have mapped the position back to the source, to show a source snippet next to the compiled one:
 
 ```ts
-await createReport(error, {
+await createReport({
+  message: 'Unexpected token',
+  id: '/project/src/App.vue',
+  loc: { line: 42, column: 8 },
+  frame: compiledFrame,
+}, {
   kind: 'compile',
   compiled: {
     sourceLoc: { line: 6, column: 16 }
@@ -180,7 +185,9 @@ await createReport(error, {
 })
 ```
 
-A marker on the error wins over the option. Both win over detection. `compiled: false` turns detection off, and `my-bad` doesn't read the file.
+In this example, `compiledFrame` is the code frame that the compiler printed.
+
+A marker on the error wins over the option. Both win over detection. `compiled: false` turns detection off, so `my-bad` doesn't compare the caret line with the file. Without a code frame, `my-bad` still reads the file for the snippet.
 
 ## Syntax highlighting
 
@@ -188,11 +195,14 @@ Snippets use a small built-in tokenizer. For richer colours in both HTML and ANS
 
 ```ts
 const report = await createReport(error, {
-  tokenizer: (line, lang) => highlightLine(line, lang).map(token => ({ type: 'keyword', text: token.value })),
+  tokenizer: (line, lang) => highlightLine(line, lang).map(token => ({
+    type: toTokenType(token.type),
+    text: token.value
+  })),
 })
 ```
 
-`highlightLine` stands for your highlighter. The tokenizer returns tokens for one line, or `undefined` to use the built-in tokenizer for that line. Token types are `keyword`, `string`, `number`, `comment`, `function`, `type`, `tag`, `attribute`, `operator`, `punctuation`, `variable`, and `text`. The report stores the tokens, so every renderer shows the same colours.
+`highlightLine` stands for your highlighter, and `toTokenType` for a function that maps its token types to the types below. The tokenizer returns tokens for one line, or `undefined` to use the built-in tokenizer for that line. Token types are `keyword`, `string`, `number`, `comment`, `function`, `type`, `tag`, `attribute`, `operator`, `punctuation`, `variable`, and `text`. The report stores the tokens, so every renderer shows the same colours.
 
 ## Presets
 

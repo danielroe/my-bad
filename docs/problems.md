@@ -30,20 +30,22 @@ Map the results of each run to reports, and publish the whole set with `setProbl
 `createProblemReport` builds a report from a diagnostic that a tool has already located. It doesn't read any files:
 
 ```ts
+import { ESLint } from 'eslint'
 import { createProblemReport } from 'my-bad'
 
-channel.setProblems('lint', results.map(result => createProblemReport({
+const results = await new ESLint().lintFiles(['src'])
+
+channel.setProblems('eslint', results.flatMap(result => result.messages.map(message => createProblemReport({
   name: 'ESLint',
-  message: result.message,
-  code: result.ruleId,
-  file: result.file,
-  line: result.line,
-  column: result.column,
-  snippet: result.codeFrame,
-  kind: result.severity === 2
+  message: message.message,
+  code: message.ruleId ?? undefined,
+  file: result.filePath,
+  line: message.line,
+  column: message.column,
+  kind: message.severity === 2
     ? 'error'
     : 'warning',
-})), { label: 'ESLint', url: '/__lint/' })
+}))), { label: 'ESLint', url: '/__lint/' })
 ```
 
 `createProblemReport` takes these fields:
@@ -75,7 +77,7 @@ Tell pages when a source is checking, and when it fails. This example follows a 
 import type { ErrorReport } from 'my-bad'
 import { createProblemReport } from 'my-bad'
 
-const meta = { label: 'ESLint', url: '/__lint/' }
+const meta = { label: 'Lint', url: '/__lint/' }
 let reports: ErrorReport[] = []
 
 linter.on('start', () => {
@@ -84,8 +86,9 @@ linter.on('start', () => {
 
 linter.on('results', (results) => {
   reports = results.map(result => createProblemReport({
-    name: 'ESLint',
+    name: 'Lint',
     message: result.message,
+    code: result.rule,
     file: result.file,
     line: result.line,
     column: result.column,
@@ -113,7 +116,7 @@ The pill shows each status like this:
 - **`idle`**: the count of errors and warnings. A source without a status is idle.
 - **`failed`**: `failed` in place of the count, with the `error` reason in the title of the pill.
 
-An empty set shows nothing, but the source stays listed with its metadata.
+An empty set shows nothing unless it failed, but the source stays listed with its metadata.
 
 ## Problem metadata
 
@@ -148,10 +151,10 @@ The channel uses ids to skip repeated updates. If a source publishes the same re
 
 ## What pages and sinks receive
 
-Every page receives the error and warning counts of each set, but not its reports. A page receives the counts of every set when it connects, and a `problems` event for each change.
+Every page receives the error and warning counts of each set, but not its reports. A page receives the counts of every set when it connects. After that, it receives a `problems` event when a set changes, and a `problems:clear` event when `clearProblems` retires a set. The `problems:clear` payload names the `source`, or no source when every set is retired.
 
 Trusted callers can fetch every set in full from `{channel}/problems`. Untrusted callers receive only the counts. See [Who can use the channel](./channel.md#who-can-use-the-channel).
 
-A [sink](./channel.md#record-events-with-sinks) also receives the reports that joined the set, in `added`, and the ids of the reports that left it, in `removed`. A `fileSink` log therefore records a problem once, when it joins the set, not on every run. Problem sets belong to the channel, so a set replayed into a new channel arrives as `added` again.
+A [sink](./channel.md#record-events-with-sinks) also receives the reports that joined the set, in `added`, and the ids of the reports that left it, in `removed`. A report that stays in the set but changes `kind` also arrives in `added`. A `fileSink` log therefore records a problem when it joins the set or changes kind, not on every run. Problem sets belong to the channel, so a set replayed into a new channel arrives as `added` again.
 
 `channel.problems` returns every set with its reports.

@@ -1,5 +1,5 @@
 import type { Page } from 'playwright/test'
-import type { Plugin } from 'vite'
+import type { Plugin, ViteDevServer } from 'vite'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
@@ -63,10 +63,25 @@ export async function startShowcase(options: { devtools: boolean }) {
     server: { port: 0, host: '127.0.0.1' },
   })
   await server.listen()
+  try {
+    await publish(server, options.devtools)
+  }
+  catch (error) {
+    await server.close()
+    throw error
+  }
+
+  return {
+    url: server.resolvedUrls!.local[0]!,
+    close: () => server.close(),
+  }
+}
+
+async function publish(server: ViteDevServer, devtools: boolean) {
   const ctx = useMyBad(server)!
   const file = `${root}src/widgets.ts`
 
-  if (options.devtools) {
+  if (devtools) {
     const { render } = await server.ssrLoadModule('/src/render.ts')
     try {
       render()
@@ -95,11 +110,6 @@ export async function startShowcase(options: { devtools: boolean }) {
     name: 'ESLint',
     loc: { file, ...problem.loc },
   }, { kind: 'warning' }))), { label: 'ESLint', url: '/__lint/' })
-
-  return {
-    url: server.resolvedUrls!.local[0]!,
-    close: () => server.close(),
-  }
 }
 
 /** Serves the Phosphor icons Vite DevTools requests from Iconify's API out of the local icon set, so renders do not depend on the network. */
