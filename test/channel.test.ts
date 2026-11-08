@@ -140,6 +140,16 @@ describe('createChannel', () => {
     expect((await fetch(`${url}/nothing`)).status).toBe(404)
   })
 
+  it('answers a malformed history id instead of throwing', async () => {
+    const channel = createChannel()
+    const url = await listen(channel)
+    for (const id of ['%', '%E0%A4%A']) {
+      expect((await fetch(`${url}/history/${id}`)).status).toBe(404)
+      expect((await channel.fetchHandler(new Request(`http://localhost/__my-bad/history/${id}`)))?.status).toBe(404)
+      expect((await channel.fetchHandler(new Request(`http://rebound.example/__my-bad/history/${id}`)))?.status).toBe(403)
+    }
+  })
+
   it('sends an error only to the pages its request concerns', async () => {
     const channel = createChannel()
     const url = await listen(channel)
