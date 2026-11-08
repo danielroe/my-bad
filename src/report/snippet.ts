@@ -141,7 +141,8 @@ function rangesBetween(contents: string, from: number, to: number): Array<[numbe
   return ranges
 }
 
-const FRAME_LINE_RE = /^(\s*(\d+)\s*\|\s{0,2})(.*)$/
+const FRAME_LINE_RE = /^(\s*(?:>\s*)?(\d+)\s*\|)(.*)$/
+const LEADING_SPACE_RE = /^\s*/
 const CARET_LINE_RE = /^(\s*\|\s*)\^/
 /** Rolldown / oxc render frames as `NN:  code` with no gutter character. */
 const COLON_LINE_RE = /^(\s*(\d+):\s?)(.*)$/
@@ -164,19 +165,36 @@ function colonFrameStart(lines: string[]): number | undefined {
 }
 
 /**
+ * Spaces between a `NN |` gutter and the code: `|  ` in Vite / the Vue compiler,
+ * `| ` in Babel, so as many as every line with code has, up to two.
+ */
+function gutterPadding(lines: string[]): number {
+  let padding = 2
+  for (const raw of lines) {
+    const code = FRAME_LINE_RE.exec(raw)?.[3]
+    if (code?.trim()) {
+      padding = Math.min(padding, LEADING_SPACE_RE.exec(code)![0].length)
+    }
+  }
+  return padding
+}
+
+/**
  * Parse a code frame in the format produced by Vite / Rollup / the Vue compiler,
- * where each line is `NN |  code` and the pointer line is `   |    ^`, or the
- * rolldown / oxc variant where each line is `NN:  code` with a bare `^` pointer.
+ * where each line is `NN |  code` and the pointer line is `   |    ^`, the Babel
+ * variant marking the error line `> NN | code`, or the rolldown / oxc variant
+ * where each line is `NN:  code` with a bare `^` pointer.
  */
 export function parseCodeFrame(frame: string): Snippet | undefined {
   const all = frame.split('\n')
+  const padding = gutterPadding(all)
   const lines: string[] = []
   let start: number | undefined
   for (const raw of all) {
     const match = FRAME_LINE_RE.exec(raw)
     if (match) {
       start ??= Number(match[2])
-      lines.push(match[3] ?? '')
+      lines.push(match[3]!.slice(padding))
     }
   }
   if (start !== undefined) {
@@ -206,13 +224,14 @@ export function parseCodeFrame(frame: string): Snippet | undefined {
 /** Recover the error location from a code frame, for compile errors that ship a frame but no `loc`. */
 export function locFromCodeFrame(frame: string): { line: number, column: number } | undefined {
   const all = frame.split('\n')
+  const padding = gutterPadding(all)
   let line: number | undefined
   let prefix = 0
   for (const raw of all) {
     const numbered = FRAME_LINE_RE.exec(raw)
     if (numbered) {
       line = Number(numbered[2])
-      prefix = numbered[1]!.length
+      prefix = numbered[1]!.length + padding
       continue
     }
     const caret = CARET_LINE_RE.exec(raw)
