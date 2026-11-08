@@ -2048,6 +2048,35 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('dismisses an overlay whose script loads after the host took over', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setError(await report('Raced the host'))
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    let requested: () => void
+    const overlayRequested = new Promise<void>(resolve => requested = resolve)
+    await page.route('**/__my-bad/devtools.js*', async (route) => {
+      await overlayRequested
+      await route.continue()
+    })
+    await page.route('**/__my-bad/client.js*', async (route) => {
+      requested()
+      await page.waitForFunction(() => window.__MY_BAD_SOURCE__?.host)
+      await route.continue()
+    })
+    await page.goto(`${origin}/devtools-host`)
+    await page.locator('my-bad-overlay-badge .mb-badge').waitFor({ timeout: 5000 })
+    await waitFor(() => page.locator('my-bad-overlay').count(), 0)
+    expect(errors).toEqual([])
+    channel.clearError()
+    await page.close()
+  }, 30_000)
+
   it('shows only the errors in scope of the embedding page', async () => {
     channel.clearError()
     channel.clearWarning()

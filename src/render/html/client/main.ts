@@ -759,11 +759,13 @@ function connect(m: Mount): void {
     : new EventSource(url)
   source.addEventListener('open', () => setLive(m, true))
   source.addEventListener('error', () => setLive(m, false))
-  addEventListener('my-bad:host', () => {
+  const handOff = () => {
     if (hosted(m)) {
       dismiss(m)
     }
-  })
+  }
+  addEventListener('my-bad:host', handOff)
+  handOff()
   const on = <T extends ChannelEvent['type']>(type: T, handler: (payload: Extract<ChannelEvent, { type: T }>['payload']) => void) => {
     source.addEventListener(type, (event) => {
       try {
