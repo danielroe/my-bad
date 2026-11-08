@@ -114,6 +114,11 @@ beforeAll(async () => {
       res.end(`<!DOCTYPE html><html><body><h1 id="user">User page</h1><script type="module">${devtoolsHost}await setup(ctx, { badge: ${escapeScript(JSON.stringify(badgeState({ cwd: proj, channel: '/__my-bad' })))} })</script></body></html>`)
       return
     }
+    if (req.url === '/nested/badge-relative') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '../__my-bad' })}</head><body><h1 id="user">User page</h1></body></html>`)
+      return
+    }
     if (req.url === '/badge-await') {
       res.setHeader('content-type', 'text/html')
       res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '/__my-bad', awaitHost: 1500 })}</head><body><h1 id="user">User page</h1></body></html>`)
@@ -1305,6 +1310,21 @@ describe('badge', () => {
     await page.keyboard.press('Escape')
     await waitFor(() => drawer.count(), 0)
     expect(await focused()).toBe(true)
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('opens the drawer from the channel it connected to after the page navigates', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    const { page, errors } = await open('/nested/badge-relative')
+    await page.evaluate(() => history.pushState(null, '', '/elsewhere/deeper/page'))
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    expect(await page.locator('my-bad-overlay-badge .mb-drawer iframe').getAttribute('src')).toBe(`${origin}/__my-bad/panel?embed&drawer`)
+    await waitFor(() => page.frameLocator('my-bad-overlay-badge .mb-drawer iframe').locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()

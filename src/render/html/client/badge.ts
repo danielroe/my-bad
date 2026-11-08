@@ -386,9 +386,19 @@ function start(state: BadgeState): void {
     document.body.append(host, json, script)
   }
 
+  function drawerUrl(): string | undefined {
+    try {
+      const url = new URL('panel?embed&drawer', target.url)
+      return /^https?:$/.test(url.protocol)
+        ? url.href
+        : undefined
+    }
+    catch {}
+  }
+
   function openDrawer(focus: BadgeFocus): void {
-    const panel = new URL(`${overlay.channel}/panel?embed&drawer`, location.href)
-    if (!badge || !/^https?:$/.test(panel.protocol)) {
+    const panel = drawerUrl()
+    if (!badge || !panel) {
       return
     }
     if (!drawer) {
@@ -398,7 +408,7 @@ function start(state: BadgeState): void {
       root.setAttribute('aria-label', 'Problems')
       const frame = document.createElement('iframe')
       frame.title = 'Problems'
-      frame.src = panel.href
+      frame.src = panel
       root.append(frame)
       badge.host.shadowRoot!.append(root)
       drawer = { root, frame }
