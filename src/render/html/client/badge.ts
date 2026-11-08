@@ -243,7 +243,8 @@ function start(state: BadgeState): void {
       })
   }
 
-  function receiveProblems(sets: ProblemSet[]): void {
+  function receiveProblems(fetched: ProblemSet[]): void {
+    const sets = fetched.filter(set => problems.has(set.source))
     const fresh: Array<{ report: ErrorReport, source: string }> = []
     for (const set of sets) {
       const known = new Set(problemReports.get(set.source)?.map(report => report.id))
@@ -259,7 +260,7 @@ function start(state: BadgeState): void {
     }
     problemsKnown = true
     const first = fresh.find(entry => entry.report.kind !== 'warning') ?? fresh[0]
-    if (first && problems.has(first.source)) {
+    if (first) {
       announce({ ...first, more: fresh.length - 1 })
     }
     forward('reports')

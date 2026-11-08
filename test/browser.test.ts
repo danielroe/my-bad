@@ -1333,6 +1333,41 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('ignores reports fetched for a source cleared while the fetch was in flight', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const mismatch = await report('Type mismatch')
+    const late = await report('Late mismatch')
+    channel.setProblems('ts', [mismatch], { label: 'TypeScript' })
+    const { page, errors } = await open('/badge')
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
+    let release!: () => void
+    const held = new Promise<void>(resolve => (release = resolve))
+    let requested = false
+    await page.route('**/__my-bad/problems', async (route) => {
+      requested = true
+      const response = await route.fetch()
+      await held
+      await route.fulfill({ response })
+    })
+    channel.setProblems('ts', [mismatch, late], { label: 'TypeScript' })
+    await waitFor(() => requested, true)
+    channel.clearProblems('ts')
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-problems').isVisible(), false)
+    const received = page.evaluate(() => new Promise(resolve => window.__MY_BAD_SOURCE__!.addEventListener('reports', resolve, { once: true })))
+    release()
+    await received
+    await page.unroute('**/__my-bad/problems')
+    channel.setProblems('ts', [mismatch, late], { label: 'TypeScript' })
+    await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'Error: Type mismatch')
+    expect(await peek.locator('.mb-peek-meta').textContent()).toBe('TypeScript · src/handler.ts:2 · and 1 more')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it.each(['no-preference', 'reduce'] as const)('grows the card out of its pill, or fades it in when motion is reduced (%s)', async (reducedMotion) => {
     channel.clearWarning()
     channel.clearError()
