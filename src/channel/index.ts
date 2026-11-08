@@ -41,6 +41,15 @@ export interface CallerOptions {
   trusted?: boolean
 }
 
+export interface HistoryRequest {
+  /** Correlation id of the request, as passed to `setError` and `renderPage`. */
+  requestId?: string
+  /** `pathname + search` of the request, matched against reports that name no request id. */
+  path?: string
+  /** Include the entries of every request, as `history` does. Default `false`. */
+  trusted?: boolean
+}
+
 export interface ChannelOptions {
   /** Number of errors to keep. Default 20. Warnings are kept until retired, up to the 100 most recent. */
   history?: number
@@ -115,7 +124,14 @@ export interface Channel {
   readonly problems: ProblemSet[]
   /** The newest open error. */
   readonly current: ErrorReport | undefined
+  /** Every stored error and warning, whatever request it came from. */
   readonly history: HistoryEntry[]
+  /**
+   * The history the channel sends a page rendered for this request: errors and
+   * warnings from no request, and those from the request itself. Pass it to
+   * `renderPage` or `renderOverlay` for a page untrusted callers can load.
+   */
+  historyFor: (request: HistoryRequest) => HistoryEntry[]
   getReport: (id: string) => ErrorReport | undefined
   /** Receive every event the `sink` receives, from now until the returned function is called. */
   subscribe: (listener: Sink) => () => void
@@ -868,6 +884,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     get history() {
       return history()
     },
+    historyFor: ({ requestId, path, trusted = false }) => history(trusted
+      ? undefined
+      : {
+          scope: { requestId, path },
+          trusted: false,
+        }),
     getReport: id => reports.get(id),
     subscribe(listener) {
       const own = (event: ChannelEvent) => listener(event)

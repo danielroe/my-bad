@@ -5,7 +5,7 @@ import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
 import { themeStyles } from '../theme'
-import { dockedSummary, ICONS, pagerIndex, renderDocked, renderIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
+import { dockedSummary, ICONS, pagerIndex, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -667,7 +667,7 @@ function retireWarning(m: Mount, id: string | undefined, before: HistoryEntry[])
       dismiss(m)
     }
   }
-  updatePager(m)
+  updateHistory(m)
   updateBadges(m)
 }
 
@@ -739,10 +739,31 @@ function eventsUrl(m: Mount): string {
   return `${m.state.channel}/events?${scopeQuery(m)}`
 }
 
-function updatePager(m: Mount): void {
+function updateHistory(m: Mount): void {
   const pager = m.root.querySelector('[data-pager]')
   if (pager) {
     pager.outerHTML = renderPager(m.state.report, m.state.history)
+  }
+  const history = m.state.history ?? []
+  const menu = m.root.querySelector<HTMLDetailsElement>('.mb-history')
+  const active = (m.root.getRootNode() as Document | ShadowRoot).activeElement
+  if (!menu || !history.length) {
+    if (menu?.contains(active)) {
+      m.root.querySelector<HTMLElement>('.mb-main')?.focus()
+    }
+    menu?.remove()
+    m.root.querySelector('.mb-secondary')?.insertAdjacentHTML('beforeend', renderHistory(m.state.report, history))
+    return
+  }
+  const list = menu.querySelector('ol')!
+  const focused = list.contains(active)
+    ? (active as HTMLElement).dataset.entry
+    : undefined
+  list.innerHTML = renderHistoryItems(m.state.report, history)
+  if (focused !== undefined) {
+    ([
+      ...list.querySelectorAll<HTMLElement>('[data-entry]'),
+    ].find(button => button.dataset.entry === focused) ?? menu.querySelector('summary'))?.focus()
   }
 }
 
@@ -787,13 +808,13 @@ function connect(m: Mount): void {
     }
     else if (payload.history) {
       m.state.history = payload.history
-      updatePager(m)
+      updateHistory(m)
       updateBadges(m)
     }
   })
   on('history', (payload) => {
     m.state.history = payload.history
-    updatePager(m)
+    updateHistory(m)
   })
   on('error:set', (payload) => {
     previewDismissed = false
@@ -822,7 +843,7 @@ function connect(m: Mount): void {
     const known = !!m.state.history?.some(entry => entry.id === payload.report.id)
     m.state.history = payload.history
     showWarning(m, payload.report, known)
-    updatePager(m)
+    updateHistory(m)
   })
   on('warning:clear', (payload) => {
     const before = m.state.history ?? []

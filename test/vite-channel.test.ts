@@ -2,7 +2,7 @@ import { createServer as createHttpServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { describe, expect, it } from 'vitest'
-import { myBad } from '../src/vite'
+import { myBad, useMyBad } from '../src/vite'
 
 const root = fileURLToPath(new URL('./fixtures/vite-ssr/', import.meta.url)).replace(/\/$/, '')
 
@@ -44,6 +44,34 @@ describe('vite channel', () => {
     }
     finally {
       http.close()
+      await server.close()
+    }
+  })
+
+  it('embeds only the history that concerns the request in pages and overlays', async () => {
+    const server = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      appType: 'custom',
+      server: { middlewareMode: true, hmr: false },
+      plugins: [
+        myBad(),
+      ],
+    })
+    try {
+      const ctx = useMyBad(server)!
+      ctx.channel.setError(await ctx.report({ message: 'secret from another request' }), 'other', 'GET /other')
+      ctx.channel.setError(await ctx.report({ message: 'shared error' }))
+      const report = await ctx.report({ message: 'own error' })
+      ctx.channel.setError(report, 'own', 'GET /own')
+      const embedded = (html: string) => JSON.parse(html.match(/<script type="application\/json">(.*?)<\/script>/)![1]!).history.map((entry: { message: string }) => entry.message)
+      expect(embedded(ctx.page(report, { requestId: 'own' }))).toEqual(['shared error', 'own error'])
+      expect(embedded(ctx.overlay(report, { requestId: 'own' }))).toEqual(['shared error', 'own error'])
+      expect(embedded(ctx.page(report))).toEqual(['shared error'])
+      expect(embedded(ctx.overlay(report))).toEqual(['shared error'])
+    }
+    finally {
       await server.close()
     }
   })

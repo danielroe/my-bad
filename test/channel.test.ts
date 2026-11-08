@@ -1023,6 +1023,33 @@ describe('untrusted callers', () => {
       ])
     }
     expect((await hello(channel, '?requestId=c&path=/', false)).history).toEqual([])
+  })
+
+  it('gives the history a page would receive for its request', async () => {
+    const channel = createChannel()
+    const shared = await createReport(new Error('shared'), { loaders: [], snippets: false })
+    const mine = await createReport(new Error('mine'), { loaders: [], snippets: false })
+    const byPath = await createReport(new Error('by path'), { loaders: [], snippets: false })
+    const theirs = await createReport(new Error('theirs'), { loaders: [], snippets: false })
+    channel.setError(shared)
+    channel.setError(mine, 'a', 'GET /about')
+    channel.setError(byPath, undefined, 'GET /about')
+    channel.setError(theirs, 'b', 'GET /contact')
+
+    for (const [requestId, path] of [
+      ['a', '/about'],
+      ['c', '/about'],
+      ['a', undefined],
+      [undefined, undefined],
+    ]) {
+      const query = new URLSearchParams({
+        ...(requestId && { requestId }),
+        ...(path && { path }),
+      })
+      expect(channel.historyFor({ requestId, path })).toEqual((await hello(channel, `?${query}`, false)).history)
+    }
+    expect(channel.historyFor({ requestId: 'a', path: '/about' }).map(entry => entry.id)).toEqual([shared.id, mine.id, byPath.id])
+    expect(channel.historyFor({ trusted: true })).toEqual(channel.history)
     channel.close()
   })
 
