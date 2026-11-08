@@ -41,7 +41,6 @@ interface Badge {
   status: HTMLElement
 }
 
-/** A report that just arrived, with how many more arrived alongside it. */
 interface Peek {
   report: ErrorReport
   more: number
@@ -105,8 +104,8 @@ function start(state: BadgeState): void {
   const reports = new Map<string, ErrorReport>()
   const problems = new Map<string, ProblemSummary>()
   const problemReports = new Map<string, ErrorReport[]>()
-  /** Ids of the problem reports already seen, once the first set of them is known. */
-  let seen: Set<string> | undefined
+  /** Whether the problem reports present when the page connected are known, so later ones count as new. */
+  let problemsKnown = false
   let withheld = false
   let fetching = false
   let refetch = false
@@ -246,16 +245,19 @@ function start(state: BadgeState): void {
 
   function receiveProblems(sets: ProblemSet[]): void {
     const fresh: Array<{ report: ErrorReport, source: string }> = []
-    problemReports.clear()
     for (const set of sets) {
-      problemReports.set(set.source, set.reports)
+      const known = new Set(problemReports.get(set.source)?.map(report => report.id))
       for (const report of set.reports) {
-        if (seen && !seen.has(report.id)) {
+        if (problemsKnown && !known.has(report.id)) {
           fresh.push({ report, source: set.source })
         }
       }
     }
-    seen = new Set(sets.flatMap(set => set.reports.map(report => report.id)))
+    problemReports.clear()
+    for (const set of sets) {
+      problemReports.set(set.source, set.reports)
+    }
+    problemsKnown = true
     const first = fresh.find(entry => entry.report.kind !== 'warning') ?? fresh[0]
     if (first && problems.has(first.source)) {
       announce({ ...first, more: fresh.length - 1 })
@@ -291,7 +293,7 @@ function start(state: BadgeState): void {
     }
     else {
       problemReports.clear()
-      seen ??= new Set()
+      problemsKnown = true
     }
     setHistory(payload.history ?? [])
     mountError()
@@ -365,11 +367,6 @@ function start(state: BadgeState): void {
         else {
           problems.delete(payload.source)
           problemReports.delete(payload.source)
-        }
-        if (seen) {
-          seen = new Set([
-            ...problemReports.values(),
-          ].flat().map(report => report.id))
         }
         break
     }

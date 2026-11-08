@@ -1333,22 +1333,7 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
-  it.each([
-    [
-      'no-preference',
-      [
-        'borderRadius',
-        'height',
-        'opacity',
-        'transform',
-        'width',
-      ],
-    ],
-    [
-      'reduce',
-      ['opacity'],
-    ],
-  ] as const)('grows the card out of its pill, or fades it in when motion is reduced (%s)', async (reducedMotion, animated) => {
+  it.each(['no-preference', 'reduce'] as const)('grows the card out of its pill, or fades it in when motion is reduced (%s)', async (reducedMotion) => {
     channel.clearWarning()
     channel.clearError()
     channel.clearProblems()
@@ -1356,13 +1341,15 @@ describe('badge', () => {
       await page.emulateMedia({ reducedMotion })
       await page.addInitScript(() => {
         const animate = Element.prototype.animate
-        const recorded: string[][] = []
-        Object.assign(window, { recorded })
+        const held: Animation[] = []
+        Object.assign(window, { held })
         Element.prototype.animate = function (keyframes, options) {
-          if (this.classList.contains('mb-peek') && Array.isArray(keyframes)) {
-            recorded.push(Object.keys(keyframes[0]!).sort())
+          const animation = animate.call(this, keyframes, options)
+          if (this.classList.contains('mb-peek')) {
+            animation.pause()
+            held.push(animation)
           }
-          return animate.call(this, keyframes, options)
+          return animation
         }
       })
     })
@@ -1371,8 +1358,58 @@ describe('badge', () => {
       ...await report('Animated warning'),
       kind: 'warning',
     })
-    await waitFor(() => page.locator('my-bad-overlay-badge .mb-peek').isVisible(), true)
-    expect(await page.evaluate(() => (window as unknown as { recorded: string[][] }).recorded)).toEqual([animated])
+    const card = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => card.isVisible(), true)
+    const pill = (await page.locator('my-bad-overlay-badge .mb-badge').boundingBox())!
+    const [start, middle, end] = await card.evaluate((el) => {
+      const [animation] = (window as unknown as { held: Animation[] }).held
+      const { delay, duration } = animation!.effect!.getTiming()
+      return [0, 0.5, 1].map((progress) => {
+        animation!.currentTime = delay! + Number(duration) * progress
+        const box = el.getBoundingClientRect()
+        return {
+          width: box.width,
+          height: box.height,
+          opacity: Number(getComputedStyle(el).opacity),
+        }
+      })
+    })
+    expect(start!.opacity).toBe(0)
+    expect(end!.opacity).toBe(1)
+    if (reducedMotion === 'reduce') {
+      expect(middle!.opacity).toBeGreaterThan(0)
+      expect(middle!.opacity).toBeLessThan(1)
+      expect(start!.width).toBe(end!.width)
+      expect(start!.height).toBe(end!.height)
+    }
+    else {
+      expect(start!.width).toBeCloseTo(pill.width, 0)
+      expect(start!.height).toBeCloseTo(pill.height, 0)
+      expect(middle!.width).toBeGreaterThan(start!.width)
+      expect(end!.width).toBeGreaterThan(middle!.width)
+      expect(end!.height).toBeGreaterThan(start!.height)
+    }
+    channel.clearWarning()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('holds a card while it has keyboard focus', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const { page, errors } = await open('/badge', page => page.clock.install())
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_SOURCE__?.snapshot?.().ready), true)
+    channel.warn(await warning('Focused warning'))
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => peek.isVisible(), true)
+    await peek.focus()
+    await page.clock.fastForward(10_000)
+    await page.waitForTimeout(500)
+    expect(await peek.isVisible()).toBe(true)
+    await peek.blur()
+    await page.clock.fastForward(7000)
+    await waitFor(() => peek.isVisible(), false)
     channel.clearWarning()
     expect(errors).toEqual([])
     await page.close()
@@ -2029,7 +2066,7 @@ describe('devtools dock', () => {
     channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
     const { page, errors, calls } = await open('/devtools-host')
     const peek = page.locator('my-bad-overlay-badge .mb-peek')
-    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.message, 'TypeScript: 1 error')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
     channel.setProblems('ts', [await report('Type mismatch'), await report('Another mismatch')], { label: 'TypeScript' })
     await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.message, 'TypeScript: 2 errors')
     await waitFor(() => peek.isVisible(), true)
