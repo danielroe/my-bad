@@ -912,7 +912,10 @@ function embedding(): Promise<MyBadSharedSource | undefined> {
     const timer = setTimeout(done, EMBED_TIMEOUT)
     function done() {
       clearTimeout(timer)
-      window.parent.removeEventListener('my-bad:badge', done)
+      try {
+        window.parent.removeEventListener('my-bad:badge', done)
+      }
+      catch {}
       resolve(embeddingSource())
     }
     try {

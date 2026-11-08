@@ -2077,6 +2077,42 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('connects a docked page framed by another origin', async () => {
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.addInitScript(() => {
+      const streams = { opened: 0 }
+      Object.assign(window, { streams })
+      window.EventSource = class extends EventSource {
+        constructor(url: string | URL, init?: EventSourceInit) {
+          super(url, init)
+          streams.opened++
+        }
+      }
+    })
+    await page.route('http://embedder.test/', route => route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html lang="en"><title>Embedder</title><iframe src="http://panel.test/__my-bad/panel?embed"></iframe></html>' }))
+    await page.route('http://panel.test/**', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.pathname.endsWith('/events')) {
+        return route.abort()
+      }
+      const res = await fetch(`${origin}${url.pathname}${url.search}`)
+      await route.fulfill({
+        status: res.status,
+        contentType: res.headers.get('content-type') ?? undefined,
+        body: await res.text(),
+      })
+    })
+    await page.goto('http://embedder.test/')
+    const opened = () => page.frames().find(frame => frame.url().startsWith('http://panel.test/'))?.evaluate(() => (window as unknown as { streams: { opened: number } }).streams.opened).catch(() => 0)
+    await waitFor(opened, 1)
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it('shows only the errors in scope of the embedding page', async () => {
     channel.clearError()
     channel.clearWarning()
