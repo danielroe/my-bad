@@ -279,6 +279,8 @@ interface NormalizedError {
   stack?: string
   /** `stack` without the header quoting the message. */
   stackFrames?: string
+  /** `stackFrames` may include lines of a message, so only frames inside `cwd` are read. */
+  headerUnknown?: boolean
   code?: string
   diagnostic?: boolean
   hint?: string
@@ -309,7 +311,7 @@ function normalizeInput(input: unknown): NormalizedError {
         ? error.message
         : String(error.message)),
       stack,
-      stackFrames: stack && withoutHeader(stack, String(error.message)),
+      ...(stack && withoutHeader(stack, String(error.message), String(error.name))),
       code,
       diagnostic: !!code && error.name === code,
       hint: typeof error.fix === 'string' && error.fix
@@ -338,14 +340,21 @@ function normalizeInput(input: unknown): NormalizedError {
   }
 }
 
-/** V8 and JSC open a stack with the message, whose lines would otherwise parse as frames. */
-function withoutHeader(stack: string, message: string): string {
+/**
+ * V8 and JSC open a stack with the message, whose lines would otherwise parse as frames.
+ * A stack whose header cannot be found may still quote an earlier message.
+ */
+function withoutHeader(stack: string, message: string, name: string): Pick<NormalizedError, 'stackFrames' | 'headerUnknown'> {
   const at = message
     ? stack.indexOf(message)
-    : -1
+    : stack.split('\n', 1)[0] === name
+      ? 0
+      : -1
   return at === -1 || stack.slice(0, at).includes('\n')
-    ? stack
-    : stack.slice(at + message.length)
+    ? { stackFrames: stack, headerUnknown: true }
+    : {
+        stackFrames: stack.slice(at + message.length),
+      }
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
@@ -610,7 +619,7 @@ async function stackFrames(error: NormalizedError, ctx: BuildContext): Promise<F
     return []
   }
 
-  const built = await Promise.all(parseRawStackTrace(error.stackFrames).map(trace => buildStackFrame(trace, ctx)))
+  const built = await Promise.all(parseRawStackTrace(error.stackFrames).map(trace => buildStackFrame(trace, ctx, error.headerUnknown)))
   await attachSnippets(built, ctx)
   return built.map(({ frame }) => {
     addDisplayPaths(frame, options.cwd)
@@ -672,7 +681,7 @@ async function attachSnippets(built: BuiltFrame[], ctx: BuildContext): Promise<v
   }
 }
 
-async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[number], ctx: BuildContext): Promise<BuiltFrame> {
+async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[number], ctx: BuildContext, headerUnknown?: boolean): Promise<BuiltFrame> {
   const { options, budget } = ctx
   let frame: Frame = {
     ...(trace.source && !trace.isNative && {
@@ -689,7 +698,7 @@ async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[numb
   }
   frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
 
-  if (frame.type !== 'native' && budget.frames > 0 && isModuleLocation(frame.file!)) {
+  if (frame.type !== 'native' && budget.frames > 0 && isModuleLocation(frame.file!) && (!headerUnknown || isInside(frame.file!, options.cwd))) {
     budget.frames--
     const mapped = await mapFrame(frame, options)
     const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'

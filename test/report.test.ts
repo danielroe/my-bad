@@ -852,6 +852,39 @@ describe('positions quoted in an error message', () => {
     expect(frame!.snippet).toBeUndefined()
   })
 
+  it.each([
+    ['rewritten', 'Request failed'],
+    ['cleared', ''],
+  ])('does not read a module outside cwd named by a frame in a %s message', async (_, message) => {
+    const error = new Error(`Invalid value:\nx\n    at a (${secret}:1:1)`)
+    void error.stack
+    error.message = message
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    const frame = report.frames.find(frame => frame.file === secret)
+    expect(frame).toBeDefined()
+    expect(frame!.snippet).toBeUndefined()
+  })
+
+  it.each([
+    ['boom', 'Error: boom'],
+    ['', 'Error'],
+  ])('reads a module outside cwd named by a frame below an unchanged message %j', async (message, header) => {
+    const error = new Error(message)
+    error.stack = `${header}\n    at a (${secret}:1:1)`
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    expect(report.frames.find(frame => frame.file === secret)!.snippet).toBeDefined()
+  })
+
   it('reads the original source of a module frame whatever its extension', async () => {
     const page = `${dir}/page.marko`
     const error = new Error('boom')
