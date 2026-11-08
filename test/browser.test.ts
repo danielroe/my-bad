@@ -468,6 +468,34 @@ describe('browser client', () => {
     }
   }, 30_000)
 
+  it('lists the history the channel sends in the History menu, and keeps it current while open', async () => {
+    channel.setError(await report('listed first'))
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    await page.goto(`${origin}/scoped?rid=a`)
+    const menu = page.locator('my-bad-overlay').locator('.mb-history')
+    await waitFor(() => menu.locator('li').count(), channel.history.length)
+    await menu.locator('summary').click()
+    const [retired, focused] = await Promise.all(['listed later', 'kept focused'].map(async message => ({
+      ...(await report(message)),
+      kind: 'warning' as const,
+    })))
+    channel.warn(retired!)
+    channel.warn(focused!)
+    await waitFor(() => menu.locator('li').last().textContent(), 'kept focused')
+    const button = menu.getByRole('button', { name: 'kept focused', exact: true })
+    await button.focus()
+    channel.clearWarning(retired!.id)
+    await waitFor(() => menu.getByRole('button', { name: 'listed later', exact: true }).count(), 0)
+    expect(await button.evaluate(element => element.matches(':focus'))).toBe(true)
+    expect(await menu.getAttribute('open')).toBe('')
+    channel.clearWarning()
+    await waitFor(() => button.count(), 0)
+    channel.clearError()
+    await page.close()
+  }, 30_000)
+
   it('can still be restored after its error clears and the next open error takes its place', async () => {
     channel.setError(await report('for every page'))
     const page = await browser.newPage({
@@ -505,7 +533,7 @@ describe('browser client', () => {
     await waitFor(() => overlay.locator('[data-pager-label]').count(), 1)
 
     const request = page.waitForRequest(candidate => candidate.url().includes('/__my-bad/history/'))
-    await overlay.locator('[data-action="history"][data-dir="-1"]').click()
+    await overlay.locator('[data-pager] [data-action="history"][data-dir="-1"]').click()
     const params = new URL((await request).url()).searchParams
     expect(params.get('requestId')).toBe('a')
     expect(params.get('path')).toBe('/scoped?rid=a')

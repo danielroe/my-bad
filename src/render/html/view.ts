@@ -74,9 +74,7 @@ export function renderView(state: PageState, selected = 'r'): string {
 <main class="mb-main" data-report-id="${escapeHtml(report.id)}" tabindex="-1">
   ${renderReport(reportEntries(report).find(entry => entry.path === selected)?.report ?? report, state, selected)}
   ${renderFallback(state, selected)}
-  <div class="mb-secondary">${renderSecondaryTools(report, live)}${state.history?.length
-    ? `<details class="mb-history"><summary>${ICONS.history}History</summary><ol>${state.history.map((entry, index) => `<li><button type="button" data-action="history" data-dir="${index - pagerIndex(report, state.history!)}">${escapeHtml(entry.message)}</button></li>`).join('')}</ol></details>`
-    : ''}</div>
+  <div class="mb-secondary">${renderSecondaryTools(report, live)}${renderHistory(report, state.history)}</div>
 </main>
 ${live
   ? renderLogDrawer()
@@ -214,6 +212,17 @@ export function warningLabel(history: HistoryEntry[] | undefined): string {
 /** Position of the shown report in the history, falling back to the first entry when the history has dropped it. */
 export function pagerIndex(report: ErrorReport, history: HistoryEntry[]): number {
   return Math.max(0, history.findIndex(entry => entry.id === report.id))
+}
+
+export function renderHistoryItems(report: ErrorReport, history: HistoryEntry[]): string {
+  const index = pagerIndex(report, history)
+  return history.map((entry, position) => `<li><button type="button" data-entry="${escapeHtml(entry.id)}" data-action="history" data-dir="${position - index}">${escapeHtml(entry.message)}</button></li>`).join('')
+}
+
+export function renderHistory(report: ErrorReport, history?: HistoryEntry[]): string {
+  return history?.length
+    ? `<details class="mb-history"><summary>${ICONS.history}History</summary><ol>${renderHistoryItems(report, history)}</ol></details>`
+    : ''
 }
 
 export function renderPager(report: ErrorReport, history?: HistoryEntry[]): string {
