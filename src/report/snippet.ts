@@ -165,15 +165,24 @@ function colonFrameStart(lines: string[]): number | undefined {
 }
 
 /**
- * Spaces between a `NN |` gutter and the code: `|  ` in Vite / the Vue compiler,
- * `| ` in Babel, so as many as every line with code has, up to two.
+ * Spaces between a `NN |` gutter and the code. Vite and the Vue compiler pad the
+ * line number to three characters and follow `|` with two spaces; any other
+ * gutter (Babel's `> NN | code`, say) with one. Never more than every line with
+ * code has.
  */
 function gutterPadding(lines: string[]): number {
   let padding = 2
   for (const raw of lines) {
-    const code = FRAME_LINE_RE.exec(raw)?.[3]
-    if (code?.trim()) {
-      padding = Math.min(padding, LEADING_SPACE_RE.exec(code)![0].length)
+    const match = FRAME_LINE_RE.exec(raw)
+    if (!match) {
+      continue
+    }
+    const [, gutter, number, code] = match
+    if (gutter !== `${number!.padEnd(3)}|`) {
+      padding = Math.min(padding, 1)
+    }
+    if (code!.trim()) {
+      padding = Math.min(padding, LEADING_SPACE_RE.exec(code!)![0].length)
     }
   }
   return padding

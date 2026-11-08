@@ -157,6 +157,15 @@ describe('createReport', () => {
     ])
   })
 
+  it.each([
+    ['unmarked', '1 |   foo()\n  |   ^\n2 |   bar()'],
+    ['Babel', '> 1 |   foo()\n    |   ^\n  2 |   bar()'],
+  ])('keeps the indentation of a single-space frame whose every line is indented (%s)', async (_, frame) => {
+    const report = await createReport({ message: 'Unexpected token', id: '/proj/a.ts', frame }, { kind: 'compile' })
+    expect(report.frames[0]).toMatchObject({ line: 1, column: 3 })
+    expect(report.frames[0]!.snippet!.lines).toEqual(['  foo()', '  bar()'])
+  })
+
   it('keeps the marked line of a frame that marks the error line with `>`', async () => {
     const report = await createReport({
       message: 'Unexpected token',
