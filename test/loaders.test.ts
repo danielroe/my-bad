@@ -170,7 +170,7 @@ describe('fsLoader cache invalidation', () => {
   async function lineOf(): Promise<number | undefined> {
     const error = new Error('boom')
     error.stack = `Error: boom\n    at explode (${file}:1:1)`
-    const report = await createReport(error, { snippets: false })
+    const report = await createReport(error, { cwd: dir, snippets: false })
     return report.frames[0]?.line
   }
 
