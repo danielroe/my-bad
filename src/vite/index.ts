@@ -44,9 +44,9 @@ export interface MyBadContext {
   loaders: SourceLoader[]
   /** Build a report using the Vite module graph for sourcemaps. */
   report: (error: unknown, options?: ReportOptions) => Promise<ErrorReport>
-  /** Render a full error page wired to the channel. */
+  /** Render a full error page wired to the channel, embedding the history scoped to `options.requestId`. */
   page: (report: ErrorReport, options?: RenderPageOptions) => string
-  /** Render an overlay wired to the channel. */
+  /** Render an overlay wired to the channel, embedding the history scoped to `options.requestId`. */
   overlay: (report: ErrorReport, options?: RenderOverlayOptions) => string
   /** Report an error: stores it, notifies connected pages and in-app clients. */
   emit: (error: unknown, options?: ReportOptions) => Promise<ErrorReport>
@@ -176,14 +176,14 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
         page: (report, pageOptions) => renderPage(report, {
           cwd,
           channel: live ? base : undefined,
-          history: channel.history,
+          history: channel.historyFor({ requestId: pageOptions?.requestId }),
           assets,
           ...pageOptions,
         }),
         overlay: (report, overlayOptions) => renderOverlay(report, {
           cwd,
           channel: live ? base : undefined,
-          history: channel.history,
+          history: channel.historyFor({ requestId: overlayOptions?.requestId ?? options.overlay?.requestId }),
           assets,
           ...options.overlay,
           ...overlayOptions,
