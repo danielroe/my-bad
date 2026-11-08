@@ -1368,6 +1368,37 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('counts only the shown source\'s other new reports on a card', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const mismatch = await report('Type mismatch')
+    const unused = await report('Unused variable')
+    channel.setProblems('ts', [mismatch], { label: 'TypeScript' })
+    channel.setProblems('lint', [unused], { label: 'ESLint' })
+    const { page, errors } = await open('/badge')
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems.filter(set => set.reports?.length).length), 2)
+    let release!: () => void
+    const held = new Promise<void>(resolve => (release = resolve))
+    let requested = false
+    await page.route('**/__my-bad/problems', async (route) => {
+      requested = true
+      await held
+      await route.continue()
+    })
+    channel.setProblems('ts', [mismatch, await report('Second mismatch'), await report('Third mismatch')], { label: 'TypeScript' })
+    await waitFor(() => requested, true)
+    channel.setProblems('lint', [unused, await report('Unused import')], { label: 'ESLint' })
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-problems').textContent(), 'TypeScript 3 · ESLint 2')
+    release()
+    await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'Error: Second mismatch')
+    expect(await peek.locator('.mb-peek-meta').textContent()).toBe('TypeScript · src/handler.ts:2 · and 1 more')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it.each(['no-preference', 'reduce'] as const)('grows the card out of its pill, or fades it in when motion is reduced (%s)', async (reducedMotion) => {
     channel.clearWarning()
     channel.clearError()

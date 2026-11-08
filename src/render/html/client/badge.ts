@@ -261,7 +261,7 @@ function start(state: BadgeState): void {
     problemsKnown = true
     const first = fresh.find(entry => entry.report.kind !== 'warning') ?? fresh[0]
     if (first) {
-      announce({ ...first, more: fresh.length - 1 })
+      announce({ ...first, more: fresh.filter(entry => entry.source === first.source).length - 1 })
     }
     forward('reports')
     render()
