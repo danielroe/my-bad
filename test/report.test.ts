@@ -1010,6 +1010,13 @@ describe('positions quoted in an error message', () => {
       }),
     ],
     [
+      'that climbs out of the directories canRead allows',
+      `${dir.replaceAll('\\', '/')}/../my-bad-quoted-outside/secret.ts`,
+      () => fsLoader({
+        canRead: file => file.startsWith(`${dir.replaceAll('\\', '/')}/`),
+      }),
+    ],
+    [
       'inside its roots but denied by canRead',
       secret,
       () => fsLoader({

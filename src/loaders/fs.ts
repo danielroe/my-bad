@@ -4,6 +4,7 @@ import type { RawSourceMap } from './sourcemap'
 import { Buffer } from 'node:buffer'
 import { realpathSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import process from 'node:process'
 import { dirname, isFilePath, resolvePath, withoutQuery } from '../report/path'
 import { sourceMapLoader } from './sourcemap'
 
@@ -22,7 +23,7 @@ export interface FsLoaderOptions {
    * A map's `sourcesContent` is only shown for sources that `roots` and `canRead` allow.
    */
   roots?: string[]
-  /** Further per-file check, applied after `roots`. */
+  /** Further per-file check, applied after `roots`. Receives the absolute path with `.` and `..` segments resolved and forward slashes. */
   canRead?: (file: string) => boolean
 }
 
@@ -136,16 +137,19 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
   const linked = new Map<string, string>()
   const bounds = roots?.map(root => canonicalPath(root).replace(/\/$/, ''))
 
-  /** The canonical path to read, or `undefined` when it is out of bounds. */
+  /** The path to read, or `undefined` when it is out of bounds. */
   function allowed(path: string): string | undefined {
-    let target = path
-    if (bounds) {
-      target = canonicalPath(path)
-      if (!bounds.some(root => target === root || target.startsWith(`${root}/`))) {
-        return
-      }
+    if (!bounds && !canRead) {
+      return path
     }
-    return canRead && !canRead(path)
+    const normalized = normalizePath(path)
+    const target = bounds
+      ? canonicalPath(normalized)
+      : normalized
+    if (bounds && !bounds.some(root => target === root || target.startsWith(`${root}/`))) {
+      return
+    }
+    return canRead && !canRead(normalized)
       ? undefined
       : target
   }
@@ -235,10 +239,22 @@ export function canonicalPath(path: string): string {
     : base}/${normalized.split('/').pop()}`
 }
 
+const DRIVE_ROOT_RE = /^[a-z]:(?=\/|$)/i
+const UNC_ROOT_RE = /^\/\/[^/]+\/[^/]+(?=\/|$)/
+
+function rootOf(path: string): string {
+  return (process.platform === 'win32' && UNC_ROOT_RE.exec(path)?.[0])
+    || DRIVE_ROOT_RE.exec(path)?.[0]
+    || (path.startsWith('/')
+      ? '/'
+      : '')
+}
+
 function normalizePath(path: string): string {
   const normalized = path.replace(/\\/g, '/')
+  const root = rootOf(normalized)
   const segments: string[] = []
-  for (const part of normalized.split('/')) {
+  for (const part of normalized.slice(root.length).split('/')) {
     if (part === '..') {
       segments.pop()
     }
@@ -246,9 +262,10 @@ function normalizePath(path: string): string {
       segments.push(part)
     }
   }
-  return `${normalized.startsWith('/')
-    ? '/'
-    : ''}${segments.join('/')}`
+  const rest = segments.join('/')
+  return root === '/' || !rest
+    ? `${root}${rest}`
+    : `${root}${root && '/'}${rest}`
 }
 
 /**

@@ -228,6 +228,37 @@ describe('fsLoader containment', () => {
     expect(await loader.read!(outside)).toBeUndefined()
   })
 
+  it('applies canRead to the path that is read', async () => {
+    const app = `${dir.replaceAll('\\', '/')}/app`
+    const loader = fsLoader({
+      canRead: file => file.startsWith(`${app}/`),
+    })
+    expect(await loader.read!(`${app}/./main.ts`)).toBe('const a = 1\n')
+    expect(await loader.read!(`${app}/missing/../main.ts`)).toBe('const a = 1\n')
+    expect(await loader.read!(`${app}/../secret.env`)).toBeUndefined()
+    expect(loader.allows!(`${app}/../secret.env`)).toBe(false)
+  })
+
+  it('keeps the drive root when normalising the path for canRead', () => {
+    const seen: string[] = []
+    const loader = fsLoader({
+      canRead: (file) => {
+        seen.push(file)
+        return false
+      },
+    })
+    loader.allows!('C:\\app\\..\\..\\main.ts')
+    expect(seen).toEqual(['C:/main.ts'])
+  })
+
+  it('applies canRead to the normalised path within roots', async () => {
+    const loader = fsLoader({
+      roots: [dir],
+      canRead: file => !file.endsWith('.env'),
+    })
+    expect(await loader.read!(`${outside}/.`)).toBeUndefined()
+  })
+
   it('denies a symlink pointing out of a root', async () => {
     const link = join(dir, 'app', 'link.env')
     await symlink(outside, link)
