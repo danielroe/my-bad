@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -703,6 +703,7 @@ describe('positions quoted in an error message', () => {
   const outside = resolve(tmpdir(), 'my-bad-quoted-outside')
   const secret = resolve(outside, 'secret.ts').replaceAll('\\', '/')
   const env = resolve(dir, '.env').replaceAll('\\', '/')
+  const link = resolve(dir, 'link.ts').replaceAll('\\', '/')
 
   beforeAll(async () => {
     await mkdir(dir, { recursive: true })
@@ -710,6 +711,8 @@ describe('positions quoted in an error message', () => {
     await writeFile(file, 'export default defineNuxtConfig({\n  modules: [],\n  oops\n})\n')
     await writeFile(secret, 'export const token = "s3cr3t"\n')
     await writeFile(env, 'TOKEN=1\n')
+    await rm(link, { force: true })
+    await symlink(secret, link)
   })
   afterAll(async () => {
     await rm(dir, { recursive: true, force: true })
@@ -808,6 +811,37 @@ describe('positions quoted in an error message', () => {
     expect(unbounded.frames[0]).toMatchObject({ file, line: 3, column: 1 })
   })
 
+  it.each([
+    ['outside cwd', secret],
+    ['not a module', env],
+    ['relative and outside cwd', '../my-bad-quoted-outside/secret.ts'],
+    ['a symlink out of cwd with a query', 'link.ts?v=1'],
+  ])('ignores a labelled frame header in a compile error message that is %s', async (_, quoted) => {
+    const error = {
+      message: `Unexpected token ─[ ${quoted}:1:1 ]`,
+      loc: { line: 1, column: 1 },
+    }
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    expect(report.frames[0]!.file).toBeUndefined()
+    expect(report.frames[0]!.snippet).toBeUndefined()
+  })
+
+  it('ignores a quoted symlink out of cwd with a query', async () => {
+    const report = await createReport(parserError(`ParseError: bad\n ${link}?v=1:1:1`), {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    expect(report.kind).toBe('error')
+    expect(report.frames.some(frame => frame.snippet?.lines.some(line => line.includes('s3cr3t')))).toBe(false)
+  })
+
   it('does not read a frame that is not a module', async () => {
     const error = new Error(`Invalid value:\nx\n    at a (${env}:1:1)`)
     void error.stack
@@ -816,6 +850,152 @@ describe('positions quoted in an error message', () => {
     const frame = report.frames.find(frame => frame.file === env)
     expect(frame).toBeDefined()
     expect(frame!.snippet).toBeUndefined()
+  })
+
+  it.each([
+    ['rewritten', 'Request failed'],
+    ['cleared', ''],
+    ['shortened to a prefix of its first line', 'Invalid'],
+    ['shortened to a suffix of its first line', 'value:'],
+    ['shortened to a word inside its name', 'rr'],
+  ])('does not read a module outside cwd named by a frame in a %s message', async (_, message) => {
+    const error = new Error(`Invalid value:\nx\n    at a (${secret}:1:1)`)
+    void error.stack
+    error.message = message
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    const frame = report.frames.find(frame => frame.file === secret)
+    expect(frame).toBeDefined()
+    expect(frame!.snippet).toBeUndefined()
+  })
+
+  it.each([
+    ['boom', 'Error: boom'],
+    ['', 'Error'],
+    ['boom', 'Error [ERR_TEST]: boom'],
+    ['two\nlines', 'TypeError: two\nlines'],
+  ])('reads a module outside cwd named by a frame below an unchanged message %j', async (message, header) => {
+    const error = new Error(message)
+    error.stack = `${header}\n    at a (${secret}:1:1)`
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    expect(report.frames.find(frame => frame.file === secret)!.snippet).toBeDefined()
+  })
+
+  describe.each([
+    [
+      'roots',
+      () => fsLoader({
+        roots: [dir, outside],
+      }),
+    ],
+    [
+      'canRead',
+      () => fsLoader({
+        canRead: file => !file.endsWith('.env'),
+      }),
+    ],
+  ])('with a loader confined by %s', (_, loader) => {
+    it('reads a labelled frame header outside cwd that the loader allows', async () => {
+      const error = {
+        message: `Unexpected token ─[ ${secret}:1:1 ]`,
+        loc: { line: 1, column: 1 },
+      }
+      const report = await createReport(error, {
+        cwd: dir,
+        loaders: [
+          loader(),
+        ],
+      })
+      expect(report.frames[0]).toMatchObject({ file: secret, line: 1 })
+      expect(report.frames[0]!.snippet!.lines[0]).toContain('s3cr3t')
+    })
+
+    it('reads a quoted position outside cwd that the loader allows', async () => {
+      const report = await createReport(parserError(`ParseError: bad\n ${secret}:1:1`), {
+        cwd: dir,
+        loaders: [
+          loader(),
+        ],
+      })
+      expect(report.kind).toBe('compile')
+      expect(report.frames[0]!.snippet!.lines[0]).toContain('s3cr3t')
+    })
+
+    it('reads a frame outside cwd that the loader allows below a rewritten message', async () => {
+      const error = new Error(`Invalid value:\nx\n    at a (${secret}:1:1)`)
+      void error.stack
+      error.message = 'Request failed'
+      const report = await createReport(error, {
+        cwd: dir,
+        loaders: [
+          loader(),
+        ],
+      })
+      expect(report.frames.find(frame => frame.file === secret)!.snippet).toBeDefined()
+    })
+  })
+
+  it.each([
+    [
+      'outside its roots',
+      secret,
+      () => fsLoader({
+        roots: [dir],
+      }),
+    ],
+    [
+      'a symlink out of its roots with a query',
+      'link.ts?v=1',
+      () => fsLoader({
+        roots: [dir],
+      }),
+    ],
+    [
+      'denied by canRead',
+      secret,
+      () => fsLoader({
+        canRead: file => file !== secret,
+      }),
+    ],
+    [
+      'inside its roots but denied by canRead',
+      secret,
+      () => fsLoader({
+        roots: [dir, outside],
+        canRead: file => file !== secret,
+      }),
+    ],
+    [
+      'when canRead throws',
+      secret,
+      () => fsLoader({
+        canRead: () => {
+          throw new Error('nope')
+        },
+      }),
+    ],
+  ])('ignores a labelled frame header %s', async (_, quoted, loader) => {
+    const error = {
+      message: `Unexpected token ─[ ${quoted}:1:1 ]`,
+      loc: { line: 1, column: 1 },
+    }
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        loader(),
+      ],
+    })
+    expect(report.frames[0]!.file).toBeUndefined()
+    expect(report.frames[0]!.snippet).toBeUndefined()
   })
 
   it('reads the original source of a module frame whatever its extension', async () => {
