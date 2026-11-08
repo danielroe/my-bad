@@ -611,9 +611,11 @@ describe.each(themes)('badge, theme: $name', (theme) => {
   async function openBadge(): Promise<Page> {
     const context = await browser.newContext({
       colorScheme: theme.scheme,
+      reducedMotion: 'reduce',
       viewport: { width: 1280, height: 900 },
     })
     const page = await context.newPage()
+    await page.clock.install()
     const warning = {
       id: 'w',
       kind: 'warning',
@@ -657,24 +659,23 @@ describe.each(themes)('badge, theme: $name', (theme) => {
       })}</body></html>` })
     })
     await page.goto('http://a11y.test/')
-    await page.locator('my-bad-overlay-badge .mb-badge-latest:not(:empty)').waitFor()
+    const peek = page.locator('my-bad-overlay-badge .mb-peek:not([hidden])')
+    await peek.waitFor()
+    await peek.evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)))
     return page
   }
 
-  it('meets contrast and target size minimums with no serious axe violations', async () => {
-    const page = await openBadge()
-    const samples = (await sampleContrast(page)).filter(sample => /mb-dock|mb-problems/.test(sample.selector))
-    expect(samples.length).toBeGreaterThan(2)
+  async function audit(page: Page, part: RegExp, targets: string[]): Promise<void> {
+    const samples = (await sampleContrast(page)).filter(sample => part.test(sample.selector))
+    expect(samples.length).toBeGreaterThan(1)
     const failures = samples.filter(sample => sample.role === 'text'
       ? sample.ratio < 4.5 || sample.fontSize < 12
       : sample.ratio < 3)
     expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
-    expect(samples.some(sample => sample.selector.includes('mb-problems'))).toBe(true)
-    for (const target of ['.mb-badge', '.mb-problems', '.mb-problems button']) {
+    for (const target of targets) {
       const size = await page.locator(`my-bad-overlay-badge ${target}`).boundingBox()
       expect(size!.height).toBeGreaterThanOrEqual(24)
     }
-    await page.addScriptTag({ content: axeSource })
     const results = await page.evaluate(async () => {
       const axe = (window as unknown as { axe: { run: (context: unknown, options: unknown) => Promise<{ violations: Array<{ id: string, impact: string }> }> } }).axe
       return axe.run(document, {
@@ -692,6 +693,18 @@ describe.each(themes)('badge, theme: $name', (theme) => {
       })
     })
     expect(results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')).toEqual([])
+  }
+
+  it('meets contrast and target size minimums with no serious axe violations', async () => {
+    const page = await openBadge()
+    await page.addScriptTag({ content: axeSource })
+    await audit(page, /mb-peek/, ['.mb-peek'])
+
+    await page.clock.fastForward(7000)
+    await page.locator('my-bad-overlay-badge .mb-peek').waitFor({ state: 'hidden' })
+    await page.locator('my-bad-overlay-badge .mb-dock').evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)))
+    await audit(page, /mb-dock|mb-problems/, ['.mb-badge', '.mb-problems', '.mb-problems button'])
+    expect((await sampleContrast(page)).some(sample => sample.selector.includes('mb-problems'))).toBe(true)
     await page.context().close()
   }, 30_000)
 })

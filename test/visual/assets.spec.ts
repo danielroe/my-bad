@@ -52,7 +52,15 @@ test.describe('README assets', () => {
     ]
     const latest = {
       ...history[1],
-      frames: [],
+      frames: [
+        {
+          file: '/app/components/AppNav.vue',
+          displayFile: 'components/AppNav.vue',
+          line: 12,
+          column: 5,
+          type: 'app',
+        },
+      ],
       causes: [],
       sections: [],
     }
@@ -76,10 +84,10 @@ test.describe('README assets', () => {
       return route.fulfill({ contentType: 'text/html', body: html })
     })
     for (const scheme of ['dark', 'light'] as const) {
-      await page.emulateMedia({ colorScheme: scheme })
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
       await page.goto('http://my-bad.test/')
-      await page.locator('.mb-badge-latest:not(:empty)').waitFor()
-      const box = (await page.locator('.mb-badge').boundingBox())!
+      await page.locator('.mb-peek:not([hidden])').waitFor()
+      const box = (await page.locator('.mb-peek').boundingBox())!
       const clip = {
         x: box.x - 24,
         y: box.y - 24,
