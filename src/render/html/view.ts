@@ -103,11 +103,14 @@ export function dockedSummary(index: DockedIndex): string {
   return countsLabel(dockedCounts(index)) || 'All clear'
 }
 
-function renderIndexItem(entry: { id: string, kind: string, name: string, message: string }, location: string, shown: BadgeFocus | undefined, source?: string): string {
+function renderIndexItem(entry: { id: string, kind: string, name: string, message: string }, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
   const current = shown?.id === entry.id && shown.source === source
+  const title = heading !== undefined && entry.name.toLowerCase() === heading.toLowerCase()
+    ? firstLine(entry.message)
+    : `${entry.name}: ${firstLine(entry.message)}`
   return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${entry.kind === 'warning'
     ? ICONS.warning
-    : ICONS.error}<span class="mb-index-title">${escapeHtml(`${entry.name}: ${firstLine(entry.message)}`)}</span>${location
+    : ICONS.error}<span class="mb-index-title">${escapeHtml(title)}</span>${location
     ? `<span class="mb-index-loc">${escapeHtml(location)}</span>`
     : ''}</button></li>`
 }
@@ -139,7 +142,7 @@ function renderIndexSet(set: DockedIndex['problems'][number], state: DockedState
     : set.label ?? set.source)}</span><span class="mb-count">${escapeHtml(status)}</span>${url || (set.devtoolsDock && state.docks)
     ? `<button type="button" class="mb-index-list" data-action="list" data-source="${escapeHtml(set.source)}" title="Show the full list" aria-label="Show the full list" aria-pressed="${!!listed}">${ICONS.list}</button>`
     : ''}</h2>${reports.length
-    ? `<ul>${reports.map(report => renderIndexItem(report, indexLocation(report, state), shown, set.source)).join('')}</ul>`
+    ? `<ul>${reports.map(report => renderIndexItem(report, indexLocation(report, state), shown, set.source, set.label ?? set.source)).join('')}</ul>`
     : ''}</section>`
 }
 

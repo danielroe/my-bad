@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createReport, injectOverlay, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
+import { renderIndex } from '../src/render/html/view'
 
 async function report() {
   const error = Object.assign(new Error('Something <broke>'), { code: 'E1001' })
@@ -526,6 +527,48 @@ describe('history pager', () => {
     expect(html).toContain('data-action="history" data-dir="-1" disabled')
     expect(html).toContain('data-action="history" data-dir="0">a')
     expect(html).toContain('data-action="history" data-dir="1">b')
+  })
+})
+
+describe('docked index', () => {
+  it('leaves out a problem\'s name where it repeats the label of its set', () => {
+    const problem = (name: string, message: string) => ({
+      id: message,
+      kind: 'error' as const,
+      name,
+      message,
+      frames: [],
+      causes: [],
+      sections: [],
+      timestamp: 0,
+    })
+    const html = renderIndex({ mode: 'docked', version: '0' }, {
+      history: [],
+      problems: [
+        {
+          source: 'vue-tsc',
+          label: 'VUE-TSC',
+          errors: 2,
+          warnings: 0,
+          reports: [
+            problem('vue-tsc', 'Type mismatch'),
+            problem('TS2322', 'Not assignable'),
+          ],
+        },
+        {
+          source: 'lint',
+          errors: 1,
+          warnings: 0,
+          reports: [
+            problem('Lint', 'Unused variable'),
+          ],
+        },
+      ],
+    })
+    const titles = [
+      ...html.matchAll(/<span class="mb-index-title">([^<]*)<\/span>/g),
+    ].map(match => match[1])
+    expect(titles).toEqual(['Type mismatch', 'TS2322: Not assignable', 'Unused variable'])
   })
 })
 

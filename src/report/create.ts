@@ -12,11 +12,15 @@ import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledF
 import { stringifyValue } from './stringify'
 import { tokenizeSnippet } from './tokenize'
 
+export function defaultCwd(): string {
+  return typeof process !== 'undefined' && process.cwd
+    ? process.cwd()
+    : '/'
+}
+
 export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptions {
   const presets = options.presets ?? []
-  const cwd = options.cwd ?? (typeof process !== 'undefined' && process.cwd
-    ? process.cwd()
-    : '/')
+  const cwd = options.cwd ?? defaultCwd()
   return {
     cwd,
     kind: options.kind,
@@ -57,13 +61,22 @@ function snippetCount(value: number | undefined): number {
 }
 
 /** At least 2, which leaves a cut line one character and its `…`. */
-function lineLength(value: number | undefined): number {
+export function lineLength(value: number | undefined): number {
   return value === undefined || Number.isNaN(value)
     ? 500
     : Math.max(2, Math.floor(value))
 }
 
-/** Build a serialisable report from an error, warning, or Vite-style compile error. */
+/**
+ * Build a serialisable report from an error, warning, or Vite-style compile error.
+ *
+ * With no `kind` option, an error whose message ends in a `file:line:column`
+ * line, as parsers and loaders throw, becomes a `compile` report at that
+ * position when it has a `stack` with no frame in application code and the file
+ * is a module inside `cwd` or a loader's bounds. An error without a `stack`
+ * stays an `error`; pass a compile-shaped input (`{ message, id, loc }`) to
+ * locate it instead.
+ */
 export async function createReport(input: unknown, options: ReportOptions = {}): Promise<ErrorReport> {
   const resolved = resolveOptions(options)
   const ctx: BuildContext = {
@@ -157,7 +170,7 @@ interface Budget {
   snippets: number
 }
 
-function truncate(text: string, max: number): string {
+export function truncate(text: string, max: number): string {
   return text.length <= max
     ? text
     : `${text.slice(0, max)}… [truncated, ${text.length - max} more characters]`
@@ -259,9 +272,14 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     seen.delete(input)
   }
 
-  const top = frames.find(frame => frame.type === 'app') ?? frames[0]
-  report.id = fnv1a64Base36(`${report.name}\n${report.message}\n${top?.file ?? ''}:${top?.line ?? ''}:${top?.column ?? ''}`)
+  report.id = reportId(report)
   return report
+}
+
+/** Hash of the name, message and location of the first app frame, or of the first frame without one. */
+export function reportId(report: Pick<ErrorReport, 'name' | 'message' | 'frames'>): string {
+  const top = report.frames.find(frame => frame.type === 'app') ?? report.frames[0]
+  return fnv1a64Base36(`${report.name}\n${report.message}\n${top?.file ?? ''}:${top?.line ?? ''}:${top?.column ?? ''}`)
 }
 
 function nestedContext(ctx: BuildContext): BuildContext {
@@ -776,7 +794,7 @@ function stripEllipsis(line: string): string {
   return line.replace(LEADING_ELLIPSIS, '').replace(TRAILING_ELLIPSIS, '').trim()
 }
 
-function resolveFile(file: string, cwd: string): string {
+export function resolveFile(file: string, cwd: string): string {
   return stripCacheQuery(toPath(isFilePath(file) || hasScheme(file)
     ? file
     : resolvePath(cwd, file)))

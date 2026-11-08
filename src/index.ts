@@ -7,6 +7,8 @@ export type { ClientAssets, Dock, PageState, RenderBadgeOptions, RenderOverlayOp
 export { createReport, resolveOptions } from './report/create'
 export { toMarkdown } from './report/markdown'
 export type { MarkdownOptions } from './report/markdown'
+export { createProblemReport } from './report/problem'
+export type { ProblemInput, ProblemReportOptions } from './report/problem'
 export { serializeReport } from './report/serialize'
 export type { SerializeOptions } from './report/serialize'
 export * from './types'

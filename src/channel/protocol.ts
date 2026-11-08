@@ -39,7 +39,11 @@ export interface ProblemMeta {
   status?: ProblemStatus
   /** Why the source failed, with `status: 'failed'`. */
   error?: string
-  /** URL of a page listing the problems in full, shown in a frame, so it must allow framing by the app. */
+  /**
+   * URL of a page listing the problems in full, shown in a frame, so it must
+   * allow framing by the app. Sources may share one page, each adding a query
+   * string to narrow it.
+   */
   url?: string
   /**
    * Id of a Vite DevTools dock listing the problems in full. When the page runs

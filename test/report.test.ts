@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createReport, fsLoader, serializeReport } from '../src'
+import { createProblemReport, createReport, fsLoader, serializeReport } from '../src'
 
 const fixtures = fileURLToPath(new URL('./fixtures/basic/', import.meta.url))
 
@@ -757,6 +757,12 @@ describe('positions quoted in an error message', () => {
     expect(missing.kind).toBe('error')
   })
 
+  it('ignores a position quoted by an error without a stack', async () => {
+    const report = await createReport({ name: 'Error', message: `ParseError: bad\n ${file}:3:2` }, { cwd: dir })
+    expect(report.kind).toBe('error')
+    expect(report.frames).toEqual([])
+  })
+
   it('ignores a position quoted by application code', async () => {
     const report = await createReport(new Error(`Invalid payload:\nx\n${file}:3:2`), { cwd: dir })
     expect(report.kind).toBe('error')
@@ -1029,5 +1035,133 @@ describe('positions quoted in an error message', () => {
       expect(report.frames.some(frame => frame.file === secret)).toBe(false)
       expect(report.frames[0]!.file).toBe(fileURLToPath(import.meta.url).replaceAll('\\', '/'))
     }
+  })
+})
+
+describe('createProblemReport', () => {
+  const cwd = '/proj'
+  const source = 'const a = 1\nconst b: string = a\nexport {}\n'
+  const memory = {
+    name: 'memory',
+    read: (file: string) => file === '/proj/src/a.ts'
+      ? source
+      : undefined,
+  }
+
+  it('gives a located problem the id createReport gives it', async () => {
+    const built = await createReport({
+      name: 'TS2322',
+      message: 'Type \'number\' is not assignable to type \'string\'.',
+      sources: ['src/a.ts:2:7'],
+    }, {
+      cwd,
+      loaders: [memory],
+      kind: 'warning',
+    })
+    const problem = createProblemReport({
+      name: 'TS2322',
+      message: 'Type \'number\' is not assignable to type \'string\'.',
+      file: 'src/a.ts',
+      line: 2,
+      column: 7,
+      kind: 'warning',
+    }, { cwd })
+    expect(problem.id).toBe(built.id)
+    expect(problem).toMatchObject({
+      kind: 'warning',
+      name: 'TS2322',
+      frames: [
+        {
+          file: '/proj/src/a.ts',
+          line: 2,
+          column: 7,
+          type: 'app',
+        },
+      ],
+    })
+    expect(problem.frames[0]!.snippet).toBeUndefined()
+  })
+
+  it('keeps a code frame the tool rendered as the snippet', () => {
+    const problem = createProblemReport({
+      name: 'vue-tsc',
+      message: '\u001B[31mType mismatch\u001B[39m',
+      code: 'TS2322',
+      docsUrl: 'https://example.com/ts2322',
+      file: '/elsewhere/src/a.vue',
+      line: 2,
+      column: 7,
+      snippet: '  1 | const a = 1\n> 2 | const b: string = a\n    |       ^\n  3 | export {}',
+    }, { cwd })
+    expect(problem).toMatchObject({
+      kind: 'error',
+      message: 'Type mismatch',
+      code: 'TS2322',
+      docsUrl: 'https://example.com/ts2322',
+    })
+    expect(problem.diagnostic).toBeUndefined()
+    expect(problem.frames[0]!.snippet).toEqual({
+      start: 1,
+      lines: [
+        'const a = 1',
+        'const b: string = a',
+        'export {}',
+      ],
+      lang: 'vue',
+    })
+  })
+
+  it('crops a structured snippet around the column before tokenizing it', () => {
+    const snippet = {
+      start: 7,
+      lines: ['abcdefghijklmnopqrstuvwxyz'],
+    }
+    const problem = createProblemReport({
+      name: 'Checker',
+      message: 'Broken',
+      file: 'C:\\proj\\a.ts',
+      line: 7,
+      column: 15,
+      snippet,
+    }, {
+      cwd: '/proj',
+      maxSnippetLineLength: 10,
+      tokenizer: (text, lang) => lang === 'ts'
+        ? [
+            { type: 'keyword', text },
+          ]
+        : undefined,
+    })
+    expect(problem.frames[0]!.file).toBe('C:/proj/a.ts')
+    expect(problem.frames[0]!.snippet).toEqual({
+      start: 7,
+      lines: ['…klmnopqr…'],
+      lang: 'ts',
+      offset: 9,
+      tokens: [
+        [
+          { type: 'keyword', text: '…klmnopqr…' },
+        ],
+      ],
+    })
+    expect(snippet.lines).toEqual(['abcdefghijklmnopqrstuvwxyz'])
+  })
+
+  it('builds a report where the runtime has no `process.cwd`', () => {
+    const cwd = process.cwd
+    Object.assign(process, { cwd: undefined })
+    try {
+      expect(createProblemReport({ name: 'E1', message: 'Broken', file: '/proj/src/a.ts' }).frames[0]!.file).toBe('/proj/src/a.ts')
+    }
+    finally {
+      Object.assign(process, { cwd })
+    }
+  })
+
+  it('reports a problem with no location without frames', () => {
+    const problem = createProblemReport({ name: 'E1', code: 'E1', message: 'Broken' })
+    expect(problem.frames).toEqual([])
+    expect(problem.diagnostic).toBe(true)
+    expect(problem.id).toBe(createProblemReport({ name: 'E1', message: 'Broken' }).id)
   })
 })

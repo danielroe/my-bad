@@ -47,7 +47,7 @@ try {
     join(dir, tarball),
   ], { cwd: dir })
   await writeFile(join(dir, 'check.mjs'), `
-import { createReport, renderAnsi, renderBadge, renderOverlay, renderPage, injectOverlay, fsLoader, sourceMapLoader } from 'my-bad'
+import { createProblemReport, createReport, renderAnsi, renderBadge, renderOverlay, renderPage, injectOverlay, fsLoader, sourceMapLoader } from 'my-bad'
 import { createChannel, openInEditor } from 'my-bad/channel'
 import { nuxtPreset, vuePreset, envPreset } from 'my-bad/presets'
 import { fileSink } from 'my-bad/sinks'
@@ -62,7 +62,7 @@ const badge = renderBadge({ channel: '/__my-bad' })
 const served = await createChannel().fetchHandler(new Request('http://localhost/__my-bad/badge.js'))
 const devtools = await createChannel().fetchHandler(new Request('http://localhost/__my-bad/devtools.js'))
 const panel = await createChannel().fetchHandler(new Request('http://localhost/__my-bad/panel?embed'))
-for (const [name, value] of Object.entries({ createChannel, openInEditor, vuePreset, envPreset, fileSink, myBad, myBadDevTools, useMyBad, viteLoader, installMyBadClient, fsLoader, sourceMapLoader, injectOverlay })) {
+for (const [name, value] of Object.entries({ createProblemReport, createChannel, openInEditor, vuePreset, envPreset, fileSink, myBad, myBadDevTools, useMyBad, viteLoader, installMyBadClient, fsLoader, sourceMapLoader, injectOverlay })) {
   if (typeof value !== 'function') throw new Error(name + ' is not a function')
 }
 if (!page.includes('packed') || !page.includes('<style>') || !page.includes('mb-root')) throw new Error('page is incomplete')

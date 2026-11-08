@@ -173,6 +173,8 @@ Frames are mapped by loaders, tried in order:
 
 A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice. Frames are only mapped and read when they name a module (`.js`, `.ts`, `.vue`, `.svelte` and similar) or an id that is not a file path. Locations that may come from error text (a code frame header, a position quoted in a message, or a stack whose message header cannot be found) are only read inside `cwd` or where an `fsLoader` confined with `roots` or `canRead` allows, so a monorepo can widen the boundary by passing its workspace root.
 
+A plain error whose message ends in a `file:line:column` line, as parsers and loaders throw, becomes a `compile` report at that position when no `kind` is passed, its `stack` has no frame in application code, and the file is a readable module within those bounds. An error without a `stack` stays an `error`, since nothing shows a dependency raised it; pass a compile-shaped input (`{ message, id, loc }`) to locate it.
+
 Compile errors from a bundler often point into the module it transformed while naming the source file (rolldown failing to parse a compiled render function, say). Their position and code frame then move to `frame.compiled`, so the generated code is labelled as such rather than shown as the source of your file.
 
 That is detected by comparing the frame's **caret line**, the one line the frame asserts describes the reported position, against the file on disk at the line number the frame gives it. Indentation is ignored, and a line Vite truncated for width is matched on the part that survived. If it matches, the frame is source; if it does not, the frame is generated. Neighbouring lines are not compared, because a bare `}` or `})` matches almost any file by chance. Nothing changes when the file cannot be read, or the caret line is only punctuation, or there is no caret at all.
@@ -282,7 +284,9 @@ Problem sets stay out of `history` and the warning cap, raise no toasts and neve
 
 With no `status` a source is idle; `status: 'checking'` shows a spinner while it runs, and `status: 'failed'` with an `error` reason replaces its count with `failed`, giving the reason in the pill's title. Sources with the same `group` are counted together under that name (`Nuxt 3`, or `Nuxt 2, 1 failed` when one of them failed), each listed in the title, as one entry opening the first of them. `channel.problems` returns every set in full.
 
-A report's id hashes its name, message and the file, line and column of its first app frame, so build reports with `createReport` and pass the location: a compile-shaped input (`{ message, id, loc, frame }`) or `sources`, with `kind: 'warning'` for warnings, which are then named `Warning` unless the input has a name.
+Several sources may share one `url`, such as a tool serving one page for all its checkers. Each embeds it as given, so a source can add a query string the page understands (`/__checker/?tab=eslint`, say) to open it narrowed to its own problems.
+
+A report's id hashes its name, message and the file, line and column of its first app frame, so build reports with `createReport` and pass the location: a compile-shaped input (`{ message, id, loc, frame }`) or `sources`, with `kind: 'warning'` for warnings, which are then named `Warning` unless the input has a name. `createReport` reads the file for a snippet, and lists a `sources` entry it cannot read in a `Sources` section rather than as a frame. For a tool that has already located its diagnostics, `createProblemReport` builds the report without reading anything, hashing its id the same way.
 
 #### Problems from another tool
 
@@ -290,32 +294,37 @@ A host feeds a tool's diagnostics in by mapping each run's results to reports an
 
 ```ts
 import type { ErrorReport } from 'my-bad'
-import { createReport } from 'my-bad'
+import { createProblemReport } from 'my-bad'
 
 const meta = { label: 'ESLint', url: '/__lint/' }
 let reports: ErrorReport[] = []
 
 linter.on('start', () => channel.setProblems('lint', reports, { ...meta, status: 'checking' }))
-linter.on('results', async (results) => {
-  reports = await Promise.all(results.map(result => createReport({
+linter.on('results', (results) => {
+  reports = results.map(result => createProblemReport({
     name: 'ESLint',
     message: result.message,
     code: result.ruleId,
-    sources: [
-      [result.file, result.line, result.column].filter(part => part !== undefined).join(':')
-    ],
-  }, {
+    docsUrl: result.docsUrl,
+    file: result.file,
+    line: result.line,
+    column: result.column,
+    snippet: result.codeFrame,
     kind: result.severity === 2
       ? 'error'
-      : 'warning'
-  })))
+      : 'warning',
+  }))
   channel.setProblems('lint', reports, meta)
 })
 linter.on('crash', error => channel.setProblems('lint', reports, { ...meta, status: 'failed', error: error.message }))
 linter.on('close', () => channel.clearProblems('lint'))
 ```
 
+`createProblemReport` takes `name`, `message`, `code`, `docsUrl`, `file` (absolute, or relative to `cwd`), `line`, `column`, `kind` (`error` by default, or `warning`) and `snippet`, either a `Snippet` or a code frame of `3 | code` lines, which may mark a line with `>`. A report with no `file` or `snippet` has no frames.
+
 The badge stays silent while a clean run checks, shows `ESLint 3` once there is something to count, and opens its problems, with `url` as the full list. Problems show on the pages that render the badge (`renderBadge`).
+
+A problem's `name` heads it when it is opened, as an error's does. The drawer and the dock list each problem under its set's `label` (or `source`, without one), so a `name` that only repeats it (ignoring case) is left out of its row, and any other `name` (a diagnostic code such as `TS2322`, say) is shown before the message.
 
 ### Vite
 
