@@ -45,7 +45,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
   kind: message.severity === 2
     ? 'error'
     : 'warning',
-}))), { label: 'ESLint', url: '/__lint/' })
+}))), { label: 'ESLint' })
 ```
 
 `createProblemReport` takes these fields:
@@ -77,7 +77,7 @@ Tell pages when a source is checking, and when it fails. This example follows a 
 import type { ErrorReport } from 'my-bad'
 import { createProblemReport } from 'my-bad'
 
-const meta = { label: 'Lint', url: '/__lint/' }
+const meta = { label: 'Lint' }
 let reports: ErrorReport[] = []
 
 linter.on('start', () => {
@@ -116,7 +116,7 @@ The pill shows each status like this:
 - **`idle`**: the count of errors and warnings. A source without a status is idle.
 - **`failed`**: `failed` in place of the count, with the `error` reason in the title of the pill.
 
-An empty set shows nothing unless it failed, but the source stays listed with its metadata.
+An empty set shows nothing in the pill unless it failed. The drawer lists it only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
 
 ## Problem metadata
 
@@ -155,6 +155,6 @@ Every page receives the error and warning counts of each set, but not its report
 
 Trusted callers can fetch every set in full from `{channel}/problems`. Untrusted callers receive only the counts. See [Who can use the channel](./channel.md#who-can-use-the-channel).
 
-A [sink](./channel.md#record-events-with-sinks) also receives the reports that joined the set, in `added`, and the ids of the reports that left it, in `removed`. A report that stays in the set but changes `kind` also arrives in `added`. A `fileSink` log therefore records a problem when it joins the set or changes kind, not on every run. Problem sets belong to the channel, so a set replayed into a new channel arrives as `added` again.
+A [sink](./channel.md#record-events-with-sinks) also receives the reports that joined the set, in `added`, and the ids of the reports that left it, in `removed`. A report that stays in the set, but changes `kind`, also arrives in `added`. When no report joined or left, for example when only the status changed, the event has neither field. A `fileSink` log therefore records a problem when it joins the set or changes kind, not on every run. Problem sets belong to the channel, so a set replayed into a new channel arrives as `added` again.
 
 `channel.problems` returns every set with its reports.

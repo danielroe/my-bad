@@ -86,7 +86,7 @@ To add `my-bad` to a Node.js server:
    </html>`
    ```
 
-   The badge renders nothing until an error, a warning, or a problem concerns the page. Without a `requestId`, the badge matches errors from a request by the path of the page. On untrusted pages, it never matches an error with a `requestId` this way. To match those errors, render the badge with a `requestId`, and publish errors from that request with the same id.
+   The badge renders nothing until an error, a warning, or a problem concerns the page. Without a `requestId`, the badge matches errors by the path of the page, when they were published with a `request`. On untrusted pages, it never matches an error with a `requestId` this way. To match those errors, render the badge with a `requestId`, and publish errors from that request with the same id.
 
 5. Retire the error when the code that failed changes, for example after a rebuild succeeds:
 

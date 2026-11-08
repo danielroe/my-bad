@@ -111,7 +111,9 @@ Some locations come from the text of an error, rather than a stack. Examples are
 
 ### How frames are mapped
 
-`my-bad` maps a frame only when the map has a segment on that exact line, so a nearby segment doesn't map an original position again. A segment on the same line still maps it. For stacks that are already mapped, use `passthroughLoader()`. `my-bad` maps and reads only frames that name a module or an id that isn't a file path. Modules include `.js`, `.ts`, `.vue`, and `.svelte` files.
+`my-bad` maps a frame only when the map has a segment on that exact line, so a nearby segment doesn't map an original position again. A segment on the same line still maps it. For stacks that are already mapped, use `passthroughLoader()`. From a stack, `my-bad` maps and reads only frames that name a module or an id that isn't a file path. Modules include `.js`, `.ts`, `.vue`, and `.svelte` files.
+
+Entries of `sources` can name any file that the loaders can read. With the default loader, that includes files such as `.env` inside `cwd`. For error objects from untrusted input, filter `sources`, or pass an `fsLoader` with a `canRead` check.
 
 ### Loader options
 

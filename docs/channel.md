@@ -149,10 +149,14 @@ An error from no request reaches every page, and replaces every open error. Comp
 The channel matches an error to a page like this:
 
 - An error with a `requestId` matches a page rendered with the same `requestId`.
-- An error with a `requestId` matches a trusted page rendered without one by its path. It never matches an untrusted page by path.
+- An error with a `requestId` and a `request` matches a trusted page rendered without a `requestId` by its path. It never matches an untrusted page by path.
 - An error with only a `request` matches any page by its path, even a page rendered with a `requestId`.
 
+Path matching uses the path in `request`. An error published without a `request` never matches by path.
+
 To keep errors on the page they belong to, pass the same id to `setError` and to the renderer.
+
+A page names its own path when it connects, so any caller can receive the errors for a path that it guesses. When untrusted callers can reach the channel, publish errors with an unguessable `requestId`, such as one from `crypto.randomUUID()`.
 
 ### Logs
 
