@@ -1053,6 +1053,21 @@ describe('untrusted callers', () => {
     channel.close()
   })
 
+  it('shows each request its own report under a shared id', async () => {
+    const channel = createChannel()
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    channel.setError({ ...report, hint: 'a' }, 'a', 'GET /')
+    channel.setError({ ...report, hint: 'b' }, 'b', 'GET /')
+    const get = async (query: string): Promise<any> =>
+      (await channel.fetchHandler(new Request(`http://localhost/__my-bad/history/${report.id}${query}`), { trusted: false }))!.json()
+
+    expect((await hello(channel, '?requestId=a&path=/', false)).current).toMatchObject({ hint: 'a' })
+    expect(await get('?requestId=a&path=/')).toMatchObject({ hint: 'a' })
+    expect(await get('?requestId=b&path=/')).toMatchObject({ hint: 'b' })
+    expect((await hello(channel, '?requestId=a&path=/', true)).current).toMatchObject({ hint: 'b' })
+    channel.close()
+  })
+
   it('withholds the open action and refuses the endpoint', async () => {
     const opened: unknown[] = []
     const channel = createChannel({

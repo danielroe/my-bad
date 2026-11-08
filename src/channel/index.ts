@@ -198,8 +198,8 @@ interface Viewer {
   trusted: boolean
 }
 
-interface Raised {
-  id: string
+interface Published {
+  report: ErrorReport
   origin: ReportRequest
 }
 
@@ -232,13 +232,13 @@ const SSE_HEADERS = {
 export function createChannel(options: ChannelOptions = {}): Channel {
   const max = options.history ?? 20
   const reports = new Map<string, ErrorReport>()
-  /** The requests each report was published for, by scope key, oldest first. */
-  const origins = new Map<string, Map<string, ReportRequest>>()
+  /** Each report as published for each request, by scope key, oldest first. */
+  const origins = new Map<string, Map<string, Published>>()
   const live = new Map<string, BuildProgress>()
   const problemSets = new Map<string, ProblemSet>()
   const listeners = new Set<Sink>()
   /** The errors not yet cleared, each with the request it was published for, oldest first. */
-  let raised: Raised[] = []
+  let raised: Published[] = []
   const clients = new Set<Client>()
   const actions: string[] = []
   if (options.open) {
@@ -252,11 +252,15 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   const helloFrames = new Map<string, string>()
 
-  function concernsViewer(id: string, viewer: Viewer): boolean {
-    const from = origins.get(id)
-    return !from || [
-      ...from.values(),
-    ].some(origin => concernsClient(viewer.scope, origin, !viewer.trusted))
+  /** The newest report published under this id for a request that concerns a page. */
+  function visibleTo(id: string, viewer: Viewer): ErrorReport | undefined {
+    let visible: ErrorReport | undefined
+    for (const { report, origin } of origins.get(id)?.values() ?? []) {
+      if (concernsClient(viewer.scope, origin, !viewer.trusted)) {
+        visible = report
+      }
+    }
+    return visible
   }
 
   function history(viewer?: Viewer): HistoryEntry[] {
@@ -264,7 +268,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       ...reports.values(),
     ]
     return (viewer
-      ? entries.filter(report => concernsViewer(report.id, viewer))
+      ? entries.map(report => visibleTo(report.id, viewer)).filter(report => report !== undefined)
       : entries).map(toHistoryEntry)
   }
 
@@ -272,16 +276,16 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     reports.delete(report.id)
     reports.set(report.id, report)
     const scope = scopeKey(request)
-    const from = (scope && origins.get(report.id)) || new Map<string, ReportRequest>()
+    const from = (scope && origins.get(report.id)) || new Map<string, Published>()
     from.delete('')
     from.delete(scope)
-    from.set(scope, request)
+    from.set(scope, { report, origin: request })
     origins.set(report.id, from)
     for (const oldest of [
       ...from.keys(),
     ].slice(0, Math.max(0, from.size - MAX_ORIGINS))) {
       from.delete(oldest)
-      raised = raised.filter(entry => entry.id !== report.id || scopeKey(entry.origin) !== oldest)
+      raised = raised.filter(entry => entry.report.id !== report.id || scopeKey(entry.origin) !== oldest)
     }
     const warning = report.kind === 'warning'
     const same = [
@@ -290,14 +294,14 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     for (const oldest of same.slice(0, Math.max(0, same.length - (warning ? MAX_WARNINGS : max)))) {
       reports.delete(oldest.id)
       origins.delete(oldest.id)
-      raised = raised.filter(entry => entry.id !== oldest.id)
+      raised = raised.filter(entry => entry.report.id !== oldest.id)
     }
     helloFrames.clear()
   }
 
   /** The newest open error that concerns a page. */
-  function shownTo(viewer: Viewer): Raised | undefined {
-    let shown: Raised | undefined
+  function shownTo(viewer: Viewer): Published | undefined {
+    let shown: Published | undefined
     for (const entry of raised) {
       if (concernsClient(viewer.scope, entry.origin, !viewer.trusted)) {
         shown = entry
@@ -306,7 +310,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     return shown
   }
 
-  function snapshot(): Map<Client, Raised | undefined> {
+  function snapshot(): Map<Client, Published | undefined> {
     return new Map([...clients].map(client => [
       client,
       shownTo(client),
@@ -334,17 +338,17 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   }
 
   /** Tell a page whose error went away, and show it the next open error that concerns it. Returns whether that sent it the history. */
-  function settle(client: Client, previous: Raised | undefined): boolean {
+  function settle(client: Client, previous: Published | undefined): boolean {
     const next = shownTo(client)
-    if (!previous || next?.id === previous.id) {
+    if (!previous || next?.report.id === previous.report.id) {
       return false
     }
     sendTo(client, {
       type: 'error:clear',
-      payload: { id: previous.id },
+      payload: { id: previous.report.id },
     })
     if (next) {
-      sendTo(client, errorSet(reports.get(next.id)!, next.origin, history(client.trusted ? undefined : client)))
+      sendTo(client, errorSet(next.report, next.origin, history(client.trusted ? undefined : client)))
     }
     return !!next
   }
@@ -399,7 +403,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   /** The current error is only announced to the pages it concerns; the rest just learn it happened. */
   function hello(client: Client): string {
-    const shown = reports.get(shownTo(client)?.id ?? '')
+    const raisedTo = shownTo(client)
     const problems = problemSets.size
       ? [
           ...problemSets.values(),
@@ -412,13 +416,14 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         payload: {
           version: __MY_BAD_VERSION__,
           actions: unprivileged,
-          current: shown,
+          current: raisedTo?.report,
           history: history(client),
           problems,
           ...(devtools && { devtools }),
         },
       })
     }
+    const shown = reports.get(raisedTo?.report.id ?? '')
     let frame = helloFrames.get(shown?.id ?? '')
     if (!frame) {
       frame = encode({
@@ -535,9 +540,9 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   /** 404 rather than 403, so the answer does not confirm the id exists. */
   function historyResponse(id: string, viewer: Viewer): { status: number, body: string } {
-    const report = viewer.trusted || concernsViewer(id, viewer)
+    const report = viewer.trusted
       ? reports.get(id)
-      : undefined
+      : visibleTo(id, viewer)
     return {
       status: report ? 200 : 404,
       body: report
@@ -724,8 +729,8 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       const before = snapshot()
       remember(report, origin)
       const scope = scopeKey(origin)
-      raised = raised.filter(entry => scope && scopeKey(entry.origin) !== scope && origins.get(entry.id)?.has(scopeKey(entry.origin)))
-      raised.push({ id: report.id, origin })
+      raised = raised.filter(entry => scope && scopeKey(entry.origin) !== scope && origins.get(entry.report.id)?.has(scopeKey(entry.origin)))
+      raised.push({ report, origin })
       const reaches = (client: Client) => concernsClient(client.scope, origin, !client.trusted)
       const set = (entries: HistoryEntry[]) => errorSet(report, origin, entries)
       sendScoped(set, reaches)
@@ -737,12 +742,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       }), client => !reaches(client) && !settled.has(client))
     },
     clearError(id) {
-      if (id && !raised.some(entry => entry.id === id)) {
+      if (id && !raised.some(entry => entry.report.id === id)) {
         return
       }
       const before = snapshot()
       raised = id
-        ? raised.filter(entry => entry.id !== id)
+        ? raised.filter(entry => entry.report.id !== id)
         : []
       helloFrames.clear()
       for (const client of clients) {
@@ -879,7 +884,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       ]
     },
     get current() {
-      return reports.get(raised.at(-1)?.id ?? '')
+      return reports.get(raised.at(-1)?.report.id ?? '')
     },
     get history() {
       return history()
