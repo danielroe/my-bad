@@ -7,7 +7,7 @@ import { canonicalPath, fsLoader } from '../loaders/fs'
 import { stripAnsi } from './ansi'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
-import { hasScheme, isFilePath, isModuleLocation, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath } from './path'
+import { hasScheme, isFilePath, isModuleLocation, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath, withoutQuery } from './path'
 import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeSnippet } from './tokenize'
@@ -397,9 +397,20 @@ function raisedByDependency(error: NormalizedError): boolean {
   }, []) !== 'app')
 }
 
+/** A location quoted in error text, kept only when it names a module inside `cwd`. */
+function projectLocation<T extends { file: string }>(loc: T | undefined, cwd: string): T | undefined {
+  if (!loc) {
+    return
+  }
+  const file = resolvePath(cwd, loc.file)
+  return isModuleLocation(file) && isInside(file, cwd)
+    ? { ...loc, file }
+    : undefined
+}
+
 function isInside(file: string, dir: string): boolean {
   const root = canonicalPath(dir).replace(/\/$/, '')
-  const target = canonicalPath(file)
+  const target = canonicalPath(withoutQuery(file))
   return target === root || target.startsWith(`${root}/`)
 }
 
@@ -513,7 +524,7 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
 
 async function compileFrame(input: CompileErrorInput, ctx: BuildContext): Promise<Frame> {
   const { options } = ctx
-  const labelled = locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`)
+  const labelled = projectLocation(locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`), options.cwd)
   const snippet = typeof input.frame === 'string' && input.frame
     ? parseCodeFrame(input.frame)
     : undefined
@@ -524,7 +535,7 @@ async function compileFrame(input: CompileErrorInput, ctx: BuildContext): Promis
   const loc = snippet && frameLoc
     ? mergeFrameLoc(declared, frameLoc, snippet.lines[frameLoc.line - snippet.start])
     : declared ?? frameLoc ?? labelled
-  const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? (labelled && resolvePath(options.cwd, labelled.file))
+  const rawFile = (loc as { file?: string } | undefined)?.file ?? input.id ?? labelled?.file
   const file = rawFile
     ? resolveFile(rawFile, options.cwd)
     : undefined

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -703,6 +703,7 @@ describe('positions quoted in an error message', () => {
   const outside = resolve(tmpdir(), 'my-bad-quoted-outside')
   const secret = resolve(outside, 'secret.ts').replaceAll('\\', '/')
   const env = resolve(dir, '.env').replaceAll('\\', '/')
+  const link = resolve(dir, 'link.ts').replaceAll('\\', '/')
 
   beforeAll(async () => {
     await mkdir(dir, { recursive: true })
@@ -710,6 +711,8 @@ describe('positions quoted in an error message', () => {
     await writeFile(file, 'export default defineNuxtConfig({\n  modules: [],\n  oops\n})\n')
     await writeFile(secret, 'export const token = "s3cr3t"\n')
     await writeFile(env, 'TOKEN=1\n')
+    await rm(link, { force: true })
+    await symlink(secret, link)
   })
   afterAll(async () => {
     await rm(dir, { recursive: true, force: true })
@@ -806,6 +809,37 @@ describe('positions quoted in an error message', () => {
       ],
     })
     expect(unbounded.frames[0]).toMatchObject({ file, line: 3, column: 1 })
+  })
+
+  it.each([
+    ['outside cwd', secret],
+    ['not a module', env],
+    ['relative and outside cwd', '../my-bad-quoted-outside/secret.ts'],
+    ['a symlink out of cwd with a query', 'link.ts?v=1'],
+  ])('ignores a labelled frame header in a compile error message that is %s', async (_, quoted) => {
+    const error = {
+      message: `Unexpected token ─[ ${quoted}:1:1 ]`,
+      loc: { line: 1, column: 1 },
+    }
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    expect(report.frames[0]!.file).toBeUndefined()
+    expect(report.frames[0]!.snippet).toBeUndefined()
+  })
+
+  it('ignores a quoted symlink out of cwd with a query', async () => {
+    const report = await createReport(parserError(`ParseError: bad\n ${link}?v=1:1:1`), {
+      cwd: dir,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    expect(report.kind).toBe('error')
+    expect(report.frames.some(frame => frame.snippet?.lines.some(line => line.includes('s3cr3t')))).toBe(false)
   })
 
   it('does not read a frame that is not a module', async () => {
