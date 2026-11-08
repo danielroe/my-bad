@@ -15,8 +15,9 @@ export interface TrustOptions {
  * hostname pointing at the machine cannot vouch for itself. `Sec-Fetch-Site`
  * then decides it where the browser sends one; an `Origin` must otherwise name
  * the host being addressed. Requests with neither header (`curl`, editor
- * integrations) pass. Every header is chosen by the client, so this does not
- * tell a local peer from a remote one.
+ * integrations) pass on the host check alone, so a request naming no host is
+ * refused. Every header is chosen by the client, so this does not tell a local
+ * peer from a remote one.
  */
 export function isTrustedRequest(site: string | null | undefined, origin: string | null | undefined, host: string | null | undefined, options: TrustOptions = {}): boolean {
   if (!host || !isAllowedHost(host, options.allowedHosts)) {

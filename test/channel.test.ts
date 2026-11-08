@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { clientAssets, createReport } from '../src'
 import { createChannel } from '../src/channel'
 import { escapeCmdArg } from '../src/channel/open'
-import { isLoopbackAddress } from '../src/channel/origin'
+import { isLoopbackAddress, isTrustedRequest } from '../src/channel/origin'
 import { assetUrls } from '../src/render/html/assets'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
@@ -879,6 +879,16 @@ describe('host validation', () => {
       body,
     }), { trusted: true }))?.status).toBe(204)
     any.close()
+  })
+})
+
+describe('isTrustedRequest', () => {
+  it('allows a request with neither header only when it names an allowed host', () => {
+    expect(isTrustedRequest(undefined, undefined, 'localhost:3000')).toBe(true)
+    expect(isTrustedRequest(undefined, undefined, '127.0.0.1:3000')).toBe(true)
+    expect(isTrustedRequest(undefined, undefined, 'rebound.example:3000')).toBe(false)
+    expect(isTrustedRequest(undefined, undefined, undefined)).toBe(false)
+    expect(isTrustedRequest(null, null, '')).toBe(false)
   })
 })
 

@@ -236,7 +236,8 @@ const channel = createChannel({
 // The channel refuses requests addressed to a host that is neither an IP literal, `localhost`, `*.localhost`,
 // nor listed in `allowedHosts` (the Vite plugin passes `server.allowedHosts`), and requests a page on another
 // origin made (`Sec-Fetch-Site`, else `Origin` must match the host addressed).
-// Requests with neither header (`curl`, editor integrations) are allowed.
+// Requests with neither header (`curl`, editor integrations) are allowed when addressed to such a host; a request
+// naming no host is refused (`fetchHandler` falls back to the host of the request URL).
 
 // Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css`, `badge.js` and
 // `devtools.js` (immutable when requested with `?v=`, as `renderBadge` does), the docked view at `panel` and, to
