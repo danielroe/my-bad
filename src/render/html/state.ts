@@ -83,7 +83,8 @@ export interface BadgeSnapshot {
   overlay: BadgeState['overlay']
   current?: ErrorReport
   history: HistoryEntry[]
-  problems: ProblemSummary[]
+  /** Problem sets, with their reports once fetched. Pages the channel withholds reports from get none. */
+  problems: Array<ProblemSummary & { reports?: ErrorReport[] }>
 }
 
 /** Which report or problem set to show. */

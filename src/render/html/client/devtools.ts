@@ -1,6 +1,6 @@
 import type { DevToolsMessageEntryInput, DevToolsMessageFilePosition } from '@vitejs/devtools-kit'
 import type { DockClientScriptContext } from '@vitejs/devtools-kit/client'
-import type { ProblemSet } from '../../../channel/protocol'
+import type { ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport } from '../../../types'
 import type { BadgeFocus, BadgeSnapshot, BadgeState } from '../state'
 import { displayPath } from '../../../report/path'
@@ -11,8 +11,6 @@ type Activation = BadgeFocus & { open?: string }
 type MessageAction = NonNullable<DevToolsMessageEntryInput['actions']>[number]
 
 const PREFIX = 'my-bad:'
-const ERRORS_KEY = 'my-bad:devtools:errors'
-const PROBLEMS_KEY = 'my-bad:devtools:problems'
 const DESCRIBED = 3
 
 export interface DevToolsSetupOptions {
@@ -61,9 +59,6 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
 
   const registration = ctx.docks.register({ ...entry }, true)
   let badge: string | undefined
-  let problems = new Map<string, ProblemSet>()
-  const errors = new Set(read<string[]>('sessionStorage', ERRORS_KEY) ?? [])
-  const seen = new Map(Object.entries(read<Record<string, string[]>>('localStorage', PROBLEMS_KEY) ?? {}))
   const added = new Map<string, string>()
 
   const sync = () => {
@@ -95,34 +90,19 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
       messages.set(`${PREFIX}error:${current.id}`, {
         ...describe(current, snapshot),
         level: 'error',
-        notify: !errors.has(current.id),
         actions: [
           showAction(dockId, { id: current.id }),
           ...docsAction(dockId, { id: current.id }, current.docsUrl),
         ],
       })
-      errors.add(current.id)
     }
-    for (const id of errors) {
-      if (id !== current?.id) {
-        errors.delete(id)
-      }
-    }
-    write('sessionStorage', ERRORS_KEY, [...errors])
 
     for (const summary of snapshot.problems) {
-      const set = problems.get(summary.source)
       const failed = summary.status === 'failed'
       if (!summary.errors && !summary.warnings && !failed) {
-        seen.delete(summary.source)
         continue
       }
-      const reports = set?.reports ?? []
-      const known = new Set(seen.get(summary.source))
-      const fresh = reports.some(report => !known.has(report.id))
-      if (set) {
-        seen.set(summary.source, reports.map(report => report.id))
-      }
+      const reports = summary.reports ?? []
       const label = summary.group
         ? `${summary.group} · ${summary.label ?? summary.source}`
         : summary.label ?? summary.source
@@ -148,20 +128,12 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
         status: summary.status === 'checking'
           ? 'loading'
           : 'idle',
-        notify: fresh,
         actions: [
           showAction(dockId, { source: summary.source }),
           ...listAction(dockId, summary),
         ],
       })
     }
-    for (const key of seen.keys()) {
-      if (!snapshot.problems.some(summary => summary.source === key)) {
-        seen.delete(key)
-      }
-    }
-    write('localStorage', PROBLEMS_KEY, Object.fromEntries(seen))
-
     for (const id of added.keys()) {
       if (!messages.has(id)) {
         added.delete(id)
@@ -169,37 +141,12 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
       }
     }
     for (const [id, input] of messages) {
-      const { notify, ...rest } = input
-      const key = JSON.stringify(rest)
-      if (added.get(id) !== key || notify) {
+      const key = JSON.stringify(input)
+      if (added.get(id) !== key) {
         added.set(id, key)
         void ctx.messages.add({ id, ...input })
       }
     }
-  }
-
-  let fetching: Promise<void> | undefined
-  let stale = false
-  const refetch = (): Promise<void> => {
-    if (fetching) {
-      stale = true
-      return fetching
-    }
-    const channel = source.snapshot!().overlay.channel
-    fetching = fetch(`${channel}/problems`)
-      .then(res => res.ok
-        ? res.json() as Promise<ProblemSet[]>
-        : [])
-      .catch(() => [] as ProblemSet[])
-      .then((sets) => {
-        problems = new Map(sets.map(set => [set.source, set]))
-        fetching = undefined
-        if (stale) {
-          stale = false
-          return refetch()
-        }
-      })
-    return fetching
   }
 
   let queued = false
@@ -213,19 +160,18 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
     }
   }
   for (const type of [
+    'hello',
     'error:set',
     'error:clear',
     'history',
     'warning',
     'warning:clear',
+    'problems',
     'problems:clear',
+    'reports',
   ]) {
     source.addEventListener(type, schedule)
   }
-  for (const type of ['hello', 'problems']) {
-    source.addEventListener(type, () => void refetch().then(schedule))
-  }
-  await refetch()
   sync()
 }
 
@@ -321,7 +267,7 @@ function docsAction(dockId: string, focus: BadgeFocus, url: string | undefined):
     : []
 }
 
-function listAction(dockId: string, set: Pick<ProblemSet, 'source' | 'url' | 'devtoolsDock'>): MessageAction[] {
+function listAction(dockId: string, set: Pick<ProblemSummary, 'source' | 'url' | 'devtoolsDock'>): MessageAction[] {
   const activate = set.devtoolsDock
     ? { dockId: set.devtoolsDock }
     : safeUrl(set.url) && {
@@ -349,22 +295,6 @@ function safeUrl(url: unknown): string | undefined {
     return parsed.protocol === 'http:' || parsed.protocol === 'https:'
       ? parsed.href
       : undefined
-  }
-  catch {}
-}
-
-type StorageName = 'sessionStorage' | 'localStorage'
-
-function read<T>(storage: StorageName, key: string): T | undefined {
-  try {
-    return JSON.parse(window[storage].getItem(key) ?? 'null') ?? undefined
-  }
-  catch {}
-}
-
-function write(storage: StorageName, key: string, value: unknown): void {
-  try {
-    window[storage].setItem(key, JSON.stringify(value))
   }
   catch {}
 }
