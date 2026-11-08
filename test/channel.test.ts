@@ -271,6 +271,38 @@ describe('createChannel', () => {
     expect(onB[3]!.data).toEqual({ id: second!.id })
   })
 
+  it('keeps an error open on every page whose request raised it, until it is cleared', async () => {
+    const channel = createChannel()
+    const url = await listen(channel)
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+
+    const controller = new AbortController()
+    const a = readEvents(url, 4, controller.signal, '?path=/&requestId=a')
+    const b = readEvents(url, 4, controller.signal, '?path=/&requestId=b')
+    while (channel.clients < 2) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.setError(report, 'a', 'GET /')
+    channel.setError(report, 'b', 'GET /')
+    channel.clearError(report.id)
+    const [onA, onB] = await Promise.all([a, b])
+    controller.abort()
+
+    expect(onA.map(event => event.event)).toEqual([
+      'hello',
+      'error:set',
+      'history',
+      'error:clear',
+    ])
+    expect(onB.map(event => event.event)).toEqual([
+      'hello',
+      'history',
+      'error:set',
+      'error:clear',
+    ])
+    expect(onB[2]!.data).toMatchObject({ requestId: 'b' })
+  })
+
   it('replaces earlier errors from the same request, and every open error with one from no request', async () => {
     const channel = createChannel()
     const [a1, a2, b, everywhere] = await Promise.all(['a1', 'a2', 'b', 'everywhere'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false })))
@@ -975,6 +1007,22 @@ describe('untrusted callers', () => {
       { id: mine.id },
       { id: theirs.id },
     ])
+    channel.close()
+  })
+
+  it('shows a report raised for several requests to each of them', async () => {
+    const channel = createChannel()
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    channel.setError(report, 'a', 'GET /')
+    channel.setError(report, 'b', 'GET /')
+    channel.clearError(report.id)
+
+    for (const query of ['?requestId=a&path=/', '?requestId=b&path=/']) {
+      expect((await hello(channel, query, false)).history).toMatchObject([
+        { id: report.id },
+      ])
+    }
+    expect((await hello(channel, '?requestId=c&path=/', false)).history).toEqual([])
     channel.close()
   })
 
