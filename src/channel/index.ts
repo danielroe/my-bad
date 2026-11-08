@@ -180,6 +180,15 @@ interface Client extends Viewer {
   close: () => void
 }
 
+function decodeId(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  }
+  catch {
+    return segment
+  }
+}
+
 const PRIVILEGED = new Set(['open'])
 const MAX_WARNINGS = 100
 const ASSET_KEYS = Object.keys(ASSET_FILES) as Array<keyof typeof ASSET_FILES>
@@ -427,7 +436,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     const match = /\/history\/([^/]+)$/.exec(pathname)
     if (match) {
       return {
-        history: decodeURIComponent(match[1]!),
+        history: decodeId(match[1]!),
       }
     }
   }
