@@ -209,6 +209,12 @@ export function fsLoader(options: FsLoaderOptions = {}): SourceLoader {
     name: 'fs',
     read: readContents,
     readCompiled: readContents,
+    ...((bounds || canRead) && {
+      allows: (file: string) => {
+        const path = withoutQuery(file)
+        return isFilePath(path) && allowed(path) !== undefined
+      },
+    }),
   }
 }
 

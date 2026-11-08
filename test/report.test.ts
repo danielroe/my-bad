@@ -885,6 +885,114 @@ describe('positions quoted in an error message', () => {
     expect(report.frames.find(frame => frame.file === secret)!.snippet).toBeDefined()
   })
 
+  describe.each([
+    [
+      'roots',
+      () => fsLoader({
+        roots: [dir, outside],
+      }),
+    ],
+    [
+      'canRead',
+      () => fsLoader({
+        canRead: file => !file.endsWith('.env'),
+      }),
+    ],
+  ])('with a loader confined by %s', (_, loader) => {
+    it('reads a labelled frame header outside cwd that the loader allows', async () => {
+      const error = {
+        message: `Unexpected token ─[ ${secret}:1:1 ]`,
+        loc: { line: 1, column: 1 },
+      }
+      const report = await createReport(error, {
+        cwd: dir,
+        loaders: [
+          loader(),
+        ],
+      })
+      expect(report.frames[0]).toMatchObject({ file: secret, line: 1 })
+      expect(report.frames[0]!.snippet!.lines[0]).toContain('s3cr3t')
+    })
+
+    it('reads a quoted position outside cwd that the loader allows', async () => {
+      const report = await createReport(parserError(`ParseError: bad\n ${secret}:1:1`), {
+        cwd: dir,
+        loaders: [
+          loader(),
+        ],
+      })
+      expect(report.kind).toBe('compile')
+      expect(report.frames[0]!.snippet!.lines[0]).toContain('s3cr3t')
+    })
+
+    it('reads a frame outside cwd that the loader allows below a rewritten message', async () => {
+      const error = new Error(`Invalid value:\nx\n    at a (${secret}:1:1)`)
+      void error.stack
+      error.message = 'Request failed'
+      const report = await createReport(error, {
+        cwd: dir,
+        loaders: [
+          loader(),
+        ],
+      })
+      expect(report.frames.find(frame => frame.file === secret)!.snippet).toBeDefined()
+    })
+  })
+
+  it.each([
+    [
+      'outside its roots',
+      secret,
+      () => fsLoader({
+        roots: [dir],
+      }),
+    ],
+    [
+      'a symlink out of its roots with a query',
+      'link.ts?v=1',
+      () => fsLoader({
+        roots: [dir],
+      }),
+    ],
+    [
+      'denied by canRead',
+      secret,
+      () => fsLoader({
+        canRead: file => file !== secret,
+      }),
+    ],
+    [
+      'inside its roots but denied by canRead',
+      secret,
+      () => fsLoader({
+        roots: [dir, outside],
+        canRead: file => file !== secret,
+      }),
+    ],
+    [
+      'when canRead throws',
+      secret,
+      () => fsLoader({
+        canRead: () => {
+          throw new Error('nope')
+        },
+      }),
+    ],
+  ])('ignores a labelled frame header %s', async (_, quoted, loader) => {
+    const error = {
+      message: `Unexpected token ─[ ${quoted}:1:1 ]`,
+      loc: { line: 1, column: 1 },
+    }
+    const report = await createReport(error, {
+      cwd: dir,
+      loaders: [
+        loader(),
+      ],
+    })
+    expect(report.frames[0]!.file).toBeUndefined()
+    expect(report.frames[0]!.snippet).toBeUndefined()
+  })
+
   it('reads the original source of a module frame whatever its extension', async () => {
     const page = `${dir}/page.marko`
     const error = new Error('boom')

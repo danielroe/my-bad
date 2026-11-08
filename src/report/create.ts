@@ -366,7 +366,7 @@ const ERROR_NAME_RE = /^(?<name>[A-Z][A-Za-z]*(?:Error|Exception)): (?<message>[
  * throw a plain `Error` whose stack points at the parser and quote the source
  * position on the last line of the message (`jiti` leaves no frames at all).
  * Messages can quote untrusted input, so the position is only taken from an
- * error with a stack and no frame in application code, for a module inside `cwd`.
+ * error with a stack and no frame in application code, for a module in bounds.
  */
 async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext): Promise<CompileErrorInput | undefined> {
   const lines = error.message.split('\n')
@@ -378,7 +378,7 @@ async function compileInputFromMessage(error: NormalizedError, ctx: BuildContext
     return
   }
   const file = normalizeSlashes(groups.file!)
-  if (!isFilePath(file) || !isModuleLocation(file) || !raisedByDependency(error) || !isInside(file, ctx.options.cwd) || await readSource(file, ctx) === undefined) {
+  if (!isFilePath(file) || !isModuleLocation(file) || !raisedByDependency(error) || !inBounds(file, ctx.options) || await readSource(file, ctx) === undefined) {
     return
   }
   const head = lines.slice(0, -1).join('\n').trimEnd()
@@ -406,20 +406,32 @@ function raisedByDependency(error: NormalizedError): boolean {
   }, []) !== 'app')
 }
 
-/** A location quoted in error text, kept only when it names a module inside `cwd`. */
-function projectLocation<T extends { file: string }>(loc: T | undefined, cwd: string): T | undefined {
+/** A location quoted in error text, kept only when it names a module in bounds. */
+function projectLocation<T extends { file: string }>(loc: T | undefined, options: ResolvedReportOptions): T | undefined {
   if (!loc) {
     return
   }
-  const file = resolvePath(cwd, loc.file)
-  return isModuleLocation(file) && isInside(file, cwd)
+  const file = resolvePath(options.cwd, loc.file)
+  return isModuleLocation(file) && inBounds(file, options)
     ? { ...loc, file }
     : undefined
 }
 
+function inBounds(file: string, options: ResolvedReportOptions): boolean {
+  const path = withoutQuery(file)
+  return isInside(path, options.cwd) || options.loaders.some((loader) => {
+    try {
+      return loader.allows?.(path) === true
+    }
+    catch {
+      return false
+    }
+  })
+}
+
 function isInside(file: string, dir: string): boolean {
   const root = canonicalPath(dir).replace(/\/$/, '')
-  const target = canonicalPath(withoutQuery(file))
+  const target = canonicalPath(file)
   return target === root || target.startsWith(`${root}/`)
 }
 
@@ -533,7 +545,7 @@ async function buildFrames(input: unknown, error: NormalizedError, ctx: BuildCon
 
 async function compileFrame(input: CompileErrorInput, ctx: BuildContext): Promise<Frame> {
   const { options } = ctx
-  const labelled = projectLocation(locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`), options.cwd)
+  const labelled = projectLocation(locFromLabelledFrame(`${input.frame ?? ''}\n${input.message}`), options)
   const snippet = typeof input.frame === 'string' && input.frame
     ? parseCodeFrame(input.frame)
     : undefined
@@ -698,7 +710,7 @@ async function buildStackFrame(trace: ReturnType<typeof parseRawStackTrace>[numb
   }
   frame.type = classifyFrame({ ...frame, isNative: trace.isNative }, options.internal, packageName(frame.file, options.cwd))
 
-  if (frame.type !== 'native' && budget.frames > 0 && isModuleLocation(frame.file!) && (!headerUnknown || isInside(frame.file!, options.cwd))) {
+  if (frame.type !== 'native' && budget.frames > 0 && isModuleLocation(frame.file!) && (!headerUnknown || inBounds(frame.file!, options))) {
     budget.frames--
     const mapped = await mapFrame(frame, options)
     const forcedVendor = mapped !== frame && mapped.type === 'vendor' && frame.type !== 'vendor'

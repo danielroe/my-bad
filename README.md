@@ -171,7 +171,7 @@ Frames are mapped by loaders, tried in order:
 - `viteLoader(server)` from `my-bad/vite` uses the module graph of a `ViteDevServer`.
 - `passthroughLoader()` only reads sources, for processes whose stacks are already mapped.
 
-A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice. Frames are only mapped and read when they name a module (`.js`, `.ts`, `.vue`, `.svelte` and similar) or an id that is not a file path.
+A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice. Frames are only mapped and read when they name a module (`.js`, `.ts`, `.vue`, `.svelte` and similar) or an id that is not a file path. Locations that may come from error text (a code frame header, a position quoted in a message, or a stack whose message header cannot be found) are only read inside `cwd` or where an `fsLoader` confined with `roots` or `canRead` allows, so a monorepo can widen the boundary by passing its workspace root.
 
 Compile errors from a bundler often point into the module it transformed while naming the source file (rolldown failing to parse a compiled render function, say). Their position and code frame then move to `frame.compiled`, so the generated code is labelled as such rather than shown as the source of your file.
 

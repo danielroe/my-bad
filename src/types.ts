@@ -128,6 +128,11 @@ export interface SourceLoader {
    * the compiled code lives in memory (module runners) rather than on disk.
    */
   readCompiled?: (file: string) => Promise<string | undefined> | string | undefined
+  /**
+   * Whether `file` is within the directories this loader was confined to. Locations
+   * quoted in error text are read when they are inside `cwd` or a loader allows them.
+   */
+  allows?: (file: string) => boolean
 }
 
 export interface ReportContext {
