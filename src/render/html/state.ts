@@ -101,6 +101,6 @@ export interface BadgeState {
   script: string
   /** Start even when an overlay client is already listening, because a host such as DevTools mounted the badge. */
   hosted?: boolean
-  /** Milliseconds to wait for a host such as DevTools to take over before mounting the overlay for an error. */
+  /** Milliseconds to wait for a host such as DevTools to take over before mounting the overlay for an error, when the channel reports a registered dock. */
   awaitHost?: number
 }

@@ -105,6 +105,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
         if (live && options.devtools !== false) {
           registerDock(devtools, { channel: base, clientScript: `${base}/dock.js` })
           docked = true
+          ctx?.channel.setDevTools(true)
         }
       },
     },
@@ -128,6 +129,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
           ? options.channel
           : { open: true }),
       })
+      channel.setDevTools(docked)
       const cwd = options.report?.cwd ?? devServer.config.root
       const loaders = [
         viteLoader(devServer, { fs: false }),

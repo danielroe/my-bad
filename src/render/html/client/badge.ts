@@ -360,7 +360,7 @@ function start(state: BadgeState): void {
         load(current)
       }
     }
-    whenParsed(() => hostWait
+    whenParsed(() => hostWait && hello.devtools
       ? void hostWait.then(mount)
       : mount())
   }
@@ -515,12 +515,23 @@ function start(state: BadgeState): void {
         ? total
         : total + set.errors + set.warnings, 0)
       const focus = { source: sets[0]!.source }
+      const dock = sets.length === 1
+        ? sets[0]!.devtoolsDock
+        : undefined
       const entry = document.createElement('button')
       entry.type = 'button'
       entry.dataset.source = focus.source
-      entry.addEventListener('click', () => target.host
-        ? target.host.open(focus)
-        : openDrawer(focus))
+      entry.addEventListener('click', () => {
+        if (!target.host) {
+          openDrawer(focus)
+        }
+        else if (dock && target.host.dock) {
+          target.host.dock(dock)
+        }
+        else {
+          target.host.open(focus)
+        }
+      })
       entry.textContent = `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
         ? 'failed'
         : broken

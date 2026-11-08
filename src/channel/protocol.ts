@@ -41,7 +41,11 @@ export interface ProblemMeta {
   error?: string
   /** URL of a page listing the problems in full, shown in a frame, so it must allow framing by the app. */
   url?: string
-  /** Id of a Vite DevTools dock listing the problems in full, shown in place of `url` when the page runs DevTools. */
+  /**
+   * Id of a Vite DevTools dock listing the problems in full. When the page runs
+   * DevTools, the badge switches to it for this source, unless the source is
+   * counted with others in a `group`, and it replaces `url` as the full list.
+   */
   devtoolsDock?: string
 }
 
@@ -65,7 +69,7 @@ export interface ProblemSet extends ProblemMeta {
 }
 
 export type ChannelEvent
-  = | { type: 'hello', payload: { version: string, actions: string[], current?: ErrorReport, history?: HistoryEntry[], problems?: ProblemSummary[] } }
+  = | { type: 'hello', payload: { version: string, actions: string[], current?: ErrorReport, history?: HistoryEntry[], problems?: ProblemSummary[], devtools?: boolean } }
     | { type: 'error:set', payload: { report: ErrorReport, history: HistoryEntry[] } & ReportRequest }
     | { type: 'history', payload: { history: HistoryEntry[] } }
     | { type: 'error:clear', payload: { id?: string } }

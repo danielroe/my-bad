@@ -273,6 +273,8 @@ channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) //
 channel.setProblems('typecheck', reports, { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
 channel.clearProblems('typecheck') // retire one source (no source retires every one)
 
+channel.setDevTools(true) // a my-bad dock is registered in Vite DevTools, so badges with `awaitHost` wait for it
+
 const stop = channel.subscribe((event) => {}) // receive every event the `sink` receives, until `stop()`
 ```
 
@@ -335,7 +337,7 @@ The client script and stylesheet are served from `/__my-bad/client.js` and `/__m
 
 With [Vite DevTools](https://github.com/vitejs/devtools) installed, `myBad()` adds a my-bad dock to it, and nothing else needs configuring. Pass `devtools: false` to leave it out. Without Vite DevTools nothing changes.
 
-In DevTools, the badge shows on every page and opens the dock rather than the overlay, and errors no longer take over the page. The dock lists the open error, the warnings and every problem set, and shows the one picked the way the overlay does. Its icon in the DevTools bar counts them, in red while any is an error. The open error and each problem set also appear in the DevTools messages panel with their file position, raising a toast when they first appear and showing a spinner while a set is `checking`, with actions to show them in the dock or show the set's full list. A set's `devtoolsDock` names a DevTools dock to switch to for its full list, in place of embedding its `url`.
+In DevTools, the badge shows on every page and opens the dock rather than the overlay, and errors no longer take over the page. The dock lists the open error, the warnings and every problem set, and shows the one picked the way the overlay does. Its icon in the DevTools bar counts them, in red while any is an error. The open error and each problem set also appear in the DevTools messages panel with their file position, raising a toast when they first appear and showing a spinner while a set is `checking`, with actions to show them in the dock or show the set's full list. A set's `devtoolsDock` names a DevTools dock listing its problems in full. The badge's entry for that set switches straight to it, and the full list actions switch to it in place of embedding its `url`. An entry counting a `group` of several sources still opens the my-bad dock.
 
 When the channel lives outside the Vite plugin (a framework serving it from its own dev server, say), add `myBadDevTools` next to the badge that server renders:
 
@@ -344,12 +346,15 @@ import { myBadDevTools } from 'my-bad/vite'
 
 export default defineConfig({
   plugins: [
-    myBadDevTools({ channel: '/__my-bad' })
+    myBadDevTools({
+      channel: '/__my-bad',
+      onRegister: () => channel.setDevTools(true)
+    })
   ]
 })
 ```
 
-The channel serves the dock's page at `{channel}/panel` and its script at `{channel}/devtools.js`. Until the DevTools client starts, the badge mounts the overlay for an error as usual; pass `renderBadge({ awaitHost: 3000 })` to give it that long to take over first. An untrusted DevTools client never runs the dock's script, so keep the wait short.
+The channel serves the dock's page at `{channel}/panel` and its script at `{channel}/devtools.js`. Until the DevTools client starts, the badge mounts the overlay for an error as usual; pass `renderBadge({ awaitHost: 3000 })` to give it up to that long to take over first. The badge only waits when the channel reports a registered dock in its `hello`, so pages without DevTools mount the overlay straight away. `myBad()` tells its own channel; with `myBadDevTools`, call `channel.setDevTools(true)` from `onRegister`, relaying it when the channel lives in another process. An untrusted DevTools client never runs the dock's script, so keep the wait short.
 
 ## Presets
 

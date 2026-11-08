@@ -79,9 +79,9 @@ export interface RenderBadgeOptions extends Omit<RenderOverlayOptions, 'assets' 
   /** Mount the overlay for an error minimised, regardless of the user's remembered preference. Default `true`. */
   startMinimized?: boolean
   /**
-   * Milliseconds to wait for Vite DevTools to take over the badge before
-   * mounting the overlay for an error, when the page has a my-bad dock.
-   * Default `0`.
+   * Milliseconds to wait at most for Vite DevTools to take over the badge
+   * before mounting the overlay for an error, when the channel reports a
+   * registered my-bad dock (`channel.setDevTools(true)`). Default `0`.
    */
   awaitHost?: number
 }

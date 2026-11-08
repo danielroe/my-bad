@@ -421,6 +421,25 @@ describe('createChannel', () => {
     channel.close()
   })
 
+  it('tells every caller in hello whether a devtools dock is registered', async () => {
+    const channel = createChannel()
+    const hello = async (trusted: boolean): Promise<any> => {
+      const res = await channel.fetchHandler(new Request('http://localhost/__my-bad/events'), { trusted })
+      const reader = res!.body!.getReader()
+      const { value } = await reader.read()
+      await reader.cancel()
+      return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
+    }
+    expect((await hello(true)).devtools).toBeUndefined()
+    channel.setDevTools(true)
+    expect((await hello(true)).devtools).toBe(true)
+    expect((await hello(false)).devtools).toBe(true)
+    channel.setDevTools(false)
+    expect((await hello(true)).devtools).toBeUndefined()
+    expect((await hello(false)).devtools).toBeUndefined()
+    channel.close()
+  })
+
   it('works through the fetch handler', async () => {
     const channel = createChannel()
     const report = await createReport(new Error('x'), { loaders: [], snippets: false })

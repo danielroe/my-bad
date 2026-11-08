@@ -10,6 +10,13 @@ export interface MyBadDevToolsOptions {
   title?: string
   /** An Iconify name or an image URL. */
   icon?: string
+  /**
+   * Called once Vite DevTools registers the dock. Tell the channel with
+   * `channel.setDevTools(true)`, directly or through whatever connects this
+   * process to the one owning the channel, so a badge rendered with
+   * `awaitHost` waits for DevTools only when the dock exists.
+   */
+  onRegister?: () => void
 }
 
 /** The part of the Vite DevTools setup context the dock uses, so the published types do not depend on `@vitejs/devtools-kit`. */
@@ -28,7 +35,7 @@ export interface DockHost {
 
 export type DevToolsPlugin = Plugin & { devtools?: { setup: (ctx: DockHost) => void } }
 
-export function registerDock(ctx: DockHost, options: MyBadDevToolsOptions & { clientScript?: string }): void {
+export function registerDock(ctx: DockHost, options: Omit<MyBadDevToolsOptions, 'onRegister'> & { clientScript?: string }): void {
   ctx.docks.register({
     id: options.id ?? 'my-bad',
     type: 'iframe',
@@ -53,7 +60,15 @@ export function myBadDevTools(options: MyBadDevToolsOptions): Plugin {
     name: 'my-bad:devtools',
     apply: 'serve',
     devtools: {
-      setup: ctx => registerDock(ctx, options),
+      setup(ctx) {
+        registerDock(ctx, {
+          channel: options.channel,
+          id: options.id,
+          title: options.title,
+          icon: options.icon,
+        })
+        options.onRegister?.()
+      },
     },
   }
   return plugin

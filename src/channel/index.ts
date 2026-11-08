@@ -104,6 +104,13 @@ export interface Channel {
   setProblems: (source: string, reports: ErrorReport[], meta?: ProblemMeta) => void
   /** Retire the problem set of this source, or of every source without one. */
   clearProblems: (source?: string) => void
+  /**
+   * Record whether a my-bad dock is registered in Vite DevTools, as reported by
+   * `myBadDevTools({ onRegister })`. Pages connecting while it is see
+   * `devtools: true` in `hello`, and a badge rendered with `awaitHost` waits
+   * for DevTools only then.
+   */
+  setDevTools: (registered: boolean) => void
   /** The problem set of each source. */
   readonly problems: ProblemSet[]
   /** The newest open error. */
@@ -214,6 +221,8 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   if (options.open) {
     actions.push('open')
   }
+
+  let devtools = false
 
   const keepalive = setInterval(send, options.keepalive ?? 15_000, ': ping\n\n')
   keepalive.unref?.()
@@ -371,6 +380,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           current: shown,
           history: history(client),
           problems,
+          ...(devtools && { devtools }),
         },
       })
     }
@@ -384,6 +394,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           current: shown,
           history: history(),
           problems,
+          ...(devtools && { devtools }),
         },
       })
       helloFrames.set(shown?.id ?? '', frame)
@@ -828,6 +839,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           ? {}
           : { source },
       })
+    },
+    setDevTools(registered) {
+      if (devtools !== registered) {
+        devtools = registered
+        helloFrames.clear()
+      }
     },
     get problems() {
       return [

@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
 import { clientAssets, createReport, renderBadge, renderOverlay, renderPage } from '../src'
 import { createChannel } from '../src/channel'
 import { badgeState } from '../src/render/html'
@@ -119,9 +119,15 @@ beforeAll(async () => {
       res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '../__my-bad' })}</head><body><h1 id="user">User page</h1></body></html>`)
       return
     }
-    if (req.url === '/badge-await') {
+    if (req.url === '/badge-await' || req.url === '/badge-await-long') {
       res.setHeader('content-type', 'text/html')
-      res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '/__my-bad', awaitHost: 1500 })}</head><body><h1 id="user">User page</h1></body></html>`)
+      res.end(`<!DOCTYPE html><html><head>${renderBadge({
+        cwd: proj,
+        channel: '/__my-bad',
+        awaitHost: req.url === '/badge-await'
+          ? 1500
+          : 60_000,
+      })}</head><body><h1 id="user">User page</h1></body></html>`)
       return
     }
     if (req.url?.startsWith('/badge')) {
@@ -1920,9 +1926,14 @@ describe('devtools dock', () => {
       params: { source: 'lint', list: true },
     })
 
-    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    const pills = page.locator('my-bad-overlay-badge .mb-problems')
+    await pills.getByRole('button', { name: 'TypeScript 1' }).click()
+    await waitFor(async () => (await calls()).switched.join(), 'checker')
+
+    await pills.getByRole('button', { name: 'ESLint 1' }).click()
+    await waitFor(async () => (await calls()).switched.at(-1), 'my-bad')
     const panel = page.frameLocator('iframe')
-    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Unused variable')
     await panel.locator('[data-index-source="ts"]').getByRole('button', { name: 'Show the full list' }).click()
     await waitFor(async () => (await calls()).switched.at(-1), 'checker')
     expect(await panel.locator('.mb-docked-list').count()).toBe(0)
@@ -1933,6 +1944,14 @@ describe('devtools dock', () => {
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
     await page.evaluate(() => (window as unknown as { devtools: { activate: (params: unknown) => void } }).devtools.activate({ source: 'lint', list: true }))
     await waitFor(() => panel.locator('.mb-docked-list').getAttribute('src').catch(() => null), '/__lint/')
+
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript', group: 'Checker', devtoolsDock: 'checker' })
+    channel.setProblems('lint', [await report('Unused variable')], { label: 'ESLint', group: 'Checker' })
+    const grouped = pills.getByRole('button', { name: 'Checker 2' })
+    await grouped.waitFor({ timeout: 5000 })
+    const switched = (await calls()).switched.length
+    await grouped.click()
+    await waitFor(async () => (await calls()).switched.slice(switched).join(), 'my-bad')
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
@@ -2006,9 +2025,25 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('mounts the overlay for an error without waiting when no dock is registered', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    await page.goto(`${origin}/badge-await-long`)
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_SOURCE__?.snapshot?.().ready), true)
+    channel.setError(await report('No dock'))
+    await waitFor(() => page.locator('my-bad-overlay').count(), 1)
+    channel.clearError()
+    await page.close()
+  }, 30_000)
+
   it('waits for a host before mounting the overlay for an error, and mounts it when none takes over', async () => {
     channel.clearError()
     channel.clearProblems()
+    channel.setDevTools(true)
+    onTestFinished(() => channel.setDevTools(false))
     const page = await browser.newPage({
       viewport: { width: 1200, height: 800 },
     })
@@ -2031,6 +2066,8 @@ describe('devtools dock', () => {
   it('hands an error to a host that starts while the badge waits for one', async () => {
     channel.clearError()
     channel.clearProblems()
+    channel.setDevTools(true)
+    onTestFinished(() => channel.setDevTools(false))
     const page = await browser.newPage({
       viewport: { width: 1200, height: 800 },
     })

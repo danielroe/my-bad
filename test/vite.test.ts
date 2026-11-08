@@ -1,5 +1,6 @@
 import type { DevToolsPluginOptions } from '@vitejs/devtools-kit'
 import type { Plugin, ViteDevServer } from 'vite'
+import type { MyBadDevToolsOptions } from '../src/vite'
 import type { DevToolsPlugin } from '../src/vite/devtools'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer as createHttpServer, get as httpGet } from 'node:http'
@@ -224,6 +225,11 @@ describe('devtools', () => {
         },
       ])
       expect(await load('\0virtual:my-bad/client')).toContain('installMyBadClient(import.meta.hot, { awaitHost: 3000 })')
+      const events = await useMyBad(docked)!.channel.fetchHandler(new Request('http://localhost/__bad/events'), { trusted: true })
+      const reader = events!.body!.getReader()
+      const { value } = await reader.read()
+      await reader.cancel()
+      expect(new TextDecoder().decode(value)).toContain('"devtools":true')
 
       await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve))
       const { port } = http.address() as { port: number }
@@ -259,9 +265,52 @@ describe('devtools', () => {
     }
   })
 
+  it('tells its channel about a dock registered before the server is configured', async () => {
+    const plugin = myBad({ base: '/__bad' })
+    setup(plugin)
+    const docked = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      appType: 'custom',
+      server: { middlewareMode: true, hmr: false },
+      plugins: [plugin],
+    })
+    try {
+      const events = await useMyBad(docked)!.channel.fetchHandler(new Request('http://localhost/__bad/events'), { trusted: true })
+      const reader = events!.body!.getReader()
+      const { value } = await reader.read()
+      await reader.cancel()
+      expect(new TextDecoder().decode(value)).toContain('"devtools":true')
+    }
+    finally {
+      await docked.close()
+    }
+  })
+
   it('registers no dock when asked not to, or without the channel', () => {
     expect(setup(myBad({ devtools: false }))).toEqual([])
     expect(setup(myBad({ channel: false }))).toEqual([])
+  })
+
+  it('reports the dock it registers for a channel served elsewhere', () => {
+    let registered = 0
+    const plugin = myBadDevTools({
+      channel: '/__my-bad',
+      onRegister: () => registered++,
+    })
+    expect(registered).toBe(0)
+    setup(plugin)
+    expect(registered).toBe(1)
+  })
+
+  it('ignores an undeclared clientScript for a channel served elsewhere', () => {
+    const [dock] = setup(myBadDevTools({ channel: '/__my-bad', clientScript: '/elsewhere.js' } as MyBadDevToolsOptions))
+    expect(dock).toMatchObject({
+      clientScript: {
+        importFrom: expect.stringMatching(/^\/__my-bad\/devtools\.js\?v=\w+$/),
+      },
+    })
   })
 
   it('registers a dock for a channel served elsewhere', () => {
