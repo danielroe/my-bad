@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createReport, serializeReport } from '../src'
+import { createReport, fsLoader, serializeReport } from '../src'
 
 const fixtures = fileURLToPath(new URL('./fixtures/basic/', import.meta.url))
 
@@ -770,6 +770,42 @@ describe('positions quoted in an error message', () => {
     const report = await createReport(parserError(`Invalid value:\nx\n${env}:1:1`), { cwd: dir })
     expect(report.kind).toBe('error')
     expect(report.frames.some(frame => frame.file === env)).toBe(false)
+  })
+
+  it('does not read a file outside cwd with the default loaders', async () => {
+    const error = new Error('boom')
+    error.stack = `Error: boom\n    at leak (${secret}:1:1)`
+    const report = await createReport(error, { cwd: dir })
+    const frame = report.frames.find(frame => frame.file === secret)
+    expect(frame).toBeDefined()
+    expect(frame!.snippet).toBeUndefined()
+  })
+
+  it('does not map a frame outside cwd with the default loaders', async () => {
+    const bundle = resolve(outside, 'bundle.js').replaceAll('\\', '/')
+    await writeFile(bundle, 'throw new Error("boom")\n')
+    await writeFile(`${bundle}.map`, JSON.stringify({
+      version: 3,
+      sources: [
+        file,
+      ],
+      names: [],
+      mappings: 'AAEA',
+    }))
+    const error = new Error('boom')
+    error.stack = `Error: boom\n    at explode (${bundle}:1:1)`
+
+    const bounded = await createReport(error, { cwd: dir, snippets: false })
+    expect(bounded.frames[0]).toMatchObject({ file: bundle, line: 1, column: 1 })
+
+    const unbounded = await createReport(error, {
+      cwd: dir,
+      snippets: false,
+      loaders: [
+        fsLoader(),
+      ],
+    })
+    expect(unbounded.frames[0]).toMatchObject({ file, line: 3, column: 1 })
   })
 
   it('does not read a frame that is not a module', async () => {

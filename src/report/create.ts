@@ -12,20 +12,19 @@ import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledF
 import { stringifyValue } from './stringify'
 import { tokenizeSnippet } from './tokenize'
 
-const DEFAULT_LOADERS = [
-  fsLoader(),
-]
-
 export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptions {
   const presets = options.presets ?? []
+  const cwd = options.cwd ?? (typeof process !== 'undefined' && process.cwd
+    ? process.cwd()
+    : '/')
   return {
-    cwd: options.cwd ?? (typeof process !== 'undefined' && process.cwd
-      ? process.cwd()
-      : '/'),
+    cwd,
     kind: options.kind,
     loaders: options.loaders ?? [
       ...presets.flatMap(preset => preset.loaders ?? []),
-      ...DEFAULT_LOADERS,
+      fsLoader({
+        roots: [cwd],
+      }),
     ],
     internal: [
       ...presets.flatMap(preset => preset.internal ?? []),
