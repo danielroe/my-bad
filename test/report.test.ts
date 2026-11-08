@@ -143,6 +143,43 @@ describe('createReport', () => {
     })
   })
 
+  it('reads indentation and the caret column from a frame with a single-space gutter', async () => {
+    const report = await createReport({
+      message: 'Unexpected token',
+      id: '/proj/a.ts',
+      frame: '1 | if (a) {\n2 |   return b +\n  |            ^\n3 | }',
+    }, { kind: 'compile' })
+    expect(report.frames[0]).toMatchObject({ line: 2, column: 12 })
+    expect(report.frames[0]!.snippet!.lines).toEqual([
+      'if (a) {',
+      '  return b +',
+      '}',
+    ])
+  })
+
+  it.each([
+    ['unmarked', '1 |   foo()\n  |   ^\n2 |   bar()'],
+    ['Babel', '> 1 |   foo()\n    |   ^\n  2 |   bar()'],
+  ])('keeps the indentation of a single-space frame whose every line is indented (%s)', async (_, frame) => {
+    const report = await createReport({ message: 'Unexpected token', id: '/proj/a.ts', frame }, { kind: 'compile' })
+    expect(report.frames[0]).toMatchObject({ line: 1, column: 3 })
+    expect(report.frames[0]!.snippet!.lines).toEqual(['  foo()', '  bar()'])
+  })
+
+  it('keeps the marked line of a frame that marks the error line with `>`', async () => {
+    const report = await createReport({
+      message: 'Unexpected token',
+      id: '/proj/a.ts',
+      frame: '  1 | if (a) {\n> 2 |   return b +\n    |            ^\n  3 | }',
+    }, { kind: 'compile' })
+    expect(report.frames[0]).toMatchObject({ line: 2, column: 12 })
+    expect(report.frames[0]!.snippet!.lines).toEqual([
+      'if (a) {',
+      '  return b +',
+      '}',
+    ])
+  })
+
   it('locates a compile-shaped warning, and names it after its kind', async () => {
     const report = await createReport({
       message: '<p> cannot be child of <p>, according to HTML specifications.',
@@ -1109,6 +1146,23 @@ describe('createProblemReport', () => {
       ],
       lang: 'vue',
     })
+  })
+
+  it('keeps the indentation of a code frame with a single-space gutter', () => {
+    const problem = createProblemReport({
+      name: 'ESLint',
+      message: 'Unreachable code.',
+      file: '/proj/a.ts',
+      line: 3,
+      column: 5,
+      snippet: '  2 | if (a) {\n> 3 |   return b\n  4 |     .c\n  5 | }',
+    }, { cwd })
+    expect(problem.frames[0]!.snippet!.lines).toEqual([
+      'if (a) {',
+      '  return b',
+      '    .c',
+      '}',
+    ])
   })
 
   it('crops a structured snippet around the column before tokenizing it', () => {

@@ -62,11 +62,9 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
   return report
 }
 
-const MARKER_RE = /^(\s*)>/gm
-
 function toSnippet(input: Snippet | string | undefined, file: string | undefined, column: number | undefined, options: ProblemReportOptions): Snippet | undefined {
   const parsed = typeof input === 'string'
-    ? parseCodeFrame(stripAnsi(input).replace(MARKER_RE, '$1 '))
+    ? parseCodeFrame(stripAnsi(input))
     : input
   if (!parsed?.lines.length) {
     return
