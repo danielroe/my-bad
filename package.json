@@ -80,7 +80,9 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "10.0.0",
+    "@iconify-json/ph": "1.2.2",
     "@types/node": "26.6.6",
+    "@vitejs/devtools": "0.8.2",
     "@vitejs/devtools-kit": "0.8.2",
     "@vitest/coverage-v8": "5.0.5",
     "ansivision": "0.4.0",
