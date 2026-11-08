@@ -1,6 +1,10 @@
 # Live channel
 
-The channel keeps every page that renders a report or a badge up to date over SSE: errors swap in place, pages reload once their error is fixed, and warnings, logs, progress and problem sets stream in as they occur.
+The live channel keeps open pages up to date over server-sent events (SSE). Your dev server publishes errors, warnings, logs, build progress, and problem sets to it. Every connected page then shows the ones that concern it.
+
+The channel also serves the client scripts and stylesheet, the DevTools dock page, and stored reports. For a step-by-step setup, see [Integrate with a dev server](./dev-server.md).
+
+## Create a channel
 
 ```ts
 import { createChannel } from 'my-bad/channel'
@@ -8,112 +12,209 @@ import { fileSink } from 'my-bad/sinks'
 
 const channel = createChannel({
   open: true,
-  sink: fileSink('.nuxt/my-bad.jsonl')
+  sink: fileSink('.nuxt/my-bad.jsonl'),
 })
 ```
 
-`open: true` launches `LAUNCH_EDITOR` / `VISUAL` / `EDITOR` at the frame's line, falling back to the OS default app for common source and text files (never `.js` on Windows, where the default app runs it). `open` requests are confined to `root` (default `process.cwd()`; the Vite plugin uses `server.fs.allow`), must name an existing file, and must be `application/json`; pass `root: false` to allow any path. `open` may be a function instead, returning `false` to refuse a request.
+### Channel options
 
-## Mounting
+| Option | Default | Description |
+| --- | --- | --- |
+| `open` | Off | Let pages open files in an editor. Pass `true`, or a function. See [Open files in an editor](#open-files-in-an-editor). |
+| `root` | `process.cwd()` | Directories that `open` requests are confined to. Pass `false` to allow any path. |
+| `allowedHosts` | `[]` | Extra hosts that a browser may use to reach the channel. See [Who can use the channel](#who-can-use-the-channel). |
+| `history` | `20` | Errors to keep. Warnings are kept until retired, up to the 100 most recent. |
+| `sink` | | Receives every event. See [Record events with sinks](#record-events-with-sinks). |
+| `keepalive` | `15000` | Milliseconds between keepalive messages. |
 
-In Node, mount the handler at the channel base path. Besides the live routes it serves `client.js`, `client.css`, `badge.js` and `devtools.js` (immutable when requested with `?v=`, as `renderBadge` does), the docked view at `panel` and, to trusted callers, every problem set in full at `problems`.
+## Mount the channel
+
+Pass each request under the channel base path to the handler. The handler resolves `true` when it handled the request.
+
+With a Node.js server, or Connect-style middleware:
 
 ```ts
 app.use('/__my-bad', (req, res, next) => {
   req.url = `/__my-bad${req.url}`
   channel.handler(req, res).then(handled => handled || next()).catch(next)
 })
-
-// or fetch-style
-await channel.fetchHandler(request)
 ```
 
-The channel refuses requests addressed to a host that is neither an IP literal, `localhost`, `*.localhost`, nor listed in `allowedHosts` (the Vite plugin passes `server.allowedHosts`), and requests a page on another origin made (`Sec-Fetch-Site`, else `Origin` must match the host addressed). Requests with neither header (`curl`, editor integrations) are allowed when addressed to such a host; a request naming no host is refused (`fetchHandler` falls back to the host of the request URL).
+Connect removes the mount path from `req.url`, so this example adds it back. The handler needs the full path.
 
-## Trust
+With a Fetch API server, `fetchHandler` resolves `undefined` for paths it doesn't handle:
 
-Callers connecting from a loopback address (`req.socket.remoteAddress`, or `request.ip` for `fetchHandler`) are trusted by default and may browse every retained report. Any other peer, or one whose address is unknown, is untrusted (a `--host` binding, a connection forwarded into a container). The channel still connects and streams, but:
+```ts
+const response = await channel.fetchHandler(request)
+```
 
-- its `hello.history` and the `history` payloads hold only the reports that concern the page (a report naming a request id is matched by that id alone, never by path)
-- `/history/:id` responds 404 for any other report
-- `/problems` responds 403 (problem sets reach it as counts only)
-- log entries reach it only when attributed to a request that concerns it
-- privileged actions such as `open` are neither advertised nor accepted, so the page opens an `editor://` URL on the machine running the browser instead
+The handler routes on the end of the path, so only pass it requests under the base path.
 
-Pass `trusted` explicitly behind a proxy, where the peer address is the proxy's:
+### Routes
+
+| Route | Description |
+| --- | --- |
+| `GET {channel}/events` | The SSE stream. |
+| `POST {channel}/open` | Opens a file in an editor, when `open` is set. |
+| `GET {channel}/history/{id}` | A stored report, as JSON. |
+| `GET {channel}/problems` | Every problem set in full, as JSON. Only for trusted callers. |
+| `GET {channel}/panel` | The page that the badge drawer and the DevTools dock show. |
+| `GET {channel}/client.js`, `client.css`, `badge.js`, `devtools.js` | The client assets. |
+
+The channel caches an asset forever when the request names the hash of the current build in `?v=`, as `renderBadge` does. With any other hash, it serves the asset uncached.
+
+## Who can use the channel
+
+The channel checks every request, and treats each caller as trusted or untrusted.
+
+### Hosts and origins
+
+These checks protect against DNS rebinding and against pages on other origins. The channel refuses a request when either of these is true:
+
+- The request addresses a host that isn't an IP address, `localhost`, a `*.localhost` subdomain, or an entry in `allowedHosts`.
+- A page on another origin made the request.
+
+The channel reads `Sec-Fetch-Site` to tell where a request came from. Without that header, the `Origin` header must match the host the request addresses. Requests with neither header, such as from `curl` or an editor integration, pass on the host check alone. A request that names no host is refused. For `fetchHandler`, the host falls back to the host of the request URL.
+
+In `allowedHosts`, an entry that starts with `.` also matches subdomains. Pass `true` to accept any host. The Vite plugin passes `server.allowedHosts`.
+
+### Trusted and untrusted callers
+
+The channel trusts a caller that connects from a loopback address. It reads the address from `req.socket.remoteAddress`, or from `request.ip` for `fetchHandler`. A trusted caller can see every stored report, and can use actions such as `open`.
+
+Any other caller is untrusted, including a caller whose address is unknown. This covers a dev server bound with `--host`, and a connection forwarded into a container. Untrusted callers still connect and receive updates, with these limits:
+
+- History and `hello` hold only the reports that concern the page. A report that names a request id concerns only the page with that id, never a page with the same path.
+- `/history/{id}` responds with a 404 for any other report.
+- `/problems` responds with a 403. Problem sets reach the page only as counts.
+- Log entries reach the page only when they belong to a request that concerns it.
+- The channel neither offers nor accepts `open`. The page opens an `editor://` URL on the machine that runs the browser instead.
+
+Behind a proxy, the peer address is the address of the proxy. In that case, pass `trusted` yourself:
 
 ```ts
 await channel.handler(req, res, {
-  trusted: isLoopback(clientAddress(req))
+  trusted: isFromThisMachine(req)
 })
 ```
 
-## Publishing
+In this example, `isFromThisMachine` stands for your own check, for example of a forwarded client address.
+
+## Publish reports
+
+Each method sends an update to the pages that it concerns.
 
 ```ts
-channel.setError(report) // pages swap content in place; replaces every open error
-channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
-channel.clearError(report.id) // retire one error: pages showing it reload or move on to the next open error that concerns them
-channel.clearError() // retire every error: pages reload, overlays dismiss
-channel.warn(report) // toast, and counted in the header until retired
-channel.clearWarning(report.id) // retire it: pages drop it from their count and toasts (no id retires every warning)
-channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer of trusted callers
-channel.log({ level: 'warn', text: 'careful' }, requestId, `${method} ${url}`) // also streamed to the pages that request concerns
-channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) // progress bar
+channel.setError(report)
+channel.setError(report, requestId, `${method} ${url}`)
+channel.clearError(report.id)
+channel.clearError()
 
-// the current problems of a long-running source (type checker, linter, audit), replacing any it published before
-channel.setProblems('typecheck', reports, { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
-channel.clearProblems('typecheck') // retire one source (no source retires every one)
+channel.warn(report)
+channel.clearWarning(report.id)
 
-channel.setDevTools(true) // a my-bad dock is registered in Vite DevTools, so badges with `awaitHost` wait for it
+channel.log({ level: 'warn', text: 'Slow response' })
+channel.log({ level: 'warn', text: 'Slow response' }, requestId, `${method} ${url}`)
 
-const stop = channel.subscribe((event) => {}) // receive every event the `sink` receives, until `stop()`
+channel.progress({ phase: 'build', percent: 40, message: 'Building server' })
+
+channel.setProblems('typecheck', reports, { label: 'TypeScript', url: '/__typecheck/' })
+channel.clearProblems('typecheck')
+
+channel.setDevTools(true)
 ```
 
-## Problem sets
+| Method | Description |
+| --- | --- |
+| `setError(report, requestId?, request?)` | Publish an error. Each page shows the newest open error that concerns it, and swaps it in place. |
+| `clearError(id?)` | Retire one error, or every error without an id. Pages that showed it reload, or move on to the next open error that concerns them. Overlays close. |
+| `warn(report)` | Publish a warning. Pages announce it, and count it until you retire it. |
+| `clearWarning(id?)` | Retire one warning, or every warning without an id. |
+| `log(entry, requestId?, request?)` | Publish a log entry. Levels are `trace`, `debug`, `info`, `log`, `warn`, `error`, and `fatal`. |
+| `progress(progress)` | Publish build progress, shown as a progress bar. |
+| `setProblems(source, reports, meta?)` | Publish the current problems of a source, replacing its earlier set. See [Publish problems](./problems.md). |
+| `clearProblems(source?)` | Retire the problem set of one source, or of every source without one. |
+| `setDevTools(registered)` | Record whether a `my-bad` dock is registered in Vite DevTools. See [Use with Vite](./vite.md#add-the-dock-for-a-channel-outside-the-plugin). |
 
-Problem sets stay out of `history` and the warning cap, raise no toasts and never take over a page. Republishing the same reports (by id and kind, in order) with the same meta is not broadcast again, so a source can publish after every run. Every page, trusted or not, receives a `problems` event per change carrying the source's error and warning counts but not its reports, and the counts of every set in `hello`. The sink also receives the reports that joined the set (`added`) and the ids of those that left it (`removed`), so a `fileSink` log records a problem when it joins the set rather than on every run. Sets belong to the channel, so a set replayed into a new channel is all `added` again. An empty set shows nothing, though its source stays listed with its meta.
+### Errors and requests
 
-With no `status` a source is idle; `status: 'checking'` shows a spinner while it runs, and `status: 'failed'` with an `error` reason replaces its count with `failed`, giving the reason in the pill's title. Sources with the same `group` are counted together under that name (`Nuxt 3`, or `Nuxt 2, 1 failed` when one of them failed), each listed in the title, as one entry opening the first of them. `channel.problems` returns every set in full.
+An error can name the request that it came from, with a `requestId` and a `request` such as `GET /widgets`. It then reaches only the pages that the request concerns, and replaces only earlier errors from the same request. Other pages list it in their history.
 
-Several sources may share one `url`, such as a tool serving one page for all its checkers. Each embeds it as given, so a source can add a query string the page understands (`/__checker/?tab=eslint`, say) to open it narrowed to its own problems.
+An error from no request reaches every page, and replaces every open error. Compile errors and client runtime errors usually have no request.
 
-A report's id hashes its name, message and the file, line and column of its first app frame, so build reports with `createReport` and pass the location: a compile-shaped input (`{ message, id, loc, frame }`) or `sources`, with `kind: 'warning'` for warnings, which are then named `Warning` unless the input has a name. `createReport` reads the file for a snippet, and lists a `sources` entry it cannot read in a `Sources` section rather than as a frame. For a tool that has already located its diagnostics, `createProblemReport` builds the report without reading anything, hashing its id the same way.
+A page rendered with a `requestId` matches errors by that id. A page without one matches errors by its path.
 
-### Problems from another tool
+### Logs
 
-A host feeds a tool's diagnostics in by mapping each run's results to reports and publishing the whole set. Any tool with a run lifecycle fits: a linter in watch mode, an a11y audit, or the server `api.subscribe` of vite-plugin-checker.
+A log entry without a request reaches only trusted callers. A log entry with a request also reaches the pages that the request concerns.
+
+### Build progress
+
+Several tools can report progress at the same time. Give each one a `source`. The channel keeps the latest update from each source, and shows the least advanced one, so the bar doesn't jump backwards. An update with `percent: 100` retires its source.
+
+## Read the channel state
+
+| Member | Description |
+| --- | --- |
+| `current` | The newest open error. |
+| `history` | Entries for the stored errors and warnings. |
+| `problems` | Every problem set, with its reports. |
+| `getReport(id)` | A stored report. |
+| `clients` | The number of connected pages. |
+| `subscribe(listener)` | Receive every event from now on. Returns a function that stops it. |
+| `close()` | Stop the keepalive and disconnect every page. |
+
+## Record events with sinks
+
+A sink receives every event that the channel publishes. Use one to log events, write them to a file, or pass them to a coding agent.
 
 ```ts
-import type { ErrorReport } from 'my-bad'
-import { createProblemReport } from 'my-bad'
+import { combineSinks, fileSink } from 'my-bad/sinks'
 
-const meta = { label: 'ESLint', url: '/__lint/' }
-let reports: ErrorReport[] = []
-
-linter.on('start', () => channel.setProblems('lint', reports, { ...meta, status: 'checking' }))
-linter.on('results', (results) => {
-  reports = results.map(result => createProblemReport({
-    name: 'ESLint',
-    message: result.message,
-    code: result.ruleId,
-    docsUrl: result.docsUrl,
-    file: result.file,
-    line: result.line,
-    column: result.column,
-    snippet: result.codeFrame,
-    kind: result.severity === 2
-      ? 'error'
-      : 'warning',
-  }))
-  channel.setProblems('lint', reports, meta)
+const channel = createChannel({
+  sink: combineSinks(
+    fileSink('.nuxt/my-bad.jsonl'),
+    event => console.log(event.type),
+  ),
 })
-linter.on('crash', error => channel.setProblems('lint', reports, { ...meta, status: 'failed', error: error.message }))
-linter.on('close', () => channel.clearProblems('lint'))
 ```
 
-`createProblemReport` takes `name`, `message`, `code`, `docsUrl`, `file` (absolute, or relative to `cwd`), `line`, `column`, `kind` (`error` by default, or `warning`) and `snippet`, either a `Snippet` or a code frame of `3 | code` lines, which may mark a line with `>`. A report with no `file` or `snippet` has no frames.
+`fileSink(path)` appends each event as a line of JSON, with a timestamp. By default, it records every event except `build`. Pass `{ types }` to choose the event types. `combineSinks` passes each event to several sinks.
 
-The badge stays silent while a clean run checks, shows `ESLint 3` once there is something to count, and opens its problems, with `url` as the full list. Problems show on the pages that render the badge (`renderBadge`).
+The channel publishes these event types:
 
-A problem's `name` heads it when it is opened, as an error's does. The drawer and the dock list each problem under its set's `label` (or `source`, without one), so a `name` that only repeats it (ignoring case) is left out of its row, and any other `name` (a diagnostic code such as `TS2322`, say) is shown before the message.
+| Type | Sent when |
+| --- | --- |
+| `hello` | A page connects. |
+| `error:set` | An error is published. |
+| `error:clear` | An error is retired. |
+| `history` | The history of a page changes. |
+| `warning` | A warning is published. |
+| `warning:clear` | A warning is retired. |
+| `log` | A log entry is published. |
+| `build` | Build progress is published. |
+| `problems` | A problem set changes. |
+| `problems:clear` | A problem set is retired. |
+
+## Open files in an editor
+
+Pages can open a file at the line of a frame. To turn this on, pass `open` to `createChannel`.
+
+With `open: true`, the channel launches the editor named in `LAUNCH_EDITOR`, `VISUAL`, or `EDITOR`. Without those, it falls back to the default app of the system, for common source and text files. On Windows, it never opens `.js` files this way, because the default app runs them. The same behaviour is available as `openInEditor` from `my-bad/channel`.
+
+Pass a function to handle the request yourself. Return `false` to refuse it:
+
+```ts
+const channel = createChannel({
+  open: ({ file, line, column }) => launchEditor(file, line, column),
+})
+```
+
+In this example, `launchEditor` stands for your own function.
+
+The channel refuses an `open` request in these cases:
+
+- The caller isn't trusted.
+- The request isn't a `POST` with an `application/json` body.
+- The file doesn't exist.
+- The file is outside `root`. The Vite plugin sets `root` to `server.fs.allow`.

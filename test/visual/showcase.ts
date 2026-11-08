@@ -1,8 +1,7 @@
 import type { Page } from 'playwright/test'
-import type { Plugin, PluginOption } from 'vite'
+import type { Plugin } from 'vite'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { DevTools } from '@vitejs/devtools'
 import { createServer } from 'vite'
 import { renderBadge } from '../../dist/index.mjs'
 import { myBad, useMyBad } from '../../dist/vite/index.mjs'
@@ -56,8 +55,8 @@ export async function startShowcase(options: { devtools: boolean }) {
     root,
     configFile: false,
     logLevel: 'silent',
+    devtools: options.devtools && { apply: 'serve', clientAuth: false },
     plugins: [
-      options.devtools && DevTools({ clientAuth: false }) as PluginOption,
       myBad({ devtools: options.devtools }),
       !options.devtools && badge,
     ],
