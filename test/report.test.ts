@@ -855,6 +855,9 @@ describe('positions quoted in an error message', () => {
   it.each([
     ['rewritten', 'Request failed'],
     ['cleared', ''],
+    ['shortened to a prefix of its first line', 'Invalid'],
+    ['shortened to a suffix of its first line', 'value:'],
+    ['shortened to a word inside its name', 'rr'],
   ])('does not read a module outside cwd named by a frame in a %s message', async (_, message) => {
     const error = new Error(`Invalid value:\nx\n    at a (${secret}:1:1)`)
     void error.stack
@@ -873,6 +876,8 @@ describe('positions quoted in an error message', () => {
   it.each([
     ['boom', 'Error: boom'],
     ['', 'Error'],
+    ['boom', 'Error [ERR_TEST]: boom'],
+    ['two\nlines', 'TypeError: two\nlines'],
   ])('reads a module outside cwd named by a frame below an unchanged message %j', async (message, header) => {
     const error = new Error(message)
     error.stack = `${header}\n    at a (${secret}:1:1)`

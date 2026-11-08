@@ -341,20 +341,21 @@ function normalizeInput(input: unknown): NormalizedError {
 }
 
 /**
- * V8 and JSC open a stack with the message, whose lines would otherwise parse as frames.
+ * V8 and JSC open a stack with a `name: message` header, whose lines would otherwise parse as frames.
  * A stack whose header cannot be found may still quote an earlier message.
  */
 function withoutHeader(stack: string, message: string, name: string): Pick<NormalizedError, 'stackFrames' | 'headerUnknown'> {
-  const at = message
-    ? stack.indexOf(message)
-    : stack.split('\n', 1)[0] === name
-      ? 0
-      : -1
-  return at === -1 || stack.slice(0, at).includes('\n')
-    ? { stackFrames: stack, headerUnknown: true }
-    : {
-        stackFrames: stack.slice(at + message.length),
+  const lines = stack.split('\n')
+  const count = message.split('\n').length
+  const header = lines.slice(0, count).join('\n')
+  const known = message
+    ? header === message || header.endsWith(`: ${message}`)
+    : header === name
+  return known
+    ? {
+        stackFrames: lines.slice(count).join('\n'),
       }
+    : { stackFrames: stack, headerUnknown: true }
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
