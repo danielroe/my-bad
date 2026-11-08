@@ -279,7 +279,7 @@ interface NormalizedError {
   stack?: string
   /** `stack` without the header quoting the message. */
   stackFrames?: string
-  /** `stackFrames` may include lines of a message, so only frames inside `cwd` are read. */
+  /** `stackFrames` may include lines of a message, so only frames inside `cwd` or allowed by a loader are read. */
   headerUnknown?: boolean
   code?: string
   diagnostic?: boolean
