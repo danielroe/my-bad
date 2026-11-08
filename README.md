@@ -239,7 +239,7 @@ const channel = createChannel({
 // Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css`, `badge.js` and
 // `devtools.js` (immutable when requested with `?v=`, as `renderBadge` does), the docked view at `panel` and, to
 // trusted callers, every problem set in full at `problems`
-server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()).catch(next))
+app.use((req, res, next) => channel.handler(req, res).then(handled => handled || next()).catch(next))
 // or fetch-style: await channel.fetchHandler(request)
 
 // Callers connecting from a loopback address (`req.socket.remoteAddress`, or `request.ip` for `fetchHandler`) are
