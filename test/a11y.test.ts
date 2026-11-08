@@ -670,7 +670,7 @@ describe.each(themes)('badge, theme: $name', (theme) => {
       : sample.ratio < 3)
     expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
     expect(samples.some(sample => sample.selector.includes('mb-problems'))).toBe(true)
-    for (const target of ['.mb-badge', '.mb-problems', '.mb-problems a']) {
+    for (const target of ['.mb-badge', '.mb-problems', '.mb-problems button']) {
       const size = await page.locator(`my-bad-overlay-badge ${target}`).boundingBox()
       expect(size!.height).toBeGreaterThanOrEqual(24)
     }

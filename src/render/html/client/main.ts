@@ -1,10 +1,11 @@
-import type { ChannelEvent } from '../../../channel/protocol'
+import type { BuildProgress, ChannelEvent, ProblemSet, ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
-import type { Dock, PageState } from '../state'
+import type { BadgeFocus, Dock, DockedIndex, DockedState, PageState } from '../state'
 import { toMarkdown } from '../../../report/markdown'
-import { escapeHtml } from '../escape'
+import { escapeHtml, safeUrl } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
-import { ICONS, pagerIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
+import { themeStyles } from '../theme'
+import { dockedSummary, ICONS, pagerIndex, renderDocked, renderIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -38,6 +39,20 @@ interface Mount {
   restore?: HTMLElement
   /** Thumbnail of the page behind the overlay, shown while maximised. */
   preview?: HTMLElement
+  /** Everything open, in docked mode. */
+  docked?: Docked
+}
+
+interface Docked {
+  state: DockedState
+  current?: ErrorReport
+  history: HistoryEntry[]
+  summaries: Map<string, ProblemSummary>
+  sets: Map<string, ProblemSet>
+  shown?: BadgeFocus
+  report?: ErrorReport
+  /** Scope of the `/events` stream, reused to fetch reports from the history. */
+  query: URLSearchParams
 }
 
 function readState(): PageState | undefined {
@@ -110,6 +125,9 @@ function mount(): Mount | undefined {
   const root = document.querySelector<HTMLElement>('[data-my-bad-root]')
   if (!root) {
     return
+  }
+  if (state.mode === 'docked') {
+    return dockedMount(state as unknown as DockedState, root)
   }
   return {
     state,
@@ -227,8 +245,12 @@ function childNodesOf(el: Element | null): ChildNode[] {
 let dismissal: ReturnType<typeof setTimeout> | undefined
 
 /** Cancel a pending dismissal, and build a new host if it has already gone. */
+function hosted(m: Mount): boolean {
+  return m.state.mode === 'overlay' && !!window.__MY_BAD_SOURCE__?.host
+}
+
 function revive(m: Mount): void {
-  if (m.state.mode !== 'overlay') {
+  if (m.state.mode !== 'overlay' || hosted(m)) {
     return
   }
   clearTimeout(dismissal)
@@ -254,7 +276,7 @@ interface RerenderOptions {
   announcement?: string
 }
 
-function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[], options: RerenderOptions = {}): void {
+function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEntry[], options: RerenderOptions = {}): void {
   const error = m.error
   const scroll = m.root.scrollTop
   const root = m.root.getRootNode() as Document | ShadowRoot
@@ -262,7 +284,7 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[], optio
   revive(m)
   m.error = error
   m.selected = undefined
-  m.state.report = report
+  m.state.report = report!
   if (history) {
     m.state.history = history
   }
@@ -270,7 +292,9 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[], optio
   const logFilter = m.root.querySelector<HTMLSelectElement>('[data-log-filter]')?.value ?? ''
   const logsOpen = !m.root.querySelector('[data-logs]')?.hasAttribute('hidden')
   const toasts = childNodesOf(m.root.querySelector('[data-toasts]'))
-  m.root.innerHTML = renderView(m.state)
+  m.root.innerHTML = m.docked
+    ? renderDocked(m.docked.state, dockedIndex(m.docked), report, m.docked.shown)
+    : renderView(m.state)
   m.root.querySelector('[data-fallback]')?.remove()
   if (logs.length) {
     m.root.querySelector('[data-log-list]')?.replaceChildren(...logs)
@@ -292,7 +316,9 @@ function rerender(m: Mount, report: ErrorReport, history?: HistoryEntry[], optio
   applyMode(m)
   m.root.scrollTop = options.inPlace ? scroll : 0
   if (!options.inPlace) {
-    announce(m, options.announcement ?? headline(report))
+    announce(m, options.announcement ?? (report
+      ? headline(report)
+      : 'Nothing to report'))
   }
   if (focused || !(options.quiet || options.inPlace)) {
     focusHeading(m)
@@ -733,6 +759,13 @@ function connect(m: Mount): void {
     : new EventSource(url)
   source.addEventListener('open', () => setLive(m, true))
   source.addEventListener('error', () => setLive(m, false))
+  const handOff = () => {
+    if (hosted(m)) {
+      dismiss(m)
+    }
+  }
+  addEventListener('my-bad:host', handOff)
+  handOff()
   const on = <T extends ChannelEvent['type']>(type: T, handler: (payload: Extract<ChannelEvent, { type: T }>['payload']) => void) => {
     source.addEventListener(type, (event) => {
       try {
@@ -770,7 +803,7 @@ function connect(m: Mount): void {
     if (bar) {
       bar.hidden = true
     }
-    if (m.overlay) {
+    if (m.overlay && !hosted(m)) {
       setHidden(m, false)
     }
   })
@@ -784,26 +817,7 @@ function connect(m: Mount): void {
       location.reload()
     }
   })
-  on('build', (payload) => {
-    const bar = m.root.querySelector<HTMLElement>('[data-progress]')
-    if (!bar) {
-      return
-    }
-    const done = payload.percent !== undefined && payload.percent >= 100
-    bar.hidden = done
-    bar.toggleAttribute('data-indeterminate', payload.percent === undefined)
-    if (payload.percent !== undefined) {
-      bar.style.setProperty('--mb-progress', `${Math.max(0, Math.min(100, payload.percent))}%`)
-      bar.setAttribute('aria-valuenow', String(Math.round(payload.percent)))
-    }
-    else {
-      bar.removeAttribute('aria-valuenow')
-    }
-    const label = bar.querySelector<HTMLElement>('[data-progress-label]')
-    if (label) {
-      label.textContent = payload.message ?? payload.phase
-    }
-  })
+  on('build', payload => showProgress(m, payload))
   on('warning', (payload) => {
     const known = !!m.state.history?.some(entry => entry.id === payload.report.id)
     m.state.history = payload.history
@@ -831,6 +845,406 @@ function connect(m: Mount): void {
   })
   shared?.dispatchEvent(new Event('attach'))
   notifyBadge(m)
+}
+
+function showProgress(m: Mount, payload: BuildProgress): void {
+  const bar = m.root.querySelector<HTMLElement>('[data-progress]')
+  if (!bar) {
+    return
+  }
+  const done = payload.percent !== undefined && payload.percent >= 100
+  bar.hidden = done
+  bar.toggleAttribute('data-indeterminate', payload.percent === undefined)
+  if (payload.percent !== undefined) {
+    bar.style.setProperty('--mb-progress', `${Math.max(0, Math.min(100, payload.percent))}%`)
+    bar.setAttribute('aria-valuenow', String(Math.round(payload.percent)))
+  }
+  else {
+    bar.removeAttribute('aria-valuenow')
+  }
+  const label = bar.querySelector<HTMLElement>('[data-progress-label]')
+  if (label) {
+    label.textContent = payload.message ?? payload.phase
+  }
+}
+
+/* Docked view */
+
+/** The badge of the page embedding this one, when it is on the same origin. */
+function embeddingSource(): MyBadSharedSource | undefined {
+  try {
+    return window.parent !== window
+      ? window.parent.__MY_BAD_SOURCE__
+      : undefined
+  }
+  catch {}
+}
+
+function dockedMount(state: DockedState, root: HTMLElement): Mount {
+  const docked: Docked = {
+    state,
+    history: [],
+    summaries: new Map(),
+    sets: new Map(),
+    query: new URLSearchParams(),
+  }
+  return {
+    state: { ...state, report: undefined } as unknown as PageState,
+    themeTarget: document.documentElement,
+    root,
+    docked,
+  }
+}
+
+function closeDrawer(): void {
+  window.parent.postMessage({ type: 'my-bad:close' }, location.origin)
+}
+
+/** How long an embedded view waits for the badge of the page embedding it, which may start after it. */
+const EMBED_TIMEOUT = 3000
+
+function embedding(): Promise<MyBadSharedSource | undefined> {
+  const found = embeddingSource()
+  if (found?.snapshot || window.parent === window) {
+    return Promise.resolve(found)
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, EMBED_TIMEOUT)
+    function done() {
+      clearTimeout(timer)
+      try {
+        window.parent.removeEventListener('my-bad:badge', done)
+      }
+      catch {}
+      resolve(embeddingSource())
+    }
+    try {
+      window.parent.addEventListener('my-bad:badge', done)
+    }
+    catch {
+      done()
+    }
+  })
+}
+
+async function adoptPage(m: Mount, d: Docked): Promise<void> {
+  const source = d.state.embed
+    ? await embedding()
+    : undefined
+  const page = source?.snapshot?.().overlay
+  d.state.docks = !!source?.host?.dock
+  if (page) {
+    const settings = {
+      cwd: page.cwd,
+      theme: page.theme,
+      editor: page.editor,
+      maxMessageLength: page.maxMessageLength,
+      requestId: page.requestId,
+      environment: page.environment,
+    }
+    Object.assign(d.state, settings)
+    Object.assign(m.state, settings)
+    applyTheme(m)
+    const styles = themeStyles(page.theme, ':root')
+    if (styles) {
+      const style = document.createElement('style')
+      style.textContent = styles
+      document.head.append(style)
+    }
+  }
+  d.query = new URL(source?.url ?? `${d.state.channel}/events`, location.href).searchParams
+}
+
+function dockedIndex(d: Docked): DockedIndex {
+  return {
+    current: d.current,
+    history: d.history,
+    problems: [
+      ...d.summaries.values(),
+    ].map((summary) => {
+      const set = d.sets.get(summary.source)
+      return set
+        ? { ...summary, reports: set.reports }
+        : summary
+    }),
+  }
+}
+
+function focusedItem(m: Mount): DOMStringMap | undefined {
+  const active = document.activeElement as HTMLElement | null
+  return active?.matches('[data-index] [data-id]') && m.root.contains(active)
+    ? { ...active.dataset }
+    : undefined
+}
+
+function refocusItem(m: Mount, item: DOMStringMap | undefined): void {
+  if (item) {
+    m.root.querySelector<HTMLElement>(`[data-index] [data-id="${CSS.escape(item.id ?? '')}"]${item.source
+      ? `[data-source="${CSS.escape(item.source)}"]`
+      : ':not([data-source])'}`)?.focus({ preventScroll: true })
+  }
+}
+
+function refreshIndex(m: Mount, d: Docked): void {
+  const index = dockedIndex(d)
+  const nav = m.root.querySelector('[data-index]')
+  const item = focusedItem(m)
+  const scroll = nav?.scrollTop ?? 0
+  nav?.insertAdjacentHTML('afterend', renderIndex(d.state, index, d.shown))
+  nav?.remove()
+  const next = m.root.querySelector('[data-index]')
+  if (next) {
+    next.scrollTop = scroll
+  }
+  refocusItem(m, item)
+  const count = m.root.querySelector('[data-docked-count]')
+  if (count) {
+    count.textContent = dockedSummary(index)
+  }
+}
+
+function sameFocus(a: BadgeFocus | undefined, b: BadgeFocus | undefined): boolean {
+  return a?.id === b?.id && a?.source === b?.source && !a?.list === !b?.list
+}
+
+async function findReport(m: Mount, d: Docked, focus: BadgeFocus): Promise<{ focus: BadgeFocus, report?: ErrorReport } | undefined> {
+  if (focus.source && focus.list) {
+    return safeUrl(d.summaries.get(focus.source)?.url)
+      ? {
+          focus: { source: focus.source, list: true },
+        }
+      : findReport(m, d, { source: focus.source })
+  }
+  if (focus.source) {
+    const reports = d.sets.get(focus.source)?.reports ?? []
+    const report = focus.id
+      ? reports.find(entry => entry.id === focus.id)
+      : reports[0]
+    return d.summaries.has(focus.source)
+      ? {
+          focus: { id: report?.id, source: focus.source },
+          report,
+        }
+      : undefined
+  }
+  if (!focus.id) {
+    return
+  }
+  if (d.current?.id === focus.id) {
+    return { focus, report: d.current }
+  }
+  if (d.history.some(entry => entry.id === focus.id)) {
+    const report = warnings.get(focus.id) ?? await fetchDocked(m, d, focus.id)
+    return report && { focus, report }
+  }
+  for (const set of d.sets.values()) {
+    const report = set.reports.find(entry => entry.id === focus.id)
+    if (report) {
+      return {
+        focus: { id: report.id, source: set.source },
+        report,
+      }
+    }
+  }
+}
+
+async function fetchDocked(m: Mount, d: Docked, id: string): Promise<ErrorReport | undefined> {
+  try {
+    const res = await fetch(`${d.state.channel}/history/${encodeURIComponent(id)}?${d.query}`)
+    const report = res.ok
+      ? await res.json() as ErrorReport
+      : undefined
+    if (report?.kind === 'warning') {
+      warnings.set(report.id, report)
+    }
+    return report
+  }
+  catch {}
+}
+
+function defaultFocus(d: Docked): BadgeFocus | undefined {
+  if (d.current) {
+    return { id: d.current.id }
+  }
+  const warning = d.history.filter(entry => entry.kind === 'warning').at(-1)
+  if (warning) {
+    return { id: warning.id }
+  }
+  for (const set of d.sets.values()) {
+    if (set.reports[0] && d.summaries.has(set.source)) {
+      return { id: set.reports[0].id, source: set.source }
+    }
+  }
+}
+
+let selection = 0
+
+async function selectDocked(m: Mount, focus: BadgeFocus | undefined): Promise<void> {
+  const d = m.docked!
+  const request = ++selection
+  const found = focus && await findReport(m, d, focus)
+  if (request !== selection) {
+    return
+  }
+  if (sameFocus(found?.focus, d.shown) && found?.report === d.report) {
+    return refreshIndex(m, d)
+  }
+  d.shown = found?.focus
+  d.report = found?.report
+  const item = focusedItem(m)
+  const scroll = m.root.querySelector('[data-index]')?.scrollTop ?? 0
+  rerender(m, d.report, d.history, { quiet: true })
+  const nav = m.root.querySelector('[data-index]')
+  if (nav) {
+    nav.scrollTop = scroll
+  }
+  refocusItem(m, item)
+}
+
+function settleDocked(m: Mount, d: Docked): Promise<void> | void {
+  const shown = d.shown
+  const open = shown && (shown.source
+    ? d.summaries.has(shown.source) && (shown.list || !shown.id || d.sets.get(shown.source)?.reports.some(report => report.id === shown.id))
+    : d.current?.id === shown.id || d.history.some(entry => entry.id === shown.id && entry.kind === 'warning'))
+  if (open) {
+    if (shown.source && shown.list && m.root.querySelector('.mb-docked-list')?.getAttribute('src') !== safeUrl(d.summaries.get(shown.source)?.url)) {
+      d.shown = undefined
+      return selectDocked(m, shown)
+    }
+    if (shown.source && !shown.id && !shown.list && d.sets.get(shown.source)?.reports.length) {
+      return selectDocked(m, { source: shown.source })
+    }
+    if (shown.source && shown.id) {
+      const report = d.sets.get(shown.source)?.reports.find(entry => entry.id === shown.id)
+      if (report && report !== d.report) {
+        d.report = report
+        return rerender(m, report, undefined, { inPlace: true })
+      }
+    }
+    return refreshIndex(m, d)
+  }
+  return selectDocked(m, defaultFocus(d))
+}
+
+function connectDocked(m: Mount, d: Docked): void {
+  const source = new EventSource(`${d.state.channel}/events?${d.query}`)
+  const on = <T extends ChannelEvent['type']>(type: T, handler: (payload: Extract<ChannelEvent, { type: T }>['payload']) => void) => {
+    source.addEventListener(type, (event) => {
+      try {
+        handler(JSON.parse((event as MessageEvent).data))
+      }
+      catch {}
+    })
+  }
+  let fetching: Promise<void> | undefined
+  let stale = false
+  const fetchSets = (): Promise<void> => {
+    if (fetching) {
+      stale = true
+      return fetching
+    }
+    fetching = fetch(`${d.state.channel}/problems`)
+      .then((res) => {
+        d.state.withheld = res.status === 403
+        return res.ok
+          ? res.json() as Promise<ProblemSet[]>
+          : []
+      })
+      .catch(() => [])
+      .then((sets) => {
+        d.sets = new Map(sets.map(set => [set.source, set]))
+        fetching = undefined
+        if (stale) {
+          stale = false
+          return fetchSets()
+        }
+      })
+    return fetching
+  }
+  let ready = false
+  let pending: BadgeFocus | undefined
+  const settle = () => ready && void settleDocked(m, d)
+
+  source.addEventListener('open', () => setLive(m, true))
+  source.addEventListener('error', () => setLive(m, false))
+  on('hello', async (payload) => {
+    actions.clear()
+    for (const action of payload.actions) {
+      actions.add(action)
+    }
+    d.current = payload.current
+    d.history = payload.history ?? []
+    d.summaries = new Map((payload.problems ?? []).map(set => [set.source, set]))
+    await fetchSets()
+    if (!ready) {
+      ready = true
+      return selectDocked(m, pending ?? defaultFocus(d))
+    }
+    settle()
+  })
+  on('error:set', (payload) => {
+    d.current = payload.report
+    d.history = payload.history
+    if (ready) {
+      void selectDocked(m, { id: payload.report.id })
+    }
+  })
+  on('error:clear', (payload) => {
+    if (!payload.id || d.current?.id === payload.id) {
+      d.current = undefined
+    }
+    settle()
+  })
+  on('history', (payload) => {
+    d.history = payload.history
+    settle()
+  })
+  on('warning', (payload) => {
+    warnings.set(payload.report.id, payload.report)
+    d.history = payload.history
+    if (ready && d.shown?.id === payload.report.id && !d.shown.source) {
+      d.report = payload.report
+      return rerender(m, payload.report, undefined, { inPlace: true })
+    }
+    settle()
+  })
+  on('warning:clear', (payload) => {
+    d.history = payload.history
+    settle()
+  })
+  on('problems', (payload) => {
+    d.summaries.set(payload.source, payload)
+    void fetchSets().then(settle)
+  })
+  on('problems:clear', (payload) => {
+    if (payload.source === undefined) {
+      d.summaries.clear()
+    }
+    else {
+      d.summaries.delete(payload.source)
+    }
+    settle()
+  })
+  on('log', payload => appendLog(m, payload))
+  on('build', payload => showProgress(m, payload))
+
+  addEventListener('message', (event) => {
+    const data = event.data as { type?: string } & BadgeFocus
+    if (event.source !== window.parent || event.origin !== location.origin || data?.type !== 'my-bad:select') {
+      return
+    }
+    const focus = { id: data.id, source: data.source, list: data.list }
+    window.parent.postMessage({ type: 'my-bad:selected' }, location.origin)
+    if (ready) {
+      void selectDocked(m, focus)
+    }
+    else {
+      pending = focus
+    }
+  })
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'my-bad:ready' }, location.origin)
+  }
 }
 
 /* Overlay chrome */
@@ -1297,6 +1711,20 @@ function bind(m: Mount): void {
       }
       case 'history':
         return void navigateHistory(m, Number(target.dataset.dir))
+      case 'select':
+        return void selectDocked(m, { id: target.dataset.id, source: target.dataset.source })
+      case 'list': {
+        const source = target.dataset.source
+        const dock = source === undefined
+          ? undefined
+          : m.docked?.summaries.get(source)?.devtoolsDock
+        const host = embeddingSource()?.host
+        return dock && host?.dock
+          ? host.dock(dock)
+          : void selectDocked(m, { source, list: true })
+      }
+      case 'close-docked':
+        return closeDrawer()
       case 'dismiss-toast': {
         event.stopPropagation()
         const toast = target.closest<HTMLElement>('[data-toast]')
@@ -1378,16 +1806,37 @@ function activate(m: Mount): void {
 }
 
 const m = mount()
-if (m) {
+if (m?.docked) {
+  m.root.innerHTML = renderDocked(m.docked.state, dockedIndex(m.docked))
+  activate(m)
+  const docked = m.docked
+  if (docked.state.drawer) {
+    addEventListener('keydown', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : undefined
+      const layered = !!m.root.querySelector('.mb-cause-picker[open], .mb-history[open], [data-menu-list]:not([hidden]), [data-logs]:not([hidden]), dialog[open]') || !!target?.closest('[data-toast]')
+      if (event.key === 'Escape' && !layered) {
+        closeDrawer()
+      }
+    }, true)
+  }
+  whenReady(() => void adoptPage(m, docked).then(() => connectDocked(m, docked)))
+}
+else if (m) {
   activate(m)
   addEventListener('resize', () => {
     markOverflowingSnippets(m)
     sizePreview(m)
   })
+  whenReady(() => connect(m))
+}
+
+function whenReady(callback: () => void): void {
   if (document.readyState === 'loading') {
-    addEventListener('DOMContentLoaded', () => connect(m), { once: true })
+    addEventListener('DOMContentLoaded', callback, { once: true })
   }
   else {
-    connect(m)
+    callback()
   }
 }

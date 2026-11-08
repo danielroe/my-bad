@@ -9,6 +9,7 @@
       "entry": [
         "src/render/html/client/main.ts",
         "src/render/html/client/badge.ts",
+        "src/render/html/client/devtools.ts",
         "scripts/*.ts",
         "playwright.config.ts",
         "test/visual/*.spec.ts"

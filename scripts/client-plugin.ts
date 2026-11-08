@@ -10,7 +10,7 @@ const BADGE_STYLES_ID = 'virtual:my-bad-badge-styles'
 export interface ClientPluginOptions {
   /**
    * Write the client bundles and stylesheet as `client.js` / `client.css` /
-   * `badge.js` next to the output and read them on first use, instead of
+   * `badge.js` / `devtools.js` next to the output and read them on first use, instead of
    * embedding them as string literals that every importer must parse.
    * Default `false`.
    */
@@ -19,9 +19,9 @@ export interface ClientPluginOptions {
 
 /**
  * Bundles `src/render/html/client/main.ts` and `client/badge.ts` into
- * self-contained IIFEs and exposes them (and the stylesheet) through
- * `getClientScript` / `getClientStyles` / `getBadgeScript` exports of
- * `virtual:my-bad-client`.
+ * self-contained IIFEs, and `client/devtools.ts` into an ES module, and exposes
+ * them (and the stylesheet) through `getClientScript` / `getClientStyles` /
+ * `getBadgeScript` / `getDevToolsScript` exports of `virtual:my-bad-client`.
  */
 export function clientPlugin(options: ClientPluginOptions = {}) {
   return {
@@ -35,15 +35,17 @@ export function clientPlugin(options: ClientPluginOptions = {}) {
       if (id !== `\0${VIRTUAL_ID}`) {
         return
       }
-      const [script, styles, badge] = await Promise.all([
+      const [script, styles, badge, devtools] = await Promise.all([
         bundleClient('main.ts'),
         bundleStyles('styles.css'),
         bundleStyles('badge.css').then(css => bundleClient('badge.ts', css)),
+        bundleClient('devtools.ts', '', 'esm'),
       ])
       const assets = {
         getClientScript: ['client.js', script],
         getClientStyles: ['client.css', styles],
         getBadgeScript: ['badge.js', badge],
+        getDevToolsScript: ['devtools.js', devtools],
       }
       if (!options.emit) {
         return Object.entries(assets).map(([name, [, source]]) => `export const ${name} = () => ${JSON.stringify(source)}\n`).join('')
@@ -87,7 +89,7 @@ async function bundleStyles(file: string): Promise<string> {
 }
 
 /** `styles` is the default export of `virtual:my-bad-badge-styles` inside the bundle. */
-async function bundleClient(entry: string, styles = ''): Promise<string> {
+async function bundleClient(entry: string, styles = '', format: 'iife' | 'esm' = 'iife'): Promise<string> {
   const bundle = await rolldown({
     input: `${root}client/${entry}`,
     platform: 'browser',
@@ -105,7 +107,7 @@ async function bundleClient(entry: string, styles = ''): Promise<string> {
     ],
   })
   try {
-    const { output } = await bundle.generate({ format: 'iife', minify: true, sourcemap: false })
+    const { output } = await bundle.generate({ format, minify: true, sourcemap: false })
     const code = output[0]!.code.replace(/\$(?=[&'`<\d])/g, '$ ')
     const unsafe = /\$[&'`<\d]/.exec(code)
     if (unsafe) {

@@ -33,14 +33,16 @@ export type ProblemStatus = 'checking' | 'idle' | 'failed'
 export interface ProblemMeta {
   /** Name of the source as shown to the user, e.g. `TypeScript`. */
   label?: string
-  /** Sources sharing a group are counted together in the badge under this name, e.g. `Nuxt`, as one entry linking to the first `url` among them. */
+  /** Sources sharing a group are counted together in the badge under this name, e.g. `Nuxt`, as one entry. */
   group?: string
   /** No status means `idle`. */
   status?: ProblemStatus
   /** Why the source failed, with `status: 'failed'`. */
   error?: string
-  /** URL of a page listing the problems in full. */
+  /** URL of a page listing the problems in full, shown in a frame, so it must allow framing by the app. */
   url?: string
+  /** Id of a Vite DevTools dock listing the problems in full, shown in place of `url` when the page runs DevTools. */
+  devtoolsDock?: string
 }
 
 /** A problem set as pages receive it: its counts, without the reports. */

@@ -114,7 +114,7 @@ Theme overrides stay inline, so a shared stylesheet still themes per response.
   <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-light.png" alt="A small pill in the corner of a page reading 2 warnings, followed by the newest one: NUXT_B4025: <NuxtLink> has both to and href" width="470">
 </picture>
 
-Problem sets from type checkers, linters and compilers (see `setProblems` below) are counted per source, or per `group` of sources, in a second pill beside it, which spins while a source is checking, reads `failed` for a source that could not run, and opens the source's `url` in a new tab. They never mount the overlay.
+Problem sets from type checkers, linters and compilers (see `setProblems` below) are counted per source, or per `group` of sources, in a second pill beside it, which spins while a source is checking, reads `failed` for a source that could not run, and opens the source's problems in a drawer beside the badge, with its `url` as the full list. They never mount the overlay.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-dark.png">
@@ -236,8 +236,9 @@ const channel = createChannel({
 // origin made (`Sec-Fetch-Site`, else `Origin` must match the host addressed).
 // Requests with neither header (`curl`, editor integrations) are allowed.
 
-// Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css` and `badge.js`
-// (immutable when requested with `?v=`, as `renderBadge` does)
+// Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css`, `badge.js` and
+// `devtools.js` (immutable when requested with `?v=`, as `renderBadge` does), the docked view at `panel` and, to
+// trusted callers, every problem set in full at `problems`
 server.on('request', (req, res) => channel.handler(req, res).then(handled => handled || next()))
 // or fetch-style: await channel.fetchHandler(request)
 
@@ -246,7 +247,8 @@ server.on('request', (req, res) => channel.handler(req, res).then(handled => han
 // untrusted (a `--host` binding, a connection forwarded into a container): the channel still connects and
 // streams, but its `hello.history` and the `history` payloads hold only the reports that concern the page
 // (a report naming a request id is matched by that id alone, never by path), `/history/:id` answers 404 for
-// any other report, log entries reach it only when attributed to a request that concerns it, and
+// any other report, `/problems` answers 403 (problem sets reach it as counts only), log entries reach it only
+// when attributed to a request that concerns it, and
 // privileged actions such as `open` are neither advertised nor accepted, so the
 // page opens an `editor://` URL on the machine running the browser instead.
 // Pass `trusted` explicitly behind a proxy, where the peer address is the proxy's.
@@ -273,7 +275,7 @@ const stop = channel.subscribe((event) => {}) // receive every event the `sink` 
 
 Problem sets stay out of `history` and the warning cap, raise no toasts and never take over a page. Republishing the same reports (by id and kind, in order) with the same meta is not broadcast again, so a source can publish after every run. Every page, trusted or not, receives a `problems` event per change carrying the source's error and warning counts but not its reports, and the counts of every set in `hello`. The sink also receives the reports that joined the set (`added`) and the ids of those that left it (`removed`), so a `fileSink` log records a problem when it joins the set rather than on every run. Sets belong to the channel, so a set replayed into a new channel is all `added` again. An empty set shows nothing, though its source stays listed with its meta.
 
-With no `status` a source is idle; `status: 'checking'` shows a spinner while it runs, and `status: 'failed'` with an `error` reason replaces its count with `failed`, giving the reason in the pill's title. Sources with the same `group` are counted together under that name (`Nuxt 3`, or `Nuxt 2, 1 failed` when one of them failed), each listed in the title, as one entry linking to the first `url` among them; group only sources whose full lists live in the same place. `channel.problems` returns every set in full.
+With no `status` a source is idle; `status: 'checking'` shows a spinner while it runs, and `status: 'failed'` with an `error` reason replaces its count with `failed`, giving the reason in the pill's title. Sources with the same `group` are counted together under that name (`Nuxt 3`, or `Nuxt 2, 1 failed` when one of them failed), each listed in the title, as one entry opening the first of them. `channel.problems` returns every set in full.
 
 A report's id hashes its name, message and the file, line and column of its first app frame, so build reports with `createReport` and pass the location: a compile-shaped input (`{ message, id, loc, frame }`) or `sources`, with `kind: 'warning'` for warnings, which are then named `Warning` unless the input has a name.
 
@@ -308,7 +310,7 @@ linter.on('crash', error => channel.setProblems('lint', reports, { ...meta, stat
 linter.on('close', () => channel.clearProblems('lint'))
 ```
 
-The badge stays silent while a clean run checks, shows `ESLint 3` once there is something to count, and opens `url` for the full list. Problems show on the pages that render the badge (`renderBadge`).
+The badge stays silent while a clean run checks, shows `ESLint 3` once there is something to count, and opens its problems, with `url` as the full list. Problems show on the pages that render the badge (`renderBadge`).
 
 ### Vite
 
@@ -325,6 +327,26 @@ export default defineConfig({
 The plugin maps frames through Vite's module graph, forwards compile errors from the HMR channel as `kind: 'compile'` reports, mounts the channel at `/__my-bad`, injects a tiny client into `index.html` so a running app shows the overlay, and clears it when the next update succeeds. Use `useMyBad(server)` from your own SSR middleware to build reports and pages with the same configuration. Sources are only read from disk where Vite would load them, following `server.fs.allow` and `server.fs.deny`.
 
 The client script and stylesheet are served from `/__my-bad/client.js` and `/__my-bad/client.css` with content-hashed URLs, rather than inlined into every error page. Pass `inlineClient: true` for self-contained output.
+
+### Vite DevTools
+
+With [Vite DevTools](https://github.com/vitejs/devtools) installed, `myBad()` adds a my-bad dock to it, and nothing else needs configuring. Pass `devtools: false` to leave it out. Without Vite DevTools nothing changes.
+
+In DevTools, the badge shows on every page and opens the dock rather than the overlay, and errors no longer take over the page. The dock lists the open error, the warnings and every problem set, and shows the one picked the way the overlay does. Its icon in the DevTools bar counts them, in red while any is an error. The open error and each problem set also appear in the DevTools messages panel with their file position, raising a toast when they first appear and showing a spinner while a set is `checking`, with actions to show them in the dock or show the set's full list. A set's `devtoolsDock` names a DevTools dock to switch to for its full list, in place of embedding its `url`.
+
+When the channel lives outside the Vite plugin (a framework serving it from its own dev server, say), add `myBadDevTools` next to the badge that server renders:
+
+```ts
+import { myBadDevTools } from 'my-bad/vite'
+
+export default defineConfig({
+  plugins: [
+    myBadDevTools({ channel: '/__my-bad' })
+  ]
+})
+```
+
+The channel serves the dock's page at `{channel}/panel` and its script at `{channel}/devtools.js`. Until the DevTools client starts, the badge mounts the overlay for an error as usual; pass `renderBadge({ awaitHost: 3000 })` to give it that long to take over first. An untrusted DevTools client never runs the dock's script, so keep the wait short.
 
 ## Presets
 

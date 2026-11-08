@@ -1,12 +1,14 @@
+import type { ProblemSummary } from '../../channel/protocol'
 import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../types'
-import type { PageState } from './state'
+import type { BadgeFocus, DockedIndex, DockedState, PageState } from './state'
 import { clampMessage } from '../../report/message'
 import { displayPath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
+import { countsLabel, dockedCounts, firstLine, reportLocation, warningCount } from './summary'
 
 export const ICONS = {
   file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6v20h12V6zM14 2v6h4M9 13h6m-6 4h6"/></svg>',
@@ -25,6 +27,9 @@ export const ICONS = {
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   minimize: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
+  error: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>',
+  list: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  checking: '<svg class="mb-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
 }
 
 const KIND_LABEL = { error: 'Error', warning: 'Warning', compile: 'Compile error' }
@@ -69,11 +74,7 @@ export function renderView(state: PageState, selected = 'r'): string {
 <main class="mb-main" data-report-id="${escapeHtml(report.id)}" tabindex="-1">
   ${renderReport(reportEntries(report).find(entry => entry.path === selected)?.report ?? report, state, selected)}
   ${renderFallback(state, selected)}
-  <div class="mb-secondary">${report.sections.length
-    ? `<button class="mb-tool" type="button" data-action="info">${ICONS.info}Request &amp; environment</button>`
-    : ''}${live
-    ? `<button class="mb-tool mb-tool-logs" type="button" data-action="logs" aria-pressed="false" aria-controls="mb-logs" title="Server logs" aria-label="Server logs">${ICONS.logs}Logs<span class="mb-badge" data-log-count hidden></span></button>`
-    : ''}${state.history?.length
+  <div class="mb-secondary">${renderSecondaryTools(report, live)}${state.history?.length
     ? `<details class="mb-history"><summary>${ICONS.history}History</summary><ol>${state.history.map((entry, index) => `<li><button type="button" data-action="history" data-dir="${index - pagerIndex(report, state.history!)}">${escapeHtml(entry.message)}</button></li>`).join('')}</ol></details>`
     : ''}</div>
 </main>
@@ -86,9 +87,117 @@ ${report.sections.length
 <section class="mb-toasts" data-toasts aria-live="polite" aria-label="Warnings"></section>`
 }
 
-export function warningCount(history: HistoryEntry[] | undefined): number {
-  return history?.filter(entry => entry.kind === 'warning').length ?? 0
+function renderSecondaryTools(report: ErrorReport | undefined, live: boolean): string {
+  return `${report?.sections.length
+    ? `<button class="mb-tool" type="button" data-action="info">${ICONS.info}Request &amp; environment</button>`
+    : ''}${live
+    ? `<button class="mb-tool mb-tool-logs" type="button" data-action="logs" aria-pressed="false" aria-controls="mb-logs" title="Server logs" aria-label="Server logs">${ICONS.logs}Logs<span class="mb-badge" data-log-count hidden></span></button>`
+    : ''}`
 }
+
+function failed(set: ProblemSummary): boolean {
+  return set.status === 'failed'
+}
+
+export function dockedSummary(index: DockedIndex): string {
+  return countsLabel(dockedCounts(index)) || 'All clear'
+}
+
+function renderIndexItem(entry: { id: string, kind: string, name: string, message: string }, location: string, shown: BadgeFocus | undefined, source?: string): string {
+  const current = shown?.id === entry.id && shown.source === source
+  return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${entry.kind === 'warning'
+    ? ICONS.warning
+    : ICONS.error}<span class="mb-index-title">${escapeHtml(`${entry.name}: ${firstLine(entry.message)}`)}</span>${location
+    ? `<span class="mb-index-loc">${escapeHtml(location)}</span>`
+    : ''}</button></li>`
+}
+
+function indexLocation(report: ErrorReport, state: Pick<PageState, 'cwd'>): string {
+  const frame = reportLocation(report)
+  return frame?.file
+    ? `${displayPath(frame, state.cwd)}${frame.line === undefined
+      ? ''
+      : `:${frame.line}${frame.column === undefined
+        ? ''
+        : `:${frame.column}`}`}`
+    : ''
+}
+
+function renderIndexSet(set: DockedIndex['problems'][number], state: DockedState, shown: BadgeFocus | undefined): string {
+  const url = safeUrl(set.url)
+  const status = failed(set)
+    ? `failed${set.error
+      ? `: ${set.error}`
+      : ''}`
+    : countsLabel(set)
+  const reports = set.reports ?? []
+  const listed = shown?.list && shown.source === set.source
+  return `<section class="mb-index-group" data-index-source="${escapeHtml(set.source)}"${attr('data-focused', shown?.source === set.source && !shown.id)}><h2>${set.status === 'checking'
+    ? ICONS.checking
+    : ''}<span class="mb-index-label">${escapeHtml(set.group
+    ? `${set.group} · ${set.label ?? set.source}`
+    : set.label ?? set.source)}</span><span class="mb-count">${escapeHtml(status)}</span>${url || (set.devtoolsDock && state.docks)
+    ? `<button type="button" class="mb-index-list" data-action="list" data-source="${escapeHtml(set.source)}" title="Show the full list" aria-label="Show the full list" aria-pressed="${!!listed}">${ICONS.list}</button>`
+    : ''}</h2>${reports.length
+    ? `<ul>${reports.map(report => renderIndexItem(report, indexLocation(report, state), shown, set.source)).join('')}</ul>`
+    : ''}</section>`
+}
+
+/** The list beside a docked view, of the open error, the warnings and every problem set. */
+export function renderIndex(state: DockedState, index: DockedIndex, shown?: BadgeFocus): string {
+  const warnings = (index.history ?? []).filter(entry => entry.kind === 'warning').reverse()
+  const sets = index.problems.filter(set => set.errors + set.warnings || failed(set) || set.status === 'checking')
+  const groups = [
+    index.current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(index.current, indexLocation(index.current, state), shown)}</ul></section>`,
+    warnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${warnings.length}</span></h2><ul>${warnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
+    ...sets.map(set => renderIndexSet(set, state, shown)),
+  ].filter(Boolean)
+  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${groups.length
+    ? groups.join('')
+    : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
+}
+
+/** A docked view: the index of everything open, and the report it has selected rendered as the overlay renders it. */
+export function renderDocked(state: DockedState, index: DockedIndex, report?: ErrorReport, shown?: BadgeFocus, selected = 'r'): string {
+  const live = !!state.channel
+  const name = escapeHtml(state.theme?.name ?? 'my-bad')
+  const lockup = `${state.theme?.logo ?? ''}<span class="mb-brand-name${state.theme?.logo ? ' mb-sr-only' : ''}">${name}</span>`
+  const view = report && { ...state, mode: 'docked' as const, report }
+  const set = shown?.list
+    ? index.problems.find(entry => entry.source === shown.source)
+    : undefined
+  const list = safeUrl(set?.url)
+  return `<header class="mb-header mb-corners">
+  <div class="mb-brand-group"><p class="mb-brand">${lockup}</p><span class="mb-header-count" data-docked-count>${escapeHtml(dockedSummary(index))}</span></div>
+  <nav class="mb-tools" aria-label="Tools"><ul><li><button class="mb-tool" type="button" data-action="theme" title="Toggle colour scheme" aria-label="Toggle colour scheme">${ICONS.theme}</button></li>${state.drawer
+    ? `<li><button class="mb-tool" type="button" data-action="close-docked" title="Close" aria-label="Close">${ICONS.close}</button></li>`
+    : ''}</ul></nav>
+  ${live ? '<div class="mb-progress" data-progress hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Build progress"><div class="mb-progress-bar"></div><span class="mb-progress-label" data-progress-label></span></div>' : ''}
+</header>
+<div class="mb-sr-only" role="status" aria-live="polite" data-announce></div>
+<div class="mb-docked">
+${renderIndex(state, index, shown)}
+<main class="mb-main"${attr('data-report-id', report?.id)}${attr('data-list', !!list)} tabindex="-1">
+  ${list
+    ? `<p class="mb-docked-list-bar"><a href="${escapeHtml(list)}" target="_blank" rel="noreferrer">Open in a new tab${ICONS.open}</a></p><iframe class="mb-docked-list" src="${escapeHtml(list)}" title="${escapeHtml(`${set!.label ?? set!.source}: full list`)}"></iframe>`
+    : view
+      ? `${renderReport(reportEntries(view.report).find(entry => entry.path === selected)?.report ?? view.report, view, selected)}
+  ${renderFallback(view, selected)}`
+      : state.withheld && shown?.source && index.problems.some(entry => entry.source === shown.source && entry.errors + entry.warnings)
+        ? '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Problems listed on the dev machine</p><p>The dev server only lists problems on its own machine. Open this page there to see them.</p></div>'
+        : '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Nothing to report</p><p>Errors, warnings and problems from the dev server show up here as they happen.</p></div>'}
+  <div class="mb-secondary">${renderSecondaryTools(report, live)}</div>
+</main>
+</div>
+${live
+  ? renderLogDrawer()
+  : ''}
+${report?.sections.length
+  ? renderInfoDialog(report.sections)
+  : ''}`
+}
+
+export { warningCount }
 
 export function warningLabel(history: HistoryEntry[] | undefined): string {
   const count = warningCount(history)

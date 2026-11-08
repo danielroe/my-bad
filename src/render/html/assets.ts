@@ -1,5 +1,5 @@
 import { fnv1a64Base36 } from 'fnv1a-64'
-import { getBadgeScript, getClientScript, getClientStyles } from 'virtual:my-bad-client'
+import { getBadgeScript, getClientScript, getClientStyles, getDevToolsScript } from 'virtual:my-bad-client'
 
 /**
  * The client script and stylesheet that `renderPage` and `renderOverlay` inline
@@ -19,7 +19,7 @@ export const clientAssets: { script: string, styles: string, badge: string } = {
 }
 
 /** Path under a channel base, content type and source of each asset. */
-export const ASSET_FILES: Record<'script' | 'styles' | 'badge', readonly [file: string, type: string, source: () => string]> = {
+export const ASSET_FILES: Record<'script' | 'styles' | 'badge' | 'devtools', readonly [file: string, type: string, source: () => string]> = {
   script: [
     'client.js',
     'text/javascript',
@@ -35,6 +35,11 @@ export const ASSET_FILES: Record<'script' | 'styles' | 'badge', readonly [file: 
     'text/javascript',
     () => clientAssets.badge,
   ],
+  devtools: [
+    'devtools.js',
+    'text/javascript',
+    getDevToolsScript,
+  ],
 }
 
 const hashes = new Map<string, string>()
@@ -49,11 +54,12 @@ export function assetHash(key: keyof typeof ASSET_FILES): string {
 }
 
 /** Content-hashed URLs of the assets under `base`, so they can be cached indefinitely. */
-export function assetUrls(base: string): { script: string, styles: string, badge: string } {
+export function assetUrls(base: string): { script: string, styles: string, badge: string, devtools: string } {
   const url = (key: keyof typeof ASSET_FILES) => `${base}/${ASSET_FILES[key][0]}?v=${assetHash(key)}`
   return {
     script: url('script'),
     styles: url('styles'),
     badge: url('badge'),
+    devtools: url('devtools'),
   }
 }

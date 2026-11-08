@@ -478,6 +478,35 @@ describe('client assets', () => {
     expect(await head!.text()).toBe('')
     channel.close()
   })
+
+  it('serves the DevTools script and the docked page under the channel base', async () => {
+    const channel = createChannel()
+    const script = await channel.fetchHandler(new Request(`http://localhost${assetUrls('/__my-bad').devtools}`), { trusted: false })
+    expect(script?.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(await script!.text()).toMatch(/export\s*\{/)
+    const panel = await channel.fetchHandler(new Request('http://localhost/base/__my-bad/panel?embed'), { trusted: false })
+    expect(panel?.status).toBe(200)
+    expect(panel?.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    const html = await panel!.text()
+    expect(html).toContain('{"mode":"docked","channel":"/base/__my-bad","embed":true')
+    expect(html).toContain(`<script src="${assetUrls('/base/__my-bad').script}"></script>`)
+    expect(html).toContain(`<link rel="stylesheet" href="${assetUrls('/base/__my-bad').styles}">`)
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/panel', { method: 'POST' })))?.status).toBe(405)
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/panel', {
+      headers: { 'sec-fetch-site': 'cross-site' },
+    })))?.status).toBe(403)
+    channel.close()
+  })
+
+  it('keeps the docked page\'s assets on the dev server for a path starting with several slashes', async () => {
+    const channel = createChannel()
+    for (const path of ['//evil.example/panel', '///evil.example/panel']) {
+      const html = await (await channel.fetchHandler(new Request(`http://localhost${path}`), { trusted: false }))!.text()
+      expect(html).toContain(`<script src="${assetUrls('/evil.example').script}"></script>`)
+      expect(html).not.toContain('//evil.example')
+    }
+    channel.close()
+  })
 })
 
 describe('cross-origin requests', () => {
@@ -1155,6 +1184,43 @@ describe('problem sets', () => {
       kind,
     }
   }
+
+  it('serves every set in full to trusted callers only', async () => {
+    const channel = createChannel()
+    const read = async () => (await channel.fetchHandler(new Request('http://localhost/__my-bad/problems'), { trusted: true }))!.json()
+    expect(await read()).toEqual([])
+    const type = await problem('Type mismatch')
+    channel.setProblems('ts', [type], { label: 'TypeScript', url: '/__ts' })
+    expect(await read()).toEqual([
+      {
+        source: 'ts',
+        reports: [type],
+        label: 'TypeScript',
+        url: '/__ts',
+      },
+    ])
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/problems'), { trusted: false }))?.status).toBe(403)
+    expect((await channel.fetchHandler(new Request('http://localhost/__my-bad/problems')))?.status).toBe(403)
+    channel.clearProblems('ts')
+    expect(await read()).toEqual([])
+    channel.close()
+  })
+
+  it('republishes a set when only its devtools dock changes', async () => {
+    const sunk: any[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    channel.setProblems('ts', [], { devtoolsDock: 'checker' })
+    channel.setProblems('ts', [], { devtoolsDock: 'checker' })
+    channel.setProblems('ts', [], { devtoolsDock: 'other' })
+    channel.setProblems('ts', [])
+    expect(sunk.filter(event => event.type === 'problems').map(event => event.payload.devtoolsDock)).toEqual(['checker', 'other', undefined])
+    expect((await hello(channel)).problems).toEqual([
+      { source: 'ts', errors: 0, warnings: 0 },
+    ])
+    channel.close()
+  })
 
   it('streams counts per source, replacing the set each time, and keeps them out of the history', async () => {
     const sunk: any[] = []

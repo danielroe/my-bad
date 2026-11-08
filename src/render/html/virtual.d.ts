@@ -2,6 +2,7 @@ declare module 'virtual:my-bad-client' {
   export const getClientScript: () => string
   export const getClientStyles: () => string
   export const getBadgeScript: () => string
+  export const getDevToolsScript: () => string
 }
 
 declare module 'virtual:my-bad-badge-styles' {
