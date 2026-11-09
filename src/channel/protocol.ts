@@ -47,8 +47,8 @@ export interface ProblemMeta {
   url?: string
   /**
    * Id of a Vite DevTools dock listing the problems in full. When the page runs
-   * DevTools, the badge switches to it for this source, unless the source is
-   * counted with others in a `group`, and it replaces `url` as the full list.
+   * DevTools, it replaces `url` as the full list in the my-bad dock, and the
+   * source gets no DevTools message, since its dock posts its own.
    */
   devtoolsDock?: string
 }

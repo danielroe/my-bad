@@ -99,7 +99,7 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
 
     for (const summary of snapshot.problems) {
       const failed = summary.status === 'failed'
-      if (!summary.errors && !summary.warnings && !failed) {
+      if (summary.devtoolsDock || (!summary.errors && !summary.warnings && !failed)) {
         continue
       }
       const reports = summary.reports ?? []
@@ -271,20 +271,17 @@ function docsAction(dockId: string, focus: BadgeFocus, url: string | undefined):
     : []
 }
 
-function listAction(dockId: string, set: Pick<ProblemSummary, 'source' | 'url' | 'devtoolsDock'>): MessageAction[] {
-  const activate = set.devtoolsDock
-    ? { dockId: set.devtoolsDock }
-    : safeUrl(set.url) && {
-      dockId,
-      params: { source: set.source, list: true },
-    }
-  return activate
+function listAction(dockId: string, set: Pick<ProblemSummary, 'source' | 'url'>): MessageAction[] {
+  return safeUrl(set.url)
     ? [
         {
           id: 'list',
           label: 'Full list',
           kind: 'activate',
-          activate,
+          activate: {
+            dockId,
+            params: { source: set.source, list: true },
+          },
         },
       ]
     : []
