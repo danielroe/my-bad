@@ -198,6 +198,11 @@ interface Viewer {
   trusted: boolean
 }
 
+interface Raised {
+  id: string
+  origin: ReportRequest
+}
+
 interface Client extends Viewer {
   send: (chunk: string) => void
   close: () => void
@@ -214,6 +219,7 @@ function decodeId(segment: string): string {
 
 const PRIVILEGED = new Set(['open'])
 const MAX_WARNINGS = 100
+const MAX_ORIGINS = 20
 const ASSET_KEYS = Object.keys(ASSET_FILES) as Array<keyof typeof ASSET_FILES>
 
 const SSE_HEADERS = {
@@ -226,12 +232,13 @@ const SSE_HEADERS = {
 export function createChannel(options: ChannelOptions = {}): Channel {
   const max = options.history ?? 20
   const reports = new Map<string, ErrorReport>()
-  const origins = new Map<string, ReportRequest>()
+  /** The requests each report was published for, by scope key, oldest first. */
+  const origins = new Map<string, Map<string, ReportRequest>>()
   const live = new Map<string, BuildProgress>()
   const problemSets = new Map<string, ProblemSet>()
   const listeners = new Set<Sink>()
-  /** Ids of the errors not yet cleared, oldest first. */
-  const raised = new Set<string>()
+  /** The errors not yet cleared, each with the request it was published for, oldest first. */
+  let raised: Raised[] = []
   const clients = new Set<Client>()
   const actions: string[] = []
   if (options.open) {
@@ -246,7 +253,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   const helloFrames = new Map<string, string>()
 
   function concernsViewer(id: string, viewer: Viewer): boolean {
-    return concernsClient(viewer.scope, origins.get(id) ?? {}, !viewer.trusted)
+    const from = origins.get(id)
+    return !from || [
+      ...from.values(),
+    ].some(origin => concernsClient(viewer.scope, origin, !viewer.trusted))
   }
 
   function history(viewer?: Viewer): HistoryEntry[] {
@@ -261,7 +271,18 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   function remember(report: ErrorReport, request: ReportRequest = {}): void {
     reports.delete(report.id)
     reports.set(report.id, report)
-    origins.set(report.id, request)
+    const scope = scopeKey(request)
+    const from = (scope && origins.get(report.id)) || new Map<string, ReportRequest>()
+    from.delete('')
+    from.delete(scope)
+    from.set(scope, request)
+    origins.set(report.id, from)
+    for (const oldest of [
+      ...from.keys(),
+    ].slice(0, Math.max(0, from.size - MAX_ORIGINS))) {
+      from.delete(oldest)
+      raised = raised.filter(entry => entry.id !== report.id || scopeKey(entry.origin) !== oldest)
+    }
     const warning = report.kind === 'warning'
     const same = [
       ...reports.values(),
@@ -269,25 +290,23 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     for (const oldest of same.slice(0, Math.max(0, same.length - (warning ? MAX_WARNINGS : max)))) {
       reports.delete(oldest.id)
       origins.delete(oldest.id)
-      raised.delete(oldest.id)
+      raised = raised.filter(entry => entry.id !== oldest.id)
     }
     helloFrames.clear()
   }
 
   /** The newest open error that concerns a page. */
-  function shownTo(viewer: Viewer): ErrorReport | undefined {
-    let shown: string | undefined
-    for (const id of raised) {
-      if (concernsViewer(id, viewer)) {
-        shown = id
+  function shownTo(viewer: Viewer): Raised | undefined {
+    let shown: Raised | undefined
+    for (const entry of raised) {
+      if (concernsClient(viewer.scope, entry.origin, !viewer.trusted)) {
+        shown = entry
       }
     }
-    return shown === undefined
-      ? undefined
-      : reports.get(shown)
+    return shown
   }
 
-  function snapshot(): Map<Client, ErrorReport | undefined> {
+  function snapshot(): Map<Client, Raised | undefined> {
     return new Map([...clients].map(client => [
       client,
       shownTo(client),
@@ -303,19 +322,19 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     }
   }
 
-  function errorSet(report: ErrorReport, entries: HistoryEntry[]): ChannelEvent {
+  function errorSet(report: ErrorReport, origin: ReportRequest, entries: HistoryEntry[]): ChannelEvent {
     return {
       type: 'error:set',
       payload: {
         report,
         history: entries,
-        ...origins.get(report.id),
+        ...origin,
       },
     }
   }
 
   /** Tell a page whose error went away, and show it the next open error that concerns it. Returns whether that sent it the history. */
-  function settle(client: Client, previous: ErrorReport | undefined): boolean {
+  function settle(client: Client, previous: Raised | undefined): boolean {
     const next = shownTo(client)
     if (!previous || next?.id === previous.id) {
       return false
@@ -325,7 +344,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       payload: { id: previous.id },
     })
     if (next) {
-      sendTo(client, errorSet(next, history(client.trusted ? undefined : client)))
+      sendTo(client, errorSet(reports.get(next.id)!, next.origin, history(client.trusted ? undefined : client)))
     }
     return !!next
   }
@@ -380,7 +399,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
 
   /** The current error is only announced to the pages it concerns; the rest just learn it happened. */
   function hello(client: Client): string {
-    const shown = shownTo(client)
+    const shown = reports.get(shownTo(client)?.id ?? '')
     const problems = problemSets.size
       ? [
           ...problemSets.values(),
@@ -705,15 +724,10 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       const before = snapshot()
       remember(report, origin)
       const scope = scopeKey(origin)
-      for (const id of raised) {
-        if (!scope || scopeKey(origins.get(id)) === scope) {
-          raised.delete(id)
-        }
-      }
-      raised.delete(report.id)
-      raised.add(report.id)
+      raised = raised.filter(entry => scope && scopeKey(entry.origin) !== scope && origins.get(entry.id)?.has(scopeKey(entry.origin)))
+      raised.push({ id: report.id, origin })
       const reaches = (client: Client) => concernsClient(client.scope, origin, !client.trusted)
-      const set = (entries: HistoryEntry[]) => errorSet(report, entries)
+      const set = (entries: HistoryEntry[]) => errorSet(report, origin, entries)
       sendScoped(set, reaches)
       notify(set(history()))
       const settled = new Set([...clients].filter(client => !reaches(client) && settle(client, before.get(client))))
@@ -723,16 +737,13 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       }), client => !reaches(client) && !settled.has(client))
     },
     clearError(id) {
-      if (id && !raised.has(id)) {
+      if (id && !raised.some(entry => entry.id === id)) {
         return
       }
       const before = snapshot()
-      if (id) {
-        raised.delete(id)
-      }
-      else {
-        raised.clear()
-      }
+      raised = id
+        ? raised.filter(entry => entry.id !== id)
+        : []
       helloFrames.clear()
       for (const client of clients) {
         settle(client, before.get(client))
@@ -868,7 +879,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
       ]
     },
     get current() {
-      return reports.get([...raised].at(-1) ?? '')
+      return reports.get(raised.at(-1)?.id ?? '')
     },
     get history() {
       return history()
