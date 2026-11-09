@@ -76,7 +76,8 @@ export type ChannelEvent
   = | { type: 'hello', payload: { version: string, actions: string[], current?: ErrorReport, history?: HistoryEntry[], problems?: ProblemSummary[], devtools?: boolean } }
     | { type: 'error:set', payload: { report: ErrorReport, history: HistoryEntry[] } & ReportRequest }
     | { type: 'history', payload: { history: HistoryEntry[] } }
-    | { type: 'error:clear', payload: { id?: string } }
+    /** Sinks also get the request named when an error is retired for that request only. */
+    | { type: 'error:clear', payload: { id?: string } & ReportRequest }
     | { type: 'warning', payload: { report: ErrorReport, history: HistoryEntry[] } }
     | { type: 'warning:clear', payload: { id?: string, history: HistoryEntry[] } }
     | { type: 'log', payload: LogEntry & ReportRequest }
