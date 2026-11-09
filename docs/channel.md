@@ -171,12 +171,33 @@ Several tools can report progress at the same time. Give each one a `source`. Th
 | Member | Description |
 | --- | --- |
 | `current` | The newest open error. |
-| `history` | Entries for the stored errors and warnings. |
+| `history` | Entries for every stored error and warning, whatever request it came from. |
+| `historyFor(request)` | The entries that the channel sends a page rendered for a request. See [History for one page](#history-for-one-page). |
 | `problems` | Every problem set, with its reports. |
 | `getReport(id)` | A stored report. |
 | `clients` | The number of connected pages. |
 | `subscribe(listener)` | Receive the events that a sink receives, from now on. Returns a function that stops it. |
 | `close()` | Stop the keepalive and disconnect every page. |
+
+### History for one page
+
+`historyFor` returns the history that the channel sends a page when it connects. Pass it to `renderPage` or `renderOverlay` as `history`, so the page lists its history before it connects:
+
+```ts
+res.end(renderPage(report, {
+  channel: '/__my-bad',
+  requestId,
+  history: channel.historyFor({ requestId }),
+}))
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `requestId` | | Id of the request that the page was rendered for. |
+| `path` | | `pathname + search` of the page, for errors that name only a `request`. |
+| `trusted` | `false` | Include the entries of every request, as `history` does. |
+
+The entries follow the rules in [Errors and requests](#errors-and-requests) for an untrusted page. Unless you pass `trusted: true`, they never include errors from other requests.
 
 ## Record events with sinks
 

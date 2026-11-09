@@ -80,8 +80,8 @@ The request id keeps the error on the page of the request that failed. `ctx.emit
 | `report(error, options?)` | Builds a report with the plugin's loaders and presets. |
 | `emit(error, options?)` | Builds a report, publishes it, and shows it in the overlay of open pages. |
 | `clear(id?)` | Retires one error, or every error without an id. |
-| `page(report, options?)` | Renders a full error page connected to the channel. |
-| `overlay(report, options?)` | Renders an overlay connected to the channel. |
+| `page(report, options?)` | Renders a full error page connected to the channel, with the history for `options.requestId`. |
+| `overlay(report, options?)` | Renders an overlay connected to the channel, with the history for `options.requestId`. |
 
 To show the badge on your server-rendered pages, add `renderBadge({ channel: ctx.base })` to their `<head>`. See [Badge](./rendering.md#badge).
 

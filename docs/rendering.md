@@ -37,7 +37,7 @@ With a `channel`, the page connects to the [live channel](./channel.md). It swap
 | `cwd` | | Directory that paths are shown relative to. |
 | `channel` | | Base path of the live channel, for example `/__my-bad`. Without it, the page is static. |
 | `requestId` | | Id of the request that the page was rendered for. The channel uses it to match errors to the page. See [Errors and requests](./channel.md#errors-and-requests). |
-| `history` | | Entries to list before the page connects to the channel. `channel.history` holds every stored report, so don't pass it to pages that untrusted callers can load. |
+| `history` | | Entries to list before the page connects to the channel. Pass `channel.historyFor({ requestId })`. `channel.history` holds every stored report, so don't pass it to pages that untrusted callers can load. See [History for one page](./channel.md#history-for-one-page). |
 | `environment` | | Where the error happened, for example `Server` or `Client`. Shown next to the error name. |
 | `theme` | | See [Theming](#theming). |
 | `editor` | `vscode` | URL scheme for opening files when the channel has no `open` action. |
