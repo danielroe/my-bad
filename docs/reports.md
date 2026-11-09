@@ -124,7 +124,7 @@ Paths in an error object, such as entries of `sources` and the `loc` of a compil
 | `sidecar` | `true` | Read `<file>.map` files. |
 | `inline` | `true` | Read `sourceMappingURL` comments. |
 | `roots` | Unrestricted | Directories the loader may read, maps included. The `sourcesContent` of a map is shown only for sources that `roots` and `canRead` allow. |
-| `canRead` | | A check for each file, after `roots`. It receives an absolute path with forward slashes. |
+| `canRead` | | A check for each file, after `roots`. It receives an absolute path with forward slashes, before symlinks are resolved. To exclude a file that a symlink can lead to, resolve the path with `realpathSync` first. |
 
 `sourceMapLoader` takes these options:
 
@@ -137,7 +137,7 @@ Paths in an error object, such as entries of `sources` and the `loc` of a compil
 | `sourcesContent` | `true` | Use the `sourcesContent` of the map for snippets. Pass a function to decide for each source. |
 | `base(file)` | Directory of the file | Directory that relative sources in the map resolve against. |
 
-`viteLoader(server, { fs })` falls back to reading files from disk unless you pass `fs: false`.
+`viteLoader(server, { fs })` falls back to reading files from disk, at any absolute path, unless you pass `fs: false`. `roots` of an `fsLoader` later in the list don't confine these reads. Pass `fs: false` if errors can come from untrusted input.
 
 ## Compile errors
 
@@ -145,7 +145,7 @@ Parsers and loaders often throw an error whose message ends in a `file:line:colu
 
 - You don't pass a `kind`.
 - The stack has no frame in app code.
-- The file is a module that `my-bad` can read.
+- The path is absolute, and names a module that `my-bad` can read.
 
 An error without a stack stays an `error`. To place it, pass the Vite error shape: `{ message, id, loc }`.
 

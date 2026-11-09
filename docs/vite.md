@@ -31,7 +31,7 @@ The plugin then does the following:
 
 If you render pages on the server, use `useMyBad(server)` in your own middleware. It returns a context with the same configuration as the plugin.
 
-This example renders every page on the server, so it sets `appType: 'custom'`. Its middleware runs after the Vite middlewares, so Vite still serves modules and assets:
+This example renders every page on the server, so it sets `appType: 'custom'`. Its middleware runs after the Vite middlewares, so Vite still serves modules and assets. `transformIndexHtml` adds the Vite client and the `my-bad` client to the rendered HTML:
 
 ```ts
 import type { Plugin } from 'vite'
@@ -44,7 +44,8 @@ const ssr: Plugin = {
     return () => server.middlewares.use(async (req, res) => {
       try {
         const { render } = await server.ssrLoadModule('/src/entry-server.ts')
-        res.end(await render(req.url))
+        const html = await render(req.url)
+        res.end(await server.transformIndexHtml(req.url ?? '/', html))
       }
       catch (error) {
         const ctx = useMyBad(server)!

@@ -71,7 +71,7 @@ The overlay takes the [HTML options](#html-options), and these:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `startMinimized` | `false` | Mount minimised. Without it, the overlay remembers the last state the user picked in this origin, but only to mount minimised. |
+| `startMinimized` | `false` | Mount minimised. Without it, the overlay remembers the last state the user picked in this origin, but only to mount minimised. Either way, a report that the user expanded in this tab mounts expanded. |
 | `dock` | `bottom-right` | Corner that the minimised overlay starts in, until the user moves it: `bottom-right`, `bottom-left`, `top-right`, or `top-left`. |
 | `tag` | `my-bad-overlay` | Custom element name of the overlay. |
 
@@ -114,11 +114,13 @@ While no error is open, the warnings panel leaves the page usable. It moves on t
 
 ### Reload a page when its error is fixed
 
-The badge dispatches a `my-bad:error:clear` event on `window` when the error of the page is retired. Listen for it to reload the page:
+The badge dispatches a `my-bad:error:clear` event on `window` when the error of the page is retired. On an error response that you render yourself, listen for it to reload the page:
 
 ```ts
 addEventListener('my-bad:error:clear', () => location.reload())
 ```
+
+The event also fires on other pages when an error from no request is retired. Only add the listener to pages where a reload loses no state.
 
 ### Badge options
 

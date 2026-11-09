@@ -58,7 +58,7 @@ The handler routes on the end of the path, so only pass it requests under the ba
 | --- | --- |
 | `GET {channel}/events` | The SSE stream. |
 | `POST {channel}/open` | Opens a file in an editor, when `open` is set. |
-| `GET {channel}/history/{id}` | A stored report, as JSON. |
+| `GET {channel}/history/{id}` | A stored report, as JSON. Untrusted callers pass the `requestId` or `path` of their page as query parameters. |
 | `GET {channel}/problems` | Every problem set in full, as JSON. Only for trusted callers. |
 | `GET {channel}/panel` | The page that the badge drawer and the DevTools dock show. |
 | `GET {channel}/client.js`, `client.css`, `badge.js`, `devtools.js` | The client assets. |
@@ -102,7 +102,7 @@ await channel.handler(req, res, {
 })
 ```
 
-In this example, `isFromThisMachine` stands for your own check, for example of a forwarded client address.
+In this example, `isFromThisMachine` stands for your own check, for example of a forwarded client address. Only rely on a forwarded address that your proxy sets, and only when clients can't reach the server without the proxy. A client that sets the address itself can claim to be on the machine, and gain trusted access.
 
 ## Publish reports
 
@@ -239,7 +239,7 @@ Sinks and `subscribe` listeners receive every type except `hello` and `history`.
 
 Pages can open a file at the line of a frame. To turn this on, pass `open` to `createChannel`.
 
-With `open: true`, the channel launches the editor named in `LAUNCH_EDITOR`, `VISUAL`, or `EDITOR`. Without those, it falls back to the default app of the system, for common source and text files. On Windows, it never opens `.js` files this way, because the default app runs them. The same behaviour is available as `openInEditor` from `my-bad/channel`.
+With `open: true`, the channel launches the editor named in `LAUNCH_EDITOR`, `VISUAL`, or `EDITOR`. It skips terminal editors, such as `vim`, `nvim`, and `nano`, because they need a terminal. To jump to the line, set `LAUNCH_EDITOR` to a GUI editor such as `code`. Without one, it falls back to the default app of the system, for common source and text files. On Windows, it never opens `.js` files this way, because the default app runs them. The same behaviour is available as `openInEditor` from `my-bad/channel`.
 
 Pass a function to handle the request yourself. Return `false` to refuse it:
 
