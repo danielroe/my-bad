@@ -263,7 +263,7 @@ describe('injectOverlay', () => {
 describe('nonce', () => {
   function tags(html: string): string[] {
     return [
-      ...html.replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/g, '$1').matchAll(/<(?:script|style|link)\b[^>]*>/g),
+      ...html.replace(/(<script\b[^>]*>)[\s\S]*?<\/script[^>]*>/gi, '$1').matchAll(/<(?:script|style|link)\b[^>]*>/gi),
     ].map(match => match[0])
   }
 

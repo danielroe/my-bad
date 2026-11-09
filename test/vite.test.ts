@@ -155,7 +155,7 @@ describe('client assets', () => {
         ctx.overlay(report),
         panel,
       ]) {
-        const tags = html.replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/g, '$1').match(/<(?:script|style|link)\b[^>]*>/g)!
+        const tags = html.replace(/(<script\b[^>]*>)[\s\S]*?<\/script[^>]*>/gi, '$1').match(/<(?:script|style|link)\b[^>]*>/gi)!
         expect(tags.length).toBeGreaterThan(1)
         expect(tags.filter(tag => !tag.includes(' nonce="vite-nonce"'))).toEqual([])
       }

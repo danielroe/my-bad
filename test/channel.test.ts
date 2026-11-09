@@ -563,7 +563,7 @@ describe('client assets', () => {
     const channel = createChannel()
     const tags = async (nonce?: string) => {
       const panel = await channel.fetchHandler(new Request('http://localhost/__my-bad/panel?embed'), { trusted: false, nonce })
-      return (await panel!.text()).replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/g, '$1').match(/<(?:script|style|link)\b[^>]*>/g)!
+      return (await panel!.text()).replace(/(<script\b[^>]*>)[\s\S]*?<\/script[^>]*>/gi, '$1').match(/<(?:script|style|link)\b[^>]*>/gi)!
     }
     const stamped = await tags('a"b')
     expect(stamped).toHaveLength(5)
