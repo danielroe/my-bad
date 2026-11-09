@@ -185,6 +185,10 @@ function mountBadge(badge: { state: BadgeState, src: string }): void {
     state.textContent = JSON.stringify({ ...badge.state, hosted: true })
     const script = document.createElement('script')
     script.src = badge.src
+    const nonce = document.querySelector<HTMLMetaElement>('meta[property=csp-nonce]')?.nonce
+    if (nonce) {
+      state.nonce = script.nonce = nonce
+    }
     document.body.append(state, script)
   }
   if (document.readyState === 'loading') {

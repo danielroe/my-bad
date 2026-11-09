@@ -3,7 +3,7 @@ import type { BadgeState, Dock, DockedState, PageState, Theme } from './state'
 import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
 import { clampMessage } from '../../report/message'
 import { assetHash, assetUrls } from './assets'
-import { escapeHtml, escapeScript } from './escape'
+import { attr, escapeHtml, escapeScript } from './escape'
 import { THEME_STORAGE_KEY } from './state'
 import { themeStyles } from './theme'
 import { renderView } from './view'
@@ -48,6 +48,11 @@ export interface RenderHtmlOptions {
    * Without it the page's path is matched against the request instead.
    */
   requestId?: string
+  /**
+   * CSP nonce of the page. Every `<script>` and stylesheet rendered carries it,
+   * and so does each one the client adds to the page at runtime.
+   */
+  nonce?: string
 }
 
 export interface RenderPageOptions extends RenderHtmlOptions {
@@ -95,19 +100,26 @@ function sheet(assets: ClientAssets | undefined): string {
     : getClientStyles()
 }
 
+function nonceAttr(nonce: string | undefined): string {
+  return attr('nonce', nonce || undefined)
+}
+
 /** Applies the remembered or preferred colour scheme before first paint. */
-const THEME_BOOTSTRAP = `<script>(function(){var t;try{t=localStorage.getItem(${escapeScript(JSON.stringify(THEME_STORAGE_KEY))})}catch(e){}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}})()</script>\n`
+function themeBootstrap(nonce?: string): string {
+  return `<script${nonceAttr(nonce)}>(function(){var t;try{t=localStorage.getItem(${escapeScript(JSON.stringify(THEME_STORAGE_KEY))})}catch(e){}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}})()</script>\n`
+}
 
 function stateScript(state: PageState, options: RenderHtmlOptions): string {
+  const nonce = nonceAttr(options.nonce)
   const script = options.assets?.script
-    ? `<script src="${escapeHtml(options.assets.script)}"></script>`
-    : `<script>${getClientScript()}</script>`
+    ? `<script${nonce} src="${escapeHtml(options.assets.script)}"></script>`
+    : `<script${nonce}>${getClientScript()}</script>`
   const json = JSON.stringify(state, options.rawStack
     ? undefined
     : (key, value) => key === 'rawStack'
         ? undefined
         : value)
-  return `<script type="application/json">${escapeScript(json)}</script>\n${script}`
+  return `<script type="application/json"${nonce}>${escapeScript(json)}</script>\n${script}`
 }
 
 function baseState(options: RenderHtmlOptions, mode: PageState['mode']): Omit<PageState, 'report'> {
@@ -133,6 +145,10 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
   }
   const title = options.title ?? `${report.name}: ${clampMessage(report.message.split('\n')[0] ?? '', options.maxMessageLength).head}`
   const scheme = options.theme?.scheme
+  const nonce = nonceAttr(options.nonce)
+  const bootstrap = scheme
+    ? ''
+    : themeBootstrap(options.nonce)
   return `<!DOCTYPE html>
 <html lang="en" dir="ltr"${scheme
   ? ` data-theme="${escapeHtml(scheme)}"`
@@ -142,9 +158,9 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${escapeHtml(title)}</title>
-${scheme ? '' : THEME_BOOTSTRAP}${options.assets?.styles
-  ? `<link rel="stylesheet" href="${escapeHtml(options.assets.styles)}">\n`
-  : ''}<style>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${sheet(options.assets)}${themeStyles(options.theme, ':root')}</style>
+${bootstrap}${options.assets?.styles
+  ? `<link rel="stylesheet"${nonce} href="${escapeHtml(options.assets.styles)}">\n`
+  : ''}<style${nonce}>html{background:var(--mb-bg)}html,body{margin:0;height:100%}${sheet(options.assets)}${themeStyles(options.theme, ':root')}</style>
 ${options.head ?? ''}
 </head>
 <body>
@@ -190,7 +206,8 @@ function overlayState(options: RenderOverlayOptions): Omit<PageState, 'report'> 
  */
 export function renderBadge(options: RenderBadgeOptions): string {
   const { state, src } = badgeState(options)
-  return `<script type="application/json">${escapeScript(JSON.stringify(state))}</script>\n<script defer src="${escapeHtml(src)}"></script>`
+  const nonce = nonceAttr(options.nonce)
+  return `<script type="application/json"${nonce}>${escapeScript(JSON.stringify(state))}</script>\n<script defer${nonce} src="${escapeHtml(src)}"></script>`
 }
 
 /** The state `renderBadge` embeds, and the URL of the badge script. */
@@ -218,7 +235,7 @@ export function badgeState(options: RenderBadgeOptions): { state: BadgeState, sr
  * the scope, theme and paths of the badge on the page embedding it. With
  * `drawer`, it has a button closing the badge's drawer it is shown in.
  */
-export function renderDockedPage(options: { channel: string, embed?: boolean, drawer?: boolean }): string {
+export function renderDockedPage(options: { channel: string, embed?: boolean, drawer?: boolean, nonce?: string }): string {
   const state: DockedState = {
     mode: 'docked',
     channel: options.channel,
@@ -229,6 +246,7 @@ export function renderDockedPage(options: { channel: string, embed?: boolean, dr
   const asset = (key: 'script' | 'styles') => `${options.channel}/${key === 'script'
     ? 'client.js'
     : 'client.css'}?v=${assetHash(key)}`
+  const nonce = nonceAttr(options.nonce)
   return `<!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
@@ -236,13 +254,13 @@ export function renderDockedPage(options: { channel: string, embed?: boolean, dr
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>my-bad</title>
-${THEME_BOOTSTRAP}<link rel="stylesheet" href="${escapeHtml(asset('styles'))}">
-<style>html{background:var(--mb-bg)}html,body{margin:0;min-height:100%}</style>
+${themeBootstrap(options.nonce)}<link rel="stylesheet"${nonce} href="${escapeHtml(asset('styles'))}">
+<style${nonce}>html{background:var(--mb-bg)}html,body{margin:0;min-height:100%}</style>
 </head>
 <body>
 <div class="mb-root" data-my-bad-root data-docked></div>
-<script type="application/json">${escapeScript(JSON.stringify(state))}</script>
-<script src="${escapeHtml(asset('script'))}"></script>
+<script type="application/json"${nonce}>${escapeScript(JSON.stringify(state))}</script>
+<script${nonce} src="${escapeHtml(asset('script'))}"></script>
 </body>
 </html>`
 }

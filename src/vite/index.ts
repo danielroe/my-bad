@@ -139,6 +139,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
       const assets = options.inlineClient
         ? undefined
         : assetUrls(base)
+      const nonce = devServer.config.html?.cspNonce
 
       const hots = (): HotChannel[] => {
         const environments = (devServer as unknown as { environments?: Record<string, { hot: HotChannel }> }).environments
@@ -178,6 +179,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
           channel: live ? base : undefined,
           history: channel.historyFor({ requestId: pageOptions?.requestId }),
           assets,
+          nonce,
           ...pageOptions,
         }),
         overlay: (report, overlayOptions) => renderOverlay(report, {
@@ -185,6 +187,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
           channel: live ? base : undefined,
           history: channel.historyFor({ requestId: overlayOptions?.requestId ?? options.overlay?.requestId }),
           assets,
+          nonce,
           ...options.overlay,
           ...overlayOptions,
         }),
@@ -258,7 +261,7 @@ export function myBad(options: MyBadViteOptions = {}): Plugin {
 
       devServer.middlewares.use(base, (req, res, next) => {
         req.url = `${base}${req.url ?? ''}`
-        channel.handler(req, res).then(handled => handled || next()).catch(next)
+        channel.handler(req, res, { nonce }).then(handled => handled || next()).catch(next)
       })
 
       let erroredIds = new Set<string>()

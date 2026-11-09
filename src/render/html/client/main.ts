@@ -24,6 +24,7 @@ const EXPAND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h
 
 let connected = false
 const actions = new Set<string>()
+const nonce = (document.currentScript as HTMLScriptElement | null)?.nonce
 
 interface Mount {
   state: PageState
@@ -155,6 +156,11 @@ function overlayMount(state: PageState, host: HTMLElement): Mount {
   const style = document.createElement('style')
   style.textContent = state.styles ?? ''
   sheets.push(style)
+  if (nonce) {
+    for (const sheet of sheets) {
+      sheet.nonce = nonce
+    }
+  }
   const overlay = document.createElement('div')
   overlay.className = 'mb-overlay'
   overlay.dataset.overlay = ''
@@ -970,6 +976,9 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
     if (styles) {
       const style = document.createElement('style')
       style.textContent = styles
+      if (nonce) {
+        style.nonce = nonce
+      }
       document.head.append(style)
     }
   }

@@ -131,6 +131,42 @@ describe('client assets', () => {
     expect(stylesBody).toContain('--mb-accent')
   })
 
+  it('stamps pages, overlays and the docked page with `html.cspNonce`', async () => {
+    const secured = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      appType: 'custom',
+      html: { cspNonce: 'vite-nonce' },
+      server: { middlewareMode: true, hmr: false },
+      plugins: [
+        myBad(),
+      ],
+    })
+    const http = createHttpServer(secured.middlewares)
+    try {
+      const ctx = useMyBad(secured)!
+      const report = await ctx.report(new Error('secured'))
+      await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve))
+      const { port } = http.address() as { port: number }
+      const panel = await fetch(`http://127.0.0.1:${port}/__my-bad/panel`).then(res => res.text())
+      for (const html of [
+        ctx.page(report),
+        ctx.overlay(report),
+        panel,
+      ]) {
+        const tags = html.replace(/(<script\b[^>]*>)[\s\S]*?<\/script[^>]*>/gi, '$1').match(/<(?:script|style|link)\b[^>]*>/gi)!
+        expect(tags.length).toBeGreaterThan(1)
+        expect(tags.filter(tag => !tag.includes(' nonce="vite-nonce"'))).toEqual([])
+      }
+      expect(ctx.page(report, { nonce: 'own' })).toContain('<style nonce="own">')
+    }
+    finally {
+      http.close()
+      await secured.close()
+    }
+  })
+
   it('inlines the client when asked', async () => {
     const inlined = await createServer({
       root,

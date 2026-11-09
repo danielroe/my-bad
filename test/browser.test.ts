@@ -25,6 +25,7 @@ const channel = createChannel({
   root: proj,
 })
 const assets = { script: '/client.js', styles: '/client.css' }
+const CSP_NONCE = 'n0nce+/='
 
 async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000): Promise<void> {
   const start = Date.now()
@@ -87,6 +88,12 @@ async function report(message: string) {
 beforeAll(async () => {
   browser = await chromium.launch()
   const server = createServer(async (req, res) => {
+    if (req.url?.startsWith('/__csp-channel/')) {
+      res.setHeader('content-security-policy', `script-src 'nonce-${CSP_NONCE}'; style-src 'nonce-${CSP_NONCE}'`)
+      if (await channel.handler(req, res, { nonce: CSP_NONCE })) {
+        return
+      }
+    }
     if (await channel.handler(req, res)) {
       return
     }
@@ -153,6 +160,39 @@ beforeAll(async () => {
     }
     const current = channel.current ?? await report('initial')
     res.setHeader('content-type', 'text/html')
+    if (req.url?.startsWith('/csp-')) {
+      const url = new URL(req.url, origin)
+      const nonce = url.searchParams.has('nonce')
+        ? CSP_NONCE
+        : undefined
+      res.setHeader('content-security-policy', `script-src 'nonce-${CSP_NONCE}'; style-src 'nonce-${CSP_NONCE}'`)
+      if (url.pathname === '/csp-page') {
+        res.end(renderPage(current, { cwd: proj, channel: '/__my-bad', nonce }))
+      }
+      else if (url.pathname === '/csp-overlay') {
+        res.end(`<!DOCTYPE html><html><body><h1 id="user">User error page</h1>${renderOverlay(current, { cwd: proj, channel: '/__my-bad', nonce })}</body></html>`)
+      }
+      else if (url.pathname === '/csp-drawer') {
+        res.end(`<!DOCTYPE html><html><head>${renderBadge({
+          cwd: proj,
+          channel: '/__csp-channel',
+          nonce,
+          theme: {
+            vars: { '--mb-csp': 'adopted' },
+          },
+        })}</head><body><h1 id="user">User page</h1></body></html>`)
+      }
+      else if (url.pathname === '/csp-devtools') {
+        const attr = nonce
+          ? ` nonce="${nonce}"`
+          : ''
+        res.end(`<!DOCTYPE html><html><head><meta property="csp-nonce"${attr}></head><body><h1 id="user">User page</h1><script type="module"${attr}>${devtoolsHost}await setup(ctx, { badge: ${escapeScript(JSON.stringify(badgeState({ cwd: proj, channel: '/__my-bad' })))} })</script></body></html>`)
+      }
+      else {
+        res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '/__my-bad', nonce })}</head><body><h1 id="user">User page</h1></body></html>`)
+      }
+      return
+    }
     if (req.url === '/overlay-external') {
       res.end(`<!DOCTYPE html><html><body>${renderOverlay(current, { cwd: proj, assets })}</body></html>`)
       return
@@ -2460,5 +2500,105 @@ describe('devtools dock', () => {
     expect(errors).toEqual([])
     channel.clearError()
     await page.close()
+  }, 30_000)
+})
+
+describe('content security policy', () => {
+  async function load(path: string) {
+    const page = await browser.newPage({
+      viewport: { width: 1200, height: 800 },
+    })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.addInitScript(() => {
+      const violations: string[] = []
+      Object.assign(window, { violations })
+      addEventListener('securitypolicyviolation', event => violations.push(event.violatedDirective), true)
+    })
+    await page.goto(`${origin}${path}`)
+    const violations = () => page.evaluate(() => (window as unknown as { violations: string[] }).violations)
+    return { page, errors, violations }
+  }
+
+  it('hydrates a page and an overlay rendered with the page\'s nonce', async () => {
+    channel.clearError()
+    channel.setError(await report('under policy'))
+
+    const { page, errors, violations } = await load('/csp-page?nonce')
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_CLIENT__), true)
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toMatch(/^(?:light|dark)$/)
+    expect(await page.locator('.mb-header').evaluate(el => getComputedStyle(el).display)).toBe('flex')
+    expect(await violations()).toEqual([])
+
+    await page.goto(`${origin}/csp-overlay?nonce`)
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'under policy')
+    expect(await overlay.locator('.mb-header').evaluate(el => getComputedStyle(el).display)).toBe('flex')
+    expect(await violations()).toEqual([])
+    expect(errors).toEqual([])
+    channel.clearError()
+    await page.close()
+  }, 30_000)
+
+  it('mounts the badge, and the overlay it loads, with the page\'s nonce', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    const { page, errors, violations } = await load('/csp-badge?nonce')
+    channel.warn({
+      ...(await report('careful')),
+      kind: 'warning',
+    })
+    const dock = page.locator('my-bad-overlay-badge .mb-dock')
+    await waitFor(() => dock.evaluate(el => getComputedStyle(el).position).catch(() => ''), 'fixed')
+
+    channel.setError(await report('loaded by the badge'))
+    const overlay = page.locator('my-bad-overlay')
+    await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'loaded by the badge')
+    expect(await overlay.locator('[data-overlay]').evaluate(el => getComputedStyle(el).position)).toBe('fixed')
+    expect(await violations()).toEqual([])
+    expect(errors).toEqual([])
+    channel.clearError()
+    channel.clearWarning()
+    await page.close()
+  }, 30_000)
+
+  it('opens the drawer in a docked page served with the nonce, which adopts the theme of the page', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    const { page, errors, violations } = await load('/csp-drawer?nonce')
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    await waitFor(() => panel.locator('html').evaluate(el => getComputedStyle(el).getPropertyValue('--mb-csp')), 'adopted')
+    const frame = page.frames().find(frame => frame.url().includes('/__csp-channel/panel'))!
+    expect(await frame.evaluate(() => (window as unknown as { violations: string[] }).violations)).toEqual([])
+    expect(await violations()).toEqual([])
+    expect(errors).toEqual([])
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('mounts the badge from the DevTools client with the nonce Vite publishes', async () => {
+    channel.clearError()
+    const { page, errors, violations } = await load('/csp-devtools?nonce')
+    await waitFor(() => page.evaluate(() => !!window.__MY_BAD_SOURCE__?.host), true)
+    channel.setError(await report('through devtools'))
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => peek.isVisible(), true)
+    expect(await page.locator('my-bad-overlay-badge .mb-dock').evaluate(el => getComputedStyle(el).position)).toBe('fixed')
+    expect(await violations()).toEqual([])
+    expect(errors).toEqual([])
+    channel.clearError()
+    await page.close()
+  }, 30_000)
+
+  it('is blocked by the policy without the nonce', async () => {
+    for (const path of ['/csp-page', '/csp-badge']) {
+      const { page, violations } = await load(path)
+      await waitFor(async () => (await violations()).includes('script-src-elem'), true)
+      await page.close()
+    }
   }, 30_000)
 })

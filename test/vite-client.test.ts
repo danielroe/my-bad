@@ -1,6 +1,8 @@
+import type { ServerResponse } from 'node:http'
 import type { Browser } from 'playwright'
-import type { ViteDevServer } from 'vite'
+import type { Plugin, ViteDevServer } from 'vite'
 import type { DevToolsPlugin } from '../src/vite/devtools'
+import { Buffer } from 'node:buffer'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
@@ -142,4 +144,68 @@ describe('vite client', () => {
       await page.close()
     }, 60_000)
   })
+})
+
+describe('vite client under a content security policy', () => {
+  const placeholder = 'vite-placeholder'
+  const nonce = 'page-nonce-00001'
+  let secured: ViteDevServer
+  let url: string
+
+  beforeAll(async () => {
+    const perRequestNonce: Plugin = {
+      name: 'per-request-nonce',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === '/') {
+            res.setHeader('content-security-policy', `script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'`)
+            const end = res.end.bind(res) as (...args: unknown[]) => ServerResponse
+            res.end = ((chunk: unknown, ...rest: unknown[]) => end(typeof chunk === 'string' || Buffer.isBuffer(chunk)
+              ? String(chunk).replaceAll(placeholder, nonce)
+              : chunk, ...rest)) as typeof res.end
+          }
+          next()
+        })
+      },
+    }
+    secured = await createServer({
+      root,
+      configFile: false,
+      logLevel: 'silent',
+      html: { cspNonce: placeholder },
+      plugins: [
+        perRequestNonce,
+        myBad(),
+      ],
+      server: { host: '127.0.0.1', port: 0 },
+    })
+    await secured.listen()
+    url = `http://127.0.0.1:${(secured.httpServer!.address() as { port: number }).port}/`
+  }, 60_000)
+
+  afterAll(() => secured?.close())
+
+  it('mounts the overlay with the nonce of the page, not the one in the config', async () => {
+    const ctx = useMyBad(secured)!
+    const page = await browser.newPage()
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.addInitScript(() => {
+      const violations: string[] = []
+      Object.assign(window, { violations })
+      addEventListener('securitypolicyviolation', event => violations.push(event.violatedDirective), true)
+    })
+    await page.goto(url)
+    await page.waitForFunction(() => document.querySelector('#app')?.textContent === 'ready')
+    await settle()
+
+    await ctx.emit(new Error('under policy'))
+    const overlay = page.locator('my-bad-overlay')
+    await overlay.locator('[data-message]').first().waitFor({ timeout: 5000 })
+    expect(await overlay.locator('[data-overlay]').evaluate(el => getComputedStyle(el).position)).toBe('fixed')
+    expect(await page.evaluate(() => (window as unknown as { violations: string[] }).violations)).toEqual([])
+    expect(errors).toEqual([])
+    ctx.clear()
+    await page.close()
+  }, 60_000)
 })
