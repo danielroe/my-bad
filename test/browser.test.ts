@@ -2187,11 +2187,12 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
-  it('opens a problem set\'s full list in the dock it names, or embeds its url', async () => {
+  it('opens every badge entry in the my-bad dock, and a problem set\'s full list in the dock it names, or its url', async () => {
     channel.clearError()
     channel.clearWarning()
     channel.clearProblems()
-    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript', url: '/__typecheck/', devtoolsDock: 'checker' })
+    const mismatch = await report('Type mismatch')
+    channel.setProblems('ts', [mismatch], { label: 'TypeScript', url: '/__typecheck/', devtoolsDock: 'checker' })
     channel.setProblems('lint', [await report('Unused variable')], { label: 'ESLint', url: '/__lint/' })
     const { page, errors, calls } = await open('/devtools-host')
     await waitFor(async () => (await calls()).messages['my-bad:problems:lint']?.actions?.at(-1)?.activate.dockId, 'my-bad')
@@ -2201,12 +2202,12 @@ describe('devtools dock', () => {
     })
 
     const pills = page.locator('my-bad-overlay-badge .mb-problems')
+    const panel = page.frameLocator('iframe')
     await pills.getByRole('button', { name: 'TypeScript 1' }).click()
-    await waitFor(async () => (await calls()).switched.join(), 'checker')
+    await waitFor(async () => (await calls()).switched.join(), 'my-bad')
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
 
     await pills.getByRole('button', { name: 'ESLint 1' }).click()
-    await waitFor(async () => (await calls()).switched.at(-1), 'my-bad')
-    const panel = page.frameLocator('iframe')
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Unused variable')
     await panel.locator('[data-index-source="ts"]').getByRole('button', { name: 'Show the full list' }).click()
     await waitFor(async () => (await calls()).switched.at(-1), 'checker')
@@ -2219,13 +2220,13 @@ describe('devtools dock', () => {
     await page.evaluate(() => (window as unknown as { devtools: { activate: (params: unknown) => void } }).devtools.activate({ source: 'lint', list: true }))
     await waitFor(() => panel.locator('.mb-docked-list').getAttribute('src').catch(() => null), '/__lint/')
 
-    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript', group: 'Checker', devtoolsDock: 'checker' })
-    channel.setProblems('lint', [await report('Unused variable')], { label: 'ESLint', group: 'Checker' })
-    const grouped = pills.getByRole('button', { name: 'Checker 2' })
-    await grouped.waitFor({ timeout: 5000 })
+    channel.setProblems('ts', [mismatch, await report('Missing property')], { label: 'TypeScript', url: '/__typecheck/', devtoolsDock: 'checker' })
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => peek.isVisible(), true)
     const switched = (await calls()).switched.length
-    await grouped.click()
+    await peek.click()
     await waitFor(async () => (await calls()).switched.slice(switched).join(), 'my-bad')
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Missing property')
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()

@@ -596,21 +596,15 @@ function start(state: BadgeState): void {
       void expand(shown?.report)
       return
     }
-    const group = groupProblems(listedProblems()).find(sets => sets.some(set => set.source === shown.source))
-    openProblems({ id: shown.report.id, source: shown.source }, group?.length === 1
-      ? group[0]!.devtoolsDock
-      : undefined)
+    openProblems({ id: shown.report.id, source: shown.source })
   }
 
-  function openProblems(focus: BadgeFocus, dock: string | undefined): void {
-    if (!target.host) {
-      openDrawer(focus)
-    }
-    else if (dock && target.host.dock) {
-      target.host.dock(dock)
+  function openProblems(focus: BadgeFocus): void {
+    if (target.host) {
+      target.host.open(focus)
     }
     else {
-      target.host.open(focus)
+      openDrawer(focus)
     }
   }
 
@@ -789,13 +783,10 @@ function start(state: BadgeState): void {
         ? total
         : total + set.errors + set.warnings, 0)
       const focus = { source: sets[0]!.source }
-      const dock = sets.length === 1
-        ? sets[0]!.devtoolsDock
-        : undefined
       const entry = document.createElement('button')
       entry.type = 'button'
       entry.dataset.source = focus.source
-      entry.addEventListener('click', () => openProblems(focus, dock))
+      entry.addEventListener('click', () => openProblems(focus))
       entry.textContent = `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
         ? 'failed'
         : broken

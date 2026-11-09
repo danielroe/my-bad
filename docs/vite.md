@@ -130,7 +130,7 @@ With DevTools running, errors no longer take over the page:
 
 The messages panel shows a spinner while a problem set is `checking`. Its actions show an entry in the dock, or show the full list of a problem set. The badge announces new reports, so DevTools shows no toast for them.
 
-A problem set can name another DevTools dock in `devtoolsDock`. The badge entry for that set then switches to that dock, and so does its "full list" button in the `my-bad` dock. An entry that counts a `group` of several sources still opens the `my-bad` dock. The tool behind that dock posts its own messages, so `my-bad` adds none for the set, but still counts it on the dock icon. See [Problem metadata](./problems.md#problem-metadata).
+A problem set can name another DevTools dock in `devtoolsDock`. The badge entry for that set still opens the `my-bad` dock, and its "full list" button there switches to the other dock. The tool behind that dock posts its own messages, so `my-bad` adds none for the set, but still counts it on the dock icon. See [Problem metadata](./problems.md#problem-metadata).
 
 ### Add the dock for a channel outside the plugin
 
