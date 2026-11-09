@@ -503,6 +503,131 @@ describe('createChannel', () => {
   })
 })
 
+describe('clearing an error for one request', () => {
+  async function current(channel: ReturnType<typeof createChannel>, query: string): Promise<string | undefined> {
+    const res = await channel.fetchHandler(new Request(`http://localhost/__my-bad/events${query}`), { trusted: false })
+    const reader = res!.body!.getReader()
+    const { value } = await reader.read()
+    await reader.cancel()
+    return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!).current?.id
+  }
+
+  it('retires it on the page of that request, which moves on, and keeps it open for the others', async () => {
+    const sunk: ChannelEvent[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    const url = await listen(channel)
+    const [everywhere, report] = await Promise.all(['everywhere', 'shared'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false })))
+
+    const controller = new AbortController()
+    const a = readEvents(url, 7, controller.signal, '?path=/&requestId=a')
+    const b = readEvents(url, 5, controller.signal, '?path=/&requestId=b')
+    while (channel.clients < 2) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    channel.setError(everywhere!)
+    channel.setError(report!, 'a', 'GET /')
+    channel.setError(report!, 'b', 'GET /')
+    const history = channel.history
+    channel.clearError(report!.id, { requestId: 'a' })
+    channel.log({ level: 'info', text: 'done' })
+    const [onA, onB] = await Promise.all([a, b])
+    controller.abort()
+
+    expect(onA.map(event => event.event)).toEqual([
+      'hello',
+      'error:set',
+      'error:set',
+      'history',
+      'error:clear',
+      'error:set',
+      'log',
+    ])
+    expect(onA[4]!.data).toEqual({ id: report!.id })
+    expect(onA[5]!.data).toMatchObject({
+      report: { id: everywhere!.id },
+    })
+    expect(onB.map(event => event.event)).toEqual([
+      'hello',
+      'error:set',
+      'history',
+      'error:set',
+      'log',
+    ])
+    expect(await current(channel, '?path=/&requestId=a')).toBe(everywhere!.id)
+    expect(await current(channel, '?path=/&requestId=b')).toBe(report!.id)
+    expect(channel.current?.id).toBe(report!.id)
+    expect(channel.history).toEqual(history)
+    expect(channel.historyFor({ requestId: 'a' }).map(entry => entry.id)).toEqual([everywhere!.id, report!.id])
+    expect(sunk.filter(event => event.type === 'error:clear')).toEqual([
+      {
+        type: 'error:clear',
+        payload: { id: report!.id, requestId: 'a' },
+      },
+    ])
+
+    channel.clearError(report!.id, { requestId: 'b' })
+    expect(channel.current?.id).toBe(everywhere!.id)
+  })
+
+  it('retires it for every request to a path when named by `request` alone', async () => {
+    const channel = createChannel()
+    const report = await createReport(new Error('boom'), { loaders: [], snippets: false })
+    channel.setError(report, 'a', 'GET /a')
+    channel.setError(report, undefined, 'GET /a')
+    channel.setError(report, 'b', 'GET /b')
+    channel.clearError(report.id, { request: 'GET /a' })
+
+    expect(await current(channel, '?path=/a&requestId=a')).toBeUndefined()
+    expect(await current(channel, '?path=/a')).toBeUndefined()
+    expect(await current(channel, '?path=/b&requestId=b')).toBe(report.id)
+
+    channel.setError(report, 'a', 'GET /a')
+    channel.clearError(report.id, { requestId: 'a', request: 'GET /b' })
+    expect(await current(channel, '?path=/a&requestId=a')).toBeUndefined()
+    expect(await current(channel, '?path=/b&requestId=b')).toBe(report.id)
+    channel.close()
+  })
+
+  it('retires every error of a request without an id', async () => {
+    const channel = createChannel()
+    const [mine, theirs] = await Promise.all(['mine', 'theirs'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false })))
+    channel.setError(mine!, 'a', 'GET /a')
+    channel.setError(theirs!, 'b', 'GET /b')
+    channel.clearError(undefined, { requestId: 'a' })
+
+    expect(await current(channel, '?path=/a&requestId=a')).toBeUndefined()
+    expect(await current(channel, '?path=/b&requestId=b')).toBe(theirs!.id)
+    channel.close()
+  })
+
+  it('does nothing for a request that never raised it', async () => {
+    const events: ChannelEvent[] = []
+    const channel = createChannel({
+      sink: event => void events.push(event),
+    })
+    const [report, other] = await Promise.all(['boom', 'other'].map(msg => createReport(new Error(msg), { loaders: [], snippets: false })))
+    channel.setError(other!)
+    channel.setError(report!, 'a', 'GET /a')
+    channel.setError(report!, 'b', 'GET /b')
+    events.length = 0
+
+    channel.clearError(report!.id, { requestId: 'c' })
+    channel.clearError(report!.id, { request: 'GET /c' })
+    channel.clearError(other!.id, { requestId: 'a' })
+    channel.clearError(undefined, { requestId: 'c' })
+    expect(events).toEqual([])
+    expect(await current(channel, '?path=/a&requestId=a')).toBe(report!.id)
+    expect(await current(channel, '?path=/c&requestId=c')).toBe(other!.id)
+
+    channel.clearError(report!.id, {})
+    expect(events.map(event => event.type)).toEqual(['error:clear'])
+    expect(await current(channel, '?path=/b&requestId=b')).toBe(other!.id)
+    channel.close()
+  })
+})
+
 describe('client assets', () => {
   it('serves the client script, stylesheet and badge under the channel base', async () => {
     const channel = createChannel()

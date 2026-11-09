@@ -112,6 +112,7 @@ Each method sends an update to the pages that it concerns.
 channel.setError(report)
 channel.setError(report, requestId, `${method} ${url}`)
 channel.clearError(report.id)
+channel.clearError(report.id, { requestId })
 channel.clearError()
 
 channel.warn(report)
@@ -131,7 +132,7 @@ channel.setDevTools(true)
 | Method | Description |
 | --- | --- |
 | `setError(report, requestId?, request?)` | Publish an error. Each page shows the newest open error that concerns it, and swaps it in place. |
-| `clearError(id?)` | Retire one error, or every error without an id. Pages that showed it reload, or move on to the next open error that concerns them. Overlays close. |
+| `clearError(id?, request?)` | Retire one error, or every error without an id. With a `request`, retire it only for that request. Pages that showed it reload, or move on to the next open error that concerns them. Overlays close. |
 | `warn(report)` | Publish a warning. Pages announce it, and count it until you retire it. |
 | `clearWarning(id?)` | Retire one warning, or every warning without an id. |
 | `log(entry, requestId?, request?)` | Publish a log entry. Levels are `trace`, `debug`, `info`, `log`, `warn`, `error`, and `fatal`. |
@@ -146,7 +147,13 @@ An error can name the request that it came from, with a `requestId` and a `reque
 
 An error from no request reaches every page, and replaces every open error. Compile errors and client runtime errors usually have no request.
 
-Several requests can raise the same error, with the same report id. The error then stays open on the page of each request, up to the 20 most recent requests. `clearError(id)` retires it for all of them.
+Several requests can raise the same error, with the same report id. The error then stays open on the page of each request, up to the 20 most recent requests. `clearError(id)` retires it for all of them. To retire it for one request, for example when that page renders again without the error, name the request:
+
+```ts
+channel.clearError(report.id, { requestId })
+```
+
+The pages of that request move on to their next open error, and the pages of other requests keep showing it. With only a `request`, such as `{ request: 'GET /widgets' }`, `clearError` retires the error for every request published with exactly that `request`, including the method and query: it leaves `GET /widgets?page=2` open. With both a `requestId` and a `request`, only the `requestId` counts. Without an id, it retires every error of the request.
 
 The channel matches an error to a page like this:
 
@@ -233,7 +240,7 @@ Pages receive these event types:
 | `problems` | A problem set changes. |
 | `problems:clear` | A problem set is retired. |
 
-Sinks and `subscribe` listeners receive every type except `hello` and `history`. The channel sends those two to a single page.
+Sinks and `subscribe` listeners receive every type except `hello` and `history`. The channel sends those two to a single page. When you retire an error for one request, the `error:clear` event that sinks receive carries its `requestId` or `request`.
 
 ## Open files in an editor
 

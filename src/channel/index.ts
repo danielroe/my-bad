@@ -90,8 +90,12 @@ export interface Channel {
    * replaces every open error.
    */
   setError: (report: ErrorReport, requestId?: string, request?: string) => void
-  /** Retire the open error with this id, or every open error without one. Pages showing it are told it cleared. */
-  clearError: (id?: string) => void
+  /**
+   * Retire the open error with this id, or every open error without one. Pages showing it are told it cleared.
+   * Naming a request (`requestId`, or `request` alone to match `METHOD /path?query`) retires it only for that
+   * request, and leaves it open for every other request that raised it.
+   */
+  clearError: (id?: string, request?: ReportRequest) => void
   /** Publish a warning. It stays in the history until retired with `clearWarning`. */
   warn: (report: ErrorReport) => void
   /** Retire the warning published with this report id, or every warning without one. Pages drop it from their count and toasts. */
@@ -172,6 +176,12 @@ function problemChanges(previous: ErrorReport[], next: ErrorReport[]): ProblemCh
       ...before.keys(),
     ].filter(id => !after.has(id)),
   }
+}
+
+function raisedBy(origin: ReportRequest, request: ReportRequest): boolean {
+  return request.requestId
+    ? origin.requestId === request.requestId
+    : origin.request === request.request
 }
 
 function scopeKey(request: ReportRequest = {}): string {
@@ -741,21 +751,25 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         payload: { history: entries },
       }), client => !reaches(client) && !settled.has(client))
     },
-    clearError(id) {
-      if (id && !raised.some(entry => entry.report.id === id)) {
+    clearError(id, request = {}) {
+      const origin: ReportRequest = {
+        ...(request.requestId && { requestId: request.requestId }),
+        ...(request.request && { request: request.request }),
+      }
+      const scoped = !!(origin.requestId || origin.request)
+      const retires = (entry: Published) => (!id || entry.report.id === id) && (!scoped || raisedBy(entry.origin, origin))
+      if ((id || scoped) && !raised.some(retires)) {
         return
       }
       const before = snapshot()
-      raised = id
-        ? raised.filter(entry => entry.report.id !== id)
-        : []
+      raised = raised.filter(entry => !retires(entry))
       helloFrames.clear()
       for (const client of clients) {
         settle(client, before.get(client))
       }
       notify({
         type: 'error:clear',
-        payload: { id },
+        payload: { id, ...origin },
       })
     },
     warn(report) {
