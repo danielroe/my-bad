@@ -84,7 +84,7 @@
     "@types/node": "26.6.6",
     "@vitejs/devtools": "0.8.2",
     "@vitejs/devtools-kit": "0.8.2",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/coverage-v8": "5.1.0",
     "ansivision": "0.4.0",
     "axe-core": "4.14.0",
     "consola": "3.4.2",
@@ -100,7 +100,7 @@
     "tsdown": "0.23.4",
     "typescript": "6.0.3",
     "vite": "8.3.6",
-    "vitest": "5.0.5"
+    "vitest": "5.1.0"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm nano-staged"
