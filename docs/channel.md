@@ -153,7 +153,7 @@ Several requests can raise the same error, with the same report id. The error th
 channel.clearError(report.id, { requestId })
 ```
 
-The pages of that request move on to their next open error, and the pages of other requests keep showing it. With only a `request`, such as `{ request: 'GET /widgets' }`, `clearError` retires the error for every request to that path. Without an id, it retires every error of the request.
+The pages of that request move on to their next open error, and the pages of other requests keep showing it. With only a `request`, such as `{ request: 'GET /widgets' }`, `clearError` retires the error for every request published with exactly that `request`, including the method and query: it leaves `GET /widgets?page=2` open. With both a `requestId` and a `request`, only the `requestId` counts. Without an id, it retires every error of the request.
 
 The channel matches an error to a page like this:
 
