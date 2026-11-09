@@ -7,330 +7,34 @@
 
 > Beautiful dev-server error pages rendered to HTML, ANSI or JSON and live updated over SSE. ✨
 
-`my-bad` turns an error into a plain JSON error report with sourcemapped frames, snippets, causes, component trace and request context.
+`my-bad` turns an error into a JSON report with sourcemapped frames, source snippets, causes, a component trace, and request context. You can render the report as a full HTML page, as an overlay on an existing page, or as ANSI text for the terminal.
 
-You can then use `my-bad` to render that report as a full HTML page, a shadow-DOM overlay for an existing page, or ANSI for the terminal. A small SSE channel keeps browser-based pages live, meaning errors can be updated, the page can reload when the error is fixed, and additional warnings and server logs are surfaced as they occur.
+A live channel keeps open pages up to date. Pages swap in new errors and reload once an error is fixed. The channel also carries warnings, logs, and problems from tools such as type checkers and linters.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/page-dark.png">
   <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/page-light.png" alt="An error page showing the error name, message, hint, component trace and a syntax-highlighted source snippet with the failing line marked">
 </picture>
 
-The same report, rendered to the terminal with `renderAnsi`:
+The same report in the terminal:
 
 <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/ansi.svg" alt="Terminal output showing the error, a hint, the component trace, source snippets for the error and its cause, and the collapsed stack frames">
 
 ## Install
 
+`my-bad` requires Node.js 22.12 or later.
+
 ```sh
 npm install my-bad
 ```
 
-## Usage
+## Use it with Vite
+
+Add the plugin to your Vite config:
 
 ```ts
-import { createReport, fsLoader, renderAnsi, renderPage } from 'my-bad'
-import { nuxtPreset } from 'my-bad/presets'
-
-const report = await createReport(error, {
-  cwd: process.cwd(),
-  loaders: [
-    fsLoader()
-  ],
-  presets: [
-    nuxtPreset({
-      versions: { nuxt: '4.0.0' }
-    })
-  ],
-  context: { event },
-})
-
-console.error(renderAnsi(report))
-
-if (req.headers.accept?.includes('text/html')) {
-  res.end(renderPage(report, {
-    cwd: process.cwd(),
-    channel: '/__my-bad'
-  }))
-}
-else {
-  res.end(JSON.stringify(report))
-}
-```
-
-### Diagnostics
-
-An error that carries its own guidance is read without any configuration. `fix` becomes the report's `hint`, a `docs` (or `docsUrl`) URL becomes `docsUrl`, and `sources` (`file:line:column`, `file:line` or bare `file` strings) become app frames, with snippets where they have a line, or a `Sources` section when they cannot be resolved to a readable file. An error named after its own `code` is treated as self-describing: the heading shows the code once, and presets leave its `docsUrl` alone, including when it has none.
-
-```ts
-class Diagnostic extends Error {
-  name = 'NUXT_E1001'
-  code = 'NUXT_E1001'
-  fix = 'Pass a non-empty `name` prop to `<Widget>`.'
-  docs = 'https://nuxt.com/docs/4.x/errors/e1001'
-  sources = ['pages/index.vue:2:16']
-}
-```
-
-`environment` labels where the error happened (`'Server'`, `'Client'`, or whatever your integration calls it) next to the error name.
-
-### Overlay
-
-Inject the error UI into an existing page (for example a framework's rendered error page). It renders in a shadow root, so host styles cannot leak in, and can be minimised to a picture-in-picture thumbnail so the user can see the page behind it.
-
-```ts
-import { injectOverlay } from 'my-bad'
-
-html = injectOverlay(html, report, { channel: '/__my-bad', startMinimized: status < 500 })
-```
-
-`startMinimized: true` always mounts minimised, even if the user last expanded an overlay in this origin. Errors arriving over the channel leave the current minimised state alone.
-
-Pass `requestId` alongside the same id given to `channel.setError` so the channel only sends this page the errors its own request produced. Without it the page's path is matched against the request instead. Errors published with no request (compile errors, client runtime errors) reach every page.
-
-Use `injectOverlay` rather than `html.replace('</body>', ...)`: the inlined client contains `$` sequences that a string replacement would interpret.
-
-### Serving the client separately
-
-`renderPage` and `renderOverlay` inline the client script and stylesheet, which makes the output self-contained at the cost of ~60kB per response. The live channel serves them at `{channel}/client.js` and `{channel}/client.css` (or serve `clientAssets` yourself); pass the URLs to keep them out of the HTML and let the browser cache them:
-
-```ts
-import { renderPage } from 'my-bad'
-
-renderPage(report, {
-  channel: '/__my-bad',
-  assets: { script: '/__my-bad/client.js', styles: '/__my-bad/client.css' }
-})
-```
-
-Theme overrides stay inline, so a shared stylesheet still themes per response.
-
-### Badge
-
-`renderBadge` renders a small loader for every dev page, which shows errors, warnings and problem sets as they arrive; its ~19kB script comes from the channel at `{channel}/badge.js`. It renders nothing until something concerns the page. An error mounts the overlay, minimised unless `startMinimized: false`, loading it from the channel. Warnings show a small count in the corner the overlay docks to, which expands into a panel beside the page when clicked; with no error to show, the panel leaves the page usable, and moves on to the next warning as each one is retired. The count stands in for the overlay whenever it is hidden or cleared. A new warning, or a new error while the overlay is hidden, grows the count into a card showing it and where it points for a few seconds, held open while hovered or focused; clicking the card does what clicking the count does.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-dark.png">
-  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-light.png" alt="A card in the corner of a page showing the newest warning, NUXT_B4025: <NuxtLink> has both to and href, with components/AppNav.vue:12 beneath it" width="428">
-</picture>
-
-Problem sets from type checkers, linters and compilers (see `setProblems` below) are counted per source, or per `group` of sources, in a second pill beside it, which spins while a source is checking, reads `failed` for a source that could not run, and opens the source's problems in a drawer beside the badge, with its `url` as the full list. They never mount the overlay. New reports grow the pill into the same card, showing the first of them and how many more arrived with it, on pages the channel serves reports to (see `trusted` below).
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-dark.png">
-  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-light.png" alt="A small pill in the corner of a page reading vue-tsc 3, ESLint 2, with a spinner while ESLint is checking" width="203">
-</picture>
-
-```ts
-import { renderBadge } from 'my-bad'
-
-// anywhere in every dev page
-html += renderBadge({ channel: '/__my-bad', requestId })
-
-// in the page, to reload once its error is fixed
-addEventListener('my-bad:error:clear', () => location.reload())
-```
-
-Pass `assets: { script, styles, badge }` to load any of them from your own URLs instead.
-
-The channel serves its own build of the scripts and stylesheet: requested with that build's `?v=` hash they are cached for good, and with any other hash they are served uncached. A page rendered by a different version of `my-bad` than the one owning the channel (a framework whose CLI owns it, say) therefore still loads a matching badge and overlay. A channel from a version without `badge.js` responds 404, so pass `assets` when the channel's version is out of your hands.
-
-It takes the same `theme`, `tag`, `cwd`, `editor` and `dock` options as the overlay; `dock` picks the corner (`bottom-right` by default) that the badge and the minimised overlay start in, until the user moves them. An overlay rendered into the same page with the same `tag` (an error page using `injectOverlay`, say) is adopted rather than duplicated and shares the badge's connection. The badge closes that connection while the tab is in the background.
-
-### Theming
-
-The page is dark by default and follows `prefers-color-scheme`. Everything is derived from a handful of CSS custom properties, so it's possible to restyle it without forking the stylesheet:
-
-```ts
-import { renderPage } from 'my-bad'
-import { nuxtTheme } from 'my-bad/presets'
-
-renderPage(report, { theme: nuxtTheme })
-
-renderPage(report, {
-  theme: {
-    name: 'Acme',
-    url: 'https://acme.dev',
-    logo: '<svg viewBox="0 0 32 32">…</svg>', // drawn at 20px in currentColor
-    accent: '#ff4f81',
-    vars: { '--mb-bg': '#0b0b12', '--mb-font-sans': 'Inter, sans-serif' },
-    css: '.mb-name { text-transform: uppercase }',
-    scheme: 'dark', // force a scheme instead of following the user
-  },
-})
-```
-
-Tokens: `--mb-accent`, `--mb-bg`, `--mb-fg`, `--mb-font-sans`, `--mb-font-mono`, `--mb-radius`, plus the `--mb-tk-*` syntax colours. Text tiers, hairlines and surfaces are mixed from those, and the accent is deepened automatically for small text on light backgrounds.
-
-### Sourcemaps
-
-Frames are mapped by loaders, tried in order:
-
-- `fsLoader()` reads `.map` sidecars and inline `sourceMappingURL` comments (Nitro dev builds, tsdown/rollup output). When `loaders` is not set, `createReport` uses `fsLoader({ roots: [cwd] })`, which only reads inside `cwd`. A loader passed explicitly is used as given: `fsLoader()` reads any absolute path, so confine it with `roots` or `canRead` when the frames can come from an untrusted source, such as a browser-submitted stack.
-- `sourceMapLoader({ getSourceMap })` takes maps from memory, for module runners (`nitroApp.ssrSourceMaps.getSourceMap` in Nuxt, `runner.moduleCache.getSourceMap` in vite-node).
-- `viteLoader(server)` from `my-bad/vite` uses the module graph of a `ViteDevServer`.
-- `passthroughLoader()` only reads sources, for processes whose stacks are already mapped.
-
-A frame is only mapped when the map has a segment on that exact generated line, so already-mapped stacks are never mapped twice. Frames are only mapped and read when they name a module (`.js`, `.ts`, `.vue`, `.svelte` and similar) or an id that is not a file path. Locations that may come from error text (a code frame header, a position quoted in a message, or a stack whose message header cannot be found) are only read inside `cwd` or where an `fsLoader` confined with `roots` or `canRead` allows, so a monorepo can widen the boundary by passing its workspace root.
-
-A plain error whose message ends in a `file:line:column` line, as parsers and loaders throw, becomes a `compile` report at that position when no `kind` is passed, its `stack` has no frame in application code, and the file is a readable module within those bounds. An error without a `stack` stays an `error`, since nothing shows a dependency raised it; pass a compile-shaped input (`{ message, id, loc }`) to locate it.
-
-Compile errors from a bundler often point into the module it transformed while naming the source file (rolldown failing to parse a compiled render function, say). Their position and code frame then move to `frame.compiled`, so the generated code is labelled as such rather than shown as the source of your file.
-
-That is detected by comparing the frame's **caret line**, the one line the frame asserts describes the reported position, against the file on disk at the line number the frame gives it. Indentation is ignored, and a line Vite truncated for width is matched on the part that survived. If it matches, the frame is source; if it does not, the frame is generated. Neighbouring lines are not compared, because a bare `}` or `})` matches almost any file by chance. Nothing changes when the file cannot be read, or the caret line is only punctuation, or there is no caret at all.
-
-A thrower that already knows better can say so, and is believed without any comparison. This is honoured wherever the error sits in the chain, including as a `cause` at any depth, which is how a compile error wrapped in an `HTTPError` gets it right:
-
-```ts
-throw Object.assign(error, { compiled: true })
-```
-
-The same thing is available as an option for the top-level input, where `compiled: { sourceLoc }` also supplies a position you have mapped back to source yourself, to get a source snippet alongside the generated one:
-
-```ts
-await createReport(error, {
-  kind: 'compile',
-  compiled: {
-    sourceLoc: { line: 6, column: 16 }
-  }
-})
-```
-
-A marker on the error wins over the option, and both win over detection in either direction (`false` opts out entirely, and the file is not read).
-
-### Terminal
-
-```ts
-console.error(renderAnsi(report, { cwd, icon: false })) // `icon: false` when your logger prints its own badge
-```
-
-File locations are OSC 8 hyperlinks (via `clickable-path`) in terminals that support them.
-
-### Syntax highlighting
-
-Snippets use a small built-in tokenizer. Plug in your own for richer colours in both HTML and ANSI:
-
-```ts
-const report = await createReport(error, {
-  tokenizer: (line, lang) => myHighlighter(line, lang).map(token => ({ type: 'keyword', text: token.value })),
-})
-```
-
-
-### Live channel
-
-```ts
-import { createChannel } from 'my-bad/channel'
-import { fileSink } from 'my-bad/sinks'
-
-const channel = createChannel({
-  open: true,
-  sink: fileSink('.nuxt/my-bad.jsonl')
-})
-// `open: true` launches `LAUNCH_EDITOR` / `VISUAL` / `EDITOR` at the frame's line, falling back to the OS default app
-// for common source and text files (never `.js` on Windows, where the default app runs it)
-// `open` requests are confined to `root` (default `process.cwd()`; the Vite plugin uses `server.fs.allow`),
-// must name an existing file, and must be `application/json`; pass `root: false` to allow any path
-// `open` may be a function instead, returning `false` to refuse a request
-
-// The channel refuses requests addressed to a host that is neither an IP literal, `localhost`, `*.localhost`,
-// nor listed in `allowedHosts` (the Vite plugin passes `server.allowedHosts`), and requests a page on another
-// origin made (`Sec-Fetch-Site`, else `Origin` must match the host addressed).
-// Requests with neither header (`curl`, editor integrations) are allowed when addressed to such a host; a request
-// naming no host is refused (`fetchHandler` falls back to the host of the request URL).
-
-// Node: mount at the channel base path. Besides the live routes it serves `client.js`, `client.css`, `badge.js` and
-// `devtools.js` (immutable when requested with `?v=`, as `renderBadge` does), the docked view at `panel` and, to
-// trusted callers, every problem set in full at `problems`
-app.use('/__my-bad', (req, res, next) => {
-  req.url = `/__my-bad${req.url}`
-  channel.handler(req, res).then(handled => handled || next()).catch(next)
-})
-// or fetch-style: await channel.fetchHandler(request)
-
-// Callers connecting from a loopback address (`req.socket.remoteAddress`, or `request.ip` for `fetchHandler`) are
-// trusted by default and may browse every retained report. Any other peer, or one whose address is unknown, is
-// untrusted (a `--host` binding, a connection forwarded into a container): the channel still connects and
-// streams, but its `hello.history` and the `history` payloads hold only the reports that concern the page
-// (a report naming a request id is matched by that id alone, never by path), `/history/:id` answers 404 for
-// any other report, `/problems` answers 403 (problem sets reach it as counts only), log entries reach it only
-// when attributed to a request that concerns it, and
-// privileged actions such as `open` are neither advertised nor accepted, so the
-// page opens an `editor://` URL on the machine running the browser instead.
-// Pass `trusted` explicitly behind a proxy, where the peer address is the proxy's.
-await channel.handler(req, res, {
-  trusted: isLoopback(clientAddress(req))
-})
-
-channel.setError(report) // pages swap content in place; replaces every open error
-channel.setError(report, requestId, `${method} ${url}`) // only pages rendered for that request swap; the rest list it in their history
-channel.clearError(report.id) // retire one error: pages showing it reload or move on to the next open error that concerns them
-channel.clearError() // retire every error: pages reload, overlays dismiss
-channel.warn(report) // toast, and counted in the header until retired
-channel.clearWarning(report.id) // retire it: pages drop it from their count and toasts (no id retires every warning)
-channel.log({ level: 'warn', text: 'careful' }) // streamed to the log drawer of trusted callers
-channel.log({ level: 'warn', text: 'careful' }, requestId, `${method} ${url}`) // also streamed to the pages that request concerns
-channel.progress({ phase: 'build', percent: 40, message: 'Building server' }) // progress bar
-
-// the current problems of a long-running source (type checker, linter, audit), replacing any it published before
-channel.setProblems('typecheck', reports, { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
-channel.clearProblems('typecheck') // retire one source (no source retires every one)
-
-channel.setDevTools(true) // a my-bad dock is registered in Vite DevTools, so badges with `awaitHost` wait for it
-
-const stop = channel.subscribe((event) => {}) // receive every event the `sink` receives, until `stop()`
-```
-
-Problem sets stay out of `history` and the warning cap, raise no toasts and never take over a page. Republishing the same reports (by id and kind, in order) with the same meta is not broadcast again, so a source can publish after every run. Every page, trusted or not, receives a `problems` event per change carrying the source's error and warning counts but not its reports, and the counts of every set in `hello`. The sink also receives the reports that joined the set (`added`) and the ids of those that left it (`removed`), so a `fileSink` log records a problem when it joins the set rather than on every run. Sets belong to the channel, so a set replayed into a new channel is all `added` again. An empty set shows nothing, though its source stays listed with its meta.
-
-With no `status` a source is idle; `status: 'checking'` shows a spinner while it runs, and `status: 'failed'` with an `error` reason replaces its count with `failed`, giving the reason in the pill's title. Sources with the same `group` are counted together under that name (`Nuxt 3`, or `Nuxt 2, 1 failed` when one of them failed), each listed in the title, as one entry opening the first of them. `channel.problems` returns every set in full.
-
-Several sources may share one `url`, such as a tool serving one page for all its checkers. Each embeds it as given, so a source can add a query string the page understands (`/__checker/?tab=eslint`, say) to open it narrowed to its own problems.
-
-A report's id hashes its name, message and the file, line and column of its first app frame, so build reports with `createReport` and pass the location: a compile-shaped input (`{ message, id, loc, frame }`) or `sources`, with `kind: 'warning'` for warnings, which are then named `Warning` unless the input has a name. `createReport` reads the file for a snippet, and lists a `sources` entry it cannot read in a `Sources` section rather than as a frame. For a tool that has already located its diagnostics, `createProblemReport` builds the report without reading anything, hashing its id the same way.
-
-#### Problems from another tool
-
-A host feeds a tool's diagnostics in by mapping each run's results to reports and publishing the whole set. Any tool with a run lifecycle fits: a linter in watch mode, an a11y audit, or the server `api.subscribe` of vite-plugin-checker.
-
-```ts
-import type { ErrorReport } from 'my-bad'
-import { createProblemReport } from 'my-bad'
-
-const meta = { label: 'ESLint', url: '/__lint/' }
-let reports: ErrorReport[] = []
-
-linter.on('start', () => channel.setProblems('lint', reports, { ...meta, status: 'checking' }))
-linter.on('results', (results) => {
-  reports = results.map(result => createProblemReport({
-    name: 'ESLint',
-    message: result.message,
-    code: result.ruleId,
-    docsUrl: result.docsUrl,
-    file: result.file,
-    line: result.line,
-    column: result.column,
-    snippet: result.codeFrame,
-    kind: result.severity === 2
-      ? 'error'
-      : 'warning',
-  }))
-  channel.setProblems('lint', reports, meta)
-})
-linter.on('crash', error => channel.setProblems('lint', reports, { ...meta, status: 'failed', error: error.message }))
-linter.on('close', () => channel.clearProblems('lint'))
-```
-
-`createProblemReport` takes `name`, `message`, `code`, `docsUrl`, `file` (absolute, or relative to `cwd`), `line`, `column`, `kind` (`error` by default, or `warning`) and `snippet`, either a `Snippet` or a code frame of `3 | code` lines, which may mark a line with `>`. A report with no `file` or `snippet` has no frames.
-
-The badge stays silent while a clean run checks, shows `ESLint 3` once there is something to count, and opens its problems, with `url` as the full list. Problems show on the pages that render the badge (`renderBadge`).
-
-A problem's `name` heads it when it is opened, as an error's does. The drawer and the dock list each problem under its set's `label` (or `source`, without one), so a `name` that only repeats it (ignoring case) is left out of its row, and any other `name` (a diagnostic code such as `TS2322`, say) is shown before the message.
-
-### Vite
-
-```ts
-import { myBad, useMyBad } from 'my-bad/vite'
+import { myBad } from 'my-bad/vite'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [
@@ -339,38 +43,90 @@ export default defineConfig({
 })
 ```
 
-The plugin maps frames through Vite's module graph, forwards compile errors from the HMR channel as `kind: 'compile'` reports, mounts the channel at `/__my-bad`, injects a tiny client into `index.html` so a running app shows the overlay, and clears it when the next update succeeds. Use `useMyBad(server)` from your own SSR middleware to build reports and pages with the same configuration. Sources are only read from disk where Vite would load them, following `server.fs.allow` and `server.fs.deny`.
+Compile errors now open in an overlay, with frames mapped through the Vite module graph. The overlay closes when the next update succeeds.
 
-The client script and stylesheet are served from `/__my-bad/client.js` and `/__my-bad/client.css` with content-hashed URLs, rather than inlined into every error page. Pass `inlineClient: true` for self-contained output.
+### Add Vite DevTools
 
-### Vite DevTools
-
-With [Vite DevTools](https://github.com/vitejs/devtools) installed, `myBad()` adds a my-bad dock to it, and nothing else needs configuring. Pass `devtools: false` to leave it out. Without Vite DevTools nothing changes.
-
-In DevTools, the badge shows on every page and opens the dock rather than the overlay, and errors no longer take over the page. The dock lists the open error, the warnings and every problem set, and shows the one picked the way the overlay does. Its icon in the DevTools bar counts them, in red while any is an error. The open error and each problem set also appear in the DevTools messages panel with their file position, showing a spinner while a set is `checking`, with actions to show them in the dock or show the set's full list. They raise no DevTools toast, since the badge announces them. A set's `devtoolsDock` names a DevTools dock listing its problems in full. The badge's entry for that set switches straight to it, and the full list actions switch to it in place of embedding its `url`. An entry counting a `group` of several sources still opens the my-bad dock.
-
-When the channel lives outside the Vite plugin (a framework serving it from its own dev server, say), add `myBadDevTools` next to the badge that server renders:
+If you use [Vite DevTools](https://devtools.vite.dev/guide/), `myBad()` adds a dock to it. You don't need to configure `my-bad`. Vite DevTools requires Vite 8.3 or later. Install `@vitejs/devtools`, then enable DevTools in the same config:
 
 ```ts
-import { myBadDevTools } from 'my-bad/vite'
+import { myBad } from 'my-bad/vite'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
+  devtools: true,
   plugins: [
-    myBadDevTools({
-      channel: '/__my-bad',
-      onRegister: () => channel.setDevTools(true)
-    })
+    myBad()
   ]
 })
 ```
 
-The channel serves the dock's page at `{channel}/panel` and its script at `{channel}/devtools.js`. Until the DevTools client starts, the badge mounts the overlay for an error as usual; pass `renderBadge({ awaitHost: 3000 })` to give it up to that long to take over first. The badge only waits when the channel reports a registered dock in its `hello`, so pages without DevTools mount the overlay straight away. `myBad()` tells its own channel; with `myBadDevTools`, call `channel.setDevTools(true)` from `onRegister`, relaying it when the channel lives in another process. An untrusted DevTools client never runs the dock's script, so keep the wait short.
+The dock lists the open error, the warnings, and every problem set. Errors no longer take over the page while DevTools is running.
 
-## Presets
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/devtools-dark.png">
+  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/devtools-light.png" alt="The my-bad dock open in Vite DevTools, listing the open error, a warning, three TypeScript errors and two ESLint warnings, with the error's hint and source snippet shown beside them">
+</picture>
 
-`my-bad/presets` exports `envPreset`, `vuePreset`, `requestPreset` (alias `h3Preset`), `nitroPreset` and `nuxtPreset`. Presets contribute frame classification, sections (request, headers with redaction, route, environment), component traces and docs links for error codes.
+## Use it in any dev server
 
-`nuxtPreset` links codes such as `E1001` or `NUXT_E1001` to `https://nuxt.com/docs/errors/e1001`, which redirects to the current version; pass `docsBase` to point elsewhere.
+In the error handler of your dev server, build a report and render it. In this example, `error`, `req`, and `res` come from your server:
+
+```ts
+import { createReport, renderAnsi, renderPage, serializeReport } from 'my-bad'
+
+const cwd = process.cwd()
+const report = await createReport(error, { cwd })
+
+console.error(renderAnsi(report, { cwd }))
+
+res.statusCode = 500
+if (req.headers.accept?.includes('text/html')) {
+  res.setHeader('content-type', 'text/html')
+  res.end(renderPage(report, { cwd }))
+}
+else {
+  res.setHeader('content-type', 'application/json')
+  res.end(JSON.stringify(serializeReport(report, { cwd })))
+}
+```
+
+To keep pages live, add the channel and the badge. The [dev server guide](https://github.com/danielroe/my-bad/blob/main/docs/dev-server.md) walks through each step.
+
+## Show problems from other tools
+
+Type checkers, linters, and audits can publish their current diagnostics as a problem set. Every page that renders the badge shows a count for each tool, and opens the problems beside the page:
+
+```ts
+import { ESLint } from 'eslint'
+import { createProblemReport } from 'my-bad'
+
+const results = await new ESLint().lintFiles(['src'])
+
+channel.setProblems('eslint', results.flatMap(result => result.messages.map(message => createProblemReport({
+  name: 'ESLint',
+  message: message.message,
+  code: message.ruleId ?? undefined,
+  file: result.filePath,
+  line: message.line,
+  column: message.column,
+  kind: message.severity === 2
+    ? 'error'
+    : 'warning',
+}))), { label: 'ESLint' })
+```
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/drawer-dark.png">
+  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/drawer-light.png" alt="The problems drawer beside a page, listing a warning, three TypeScript errors and two ESLint warnings, with the first TypeScript error and its source snippet shown beside them">
+</picture>
+
+## Next steps
+
+- [Integrate with a dev server](https://github.com/danielroe/my-bad/blob/main/docs/dev-server.md): connect reports, the channel, and the badge in your own server.
+- [Use with Vite](https://github.com/danielroe/my-bad/blob/main/docs/vite.md): render server errors, and configure the plugin and Vite DevTools.
+- [Publish problems](https://github.com/danielroe/my-bad/blob/main/docs/problems.md): show diagnostics from a type checker, linter, or audit.
+- [Reference](https://github.com/danielroe/my-bad/blob/main/docs/README.md): reports, rendering, the live channel, and every export.
 
 ## 💻 Development
 
@@ -385,7 +141,7 @@ pnpm test:a11y
 # render screenshots of the ui
 pnpm screenshot
 
-# re-render the README assets in assets/ (autofix.ci keeps these current)
+# re-render the screenshots in assets/ (autofix.ci keeps these current)
 pnpm assets
 # experiment in the playground
 pnpm play

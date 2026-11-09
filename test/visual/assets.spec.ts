@@ -2,6 +2,7 @@ import { expect, test } from 'playwright/test'
 import { clientAssets, renderAnsi, renderBadge, renderPage } from '../../dist/index.mjs'
 import { ansiSvg } from '../../playground/ansi-svg.ts'
 import { demoReport, fixtures } from '../../playground/demo.ts'
+import { routeIcons, startShowcase } from './showcase.ts'
 
 /**
  * Imports the built package because this spec runs under Playwright's runner,
@@ -161,6 +162,70 @@ test.describe('README assets', () => {
         animations: 'disabled',
         caret: 'hide',
       })
+    }
+  })
+
+  test('problems drawer', async ({ page }) => {
+    const showcase = await startShowcase({ devtools: false })
+    try {
+      for (const scheme of ['dark', 'light'] as const) {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+        await page.goto(showcase.url)
+        await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 3' }).click()
+        await page.frameLocator('my-bad-overlay-badge .mb-drawer iframe').locator('.mb-message').waitFor()
+        await expect(page).toHaveScreenshot(`drawer-${scheme}.png`, {
+          maxDiffPixels: 2000,
+          scale: 'device',
+          animations: 'disabled',
+          caret: 'hide',
+        })
+      }
+    }
+    finally {
+      await showcase.close()
+    }
+  })
+
+  test('warnings panel', async ({ page }) => {
+    const showcase = await startShowcase({ devtools: false })
+    try {
+      for (const scheme of ['dark', 'light'] as const) {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+        await page.goto(showcase.url)
+        await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.locator('my-bad-overlay [data-message]').first().waitFor()
+        await expect(page).toHaveScreenshot(`warnings-${scheme}.png`, {
+          maxDiffPixels: 2000,
+          scale: 'device',
+          animations: 'disabled',
+          caret: 'hide',
+        })
+      }
+    }
+    finally {
+      await showcase.close()
+    }
+  })
+
+  test('vite devtools dock', async ({ page }) => {
+    const showcase = await startShowcase({ devtools: true })
+    try {
+      await routeIcons(page)
+      for (const scheme of ['dark', 'light'] as const) {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+        await page.goto(showcase.url)
+        await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.frameLocator('iframe').locator('.mb-message').waitFor()
+        await expect(page).toHaveScreenshot(`devtools-${scheme}.png`, {
+          maxDiffPixels: 2000,
+          scale: 'device',
+          animations: 'disabled',
+          caret: 'hide',
+        })
+      }
+    }
+    finally {
+      await showcase.close()
     }
   })
 

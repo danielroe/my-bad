@@ -30,6 +30,7 @@
   "exclude": [
     "test/fixtures/nuxt-app",
     "test/fixtures/nuxt-v4",
-    "test/fixtures/nuxt-v5"
+    "test/fixtures/nuxt-v5",
+    "test/visual/app"
   ]
 }

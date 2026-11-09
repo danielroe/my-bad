@@ -1,7 +1,7 @@
 import antfu from '@antfu/eslint-config'
 
 export default antfu({
-  ignores: ['.github/workflows/release.yml', 'test/fixtures/**/dist'],
+  ignores: ['.github/workflows/release.yml', 'test/fixtures/**/dist', 'test/visual/app/**'],
 }, {
   files: ['playground/**', 'test/visual/**'],
   rules: {
