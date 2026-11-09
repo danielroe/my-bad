@@ -89,7 +89,7 @@
     "eslint": "10.14.0",
     "fast-check": "4.10.2",
     "installed-check": "11.0.0",
-    "knip": "6.44.1",
+    "knip": "6.44.2",
     "nano-staged": "1.0.2",
     "pkg-pr-new": "0.0.93",
     "playwright": "1.64.1",
