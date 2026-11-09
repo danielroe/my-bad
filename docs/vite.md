@@ -188,6 +188,12 @@ installMyBadClient()
 
 The client mounts the overlay that the plugin pushes over the HMR connection, and removes it when the error clears.
 
+## Content Security Policy
+
+When you set [`html.cspNonce`](https://vite.dev/config/shared-options#html-cspnonce), the plugin passes it as the `nonce` of `ctx.page`, `ctx.overlay`, and the page that the channel serves at `{channel}/panel`. To use another nonce for one response, pass `nonce` to `ctx.page` or `ctx.overlay`.
+
+The client stamps the overlay that the plugin pushes over HMR with the nonce of `<meta property="csp-nonce">`, so it still loads when your server replaces the nonce in each response. See [Content Security Policy](./rendering.md#content-security-policy).
+
 ## Plugin options
 
 `myBad()` takes these options:

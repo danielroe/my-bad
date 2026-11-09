@@ -218,7 +218,7 @@ html += renderBadge({ channel: '/__my-bad', nonce })
 
 Every `<script>`, `<style>`, and stylesheet `<link>` in the output carries the nonce. The scripts and styles that the client adds later, such as the overlay that the badge loads, carry the nonce of the script that added them.
 
-When the DevTools dock mounts the badge on a page that renders none, it takes the nonce from `<meta property="csp-nonce">`, which Vite adds when you set [`html.cspNonce`](https://vite.dev/config/shared-options#html-cspnonce).
+When the DevTools dock mounts the badge on a page that renders none, it takes the nonce from `<meta property="csp-nonce">`, which Vite adds when you set [`html.cspNonce`](https://vite.dev/config/shared-options#html-cspnonce). The Vite client does the same for the overlay that the plugin pushes over HMR. See [Content Security Policy in Vite](./vite.md#content-security-policy).
 
 The badge drawer and the DevTools dock show the page that the channel serves at `{channel}/panel`. If your server sends a nonce-based policy for that page too, pass its nonce to the channel handler:
 

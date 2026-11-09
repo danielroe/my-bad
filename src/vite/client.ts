@@ -30,11 +30,15 @@ export function installMyBadClient(hot: ImportMetaHot | undefined = import.meta.
     remove()
     const template = document.createElement('template')
     template.innerHTML = html
+    const nonce = document.querySelector<HTMLMetaElement>('meta[property=csp-nonce]')?.nonce
     for (const node of [...template.content.children]) {
       if (node.tagName === 'SCRIPT') {
         const script = document.createElement('script')
         for (const attr of node.attributes) {
           script.setAttribute(attr.name, attr.value)
+        }
+        if (nonce) {
+          script.nonce = nonce
         }
         script.textContent = node.textContent
         script.setAttribute('data-my-bad', '')
