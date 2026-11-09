@@ -141,7 +141,7 @@ Several sources can share one `url`, for example a tool that serves one page for
 
 ### Open another DevTools dock
 
-A tool with its own Vite DevTools dock can name it in `devtoolsDock`. When the page runs DevTools, the badge entry for that source switches to that dock. The dock also replaces `url` as the full list. An entry that counts a `group` of several sources still opens the `my-bad` dock.
+A tool with its own Vite DevTools dock can name it in `devtoolsDock`. When the page runs DevTools, the badge entry for that source switches to that dock. The dock also replaces `url` as the full list. An entry that counts a `group` of several sources still opens the `my-bad` dock. `my-bad` adds no DevTools message for the source, since the tool posts its own.
 
 ## Identify problems
 

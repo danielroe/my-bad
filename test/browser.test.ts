@@ -2194,7 +2194,7 @@ describe('devtools dock', () => {
     channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript', url: '/__typecheck/', devtoolsDock: 'checker' })
     channel.setProblems('lint', [await report('Unused variable')], { label: 'ESLint', url: '/__lint/' })
     const { page, errors, calls } = await open('/devtools-host')
-    await waitFor(async () => (await calls()).messages['my-bad:problems:ts']?.actions?.at(-1)?.activate.dockId, 'checker')
+    await waitFor(async () => (await calls()).messages['my-bad:problems:lint']?.actions?.at(-1)?.activate.dockId, 'my-bad')
     expect((await calls()).messages['my-bad:problems:lint']?.actions?.at(-1)?.activate).toEqual({
       dockId: 'my-bad',
       params: { source: 'lint', list: true },
@@ -2226,6 +2226,33 @@ describe('devtools dock', () => {
     const switched = (await calls()).switched.length
     await grouped.click()
     await waitFor(async () => (await calls()).switched.slice(switched).join(), 'my-bad')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('leaves the messages of a problem set to the dock it names, while still counting it', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('vue-tsc', [await report('Type mismatch')], { label: 'vue-tsc', devtoolsDock: 'checker' })
+    channel.setProblems('lint', [await report('Unused variable')], { label: 'ESLint' })
+    const { page, errors, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).badges.at(-1)?.badge, '2')
+    await waitFor(async () => !!(await calls()).messages['my-bad:problems:lint'], true)
+    expect(Object.keys((await calls()).messages)).toEqual(['my-bad:problems:lint'])
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'vue-tsc 1' }).waitFor()
+
+    channel.setProblems('vue-tsc', [], {
+      label: 'vue-tsc',
+      status: 'failed',
+      error: 'crashed',
+      devtoolsDock: 'checker',
+    })
+    channel.setProblems('lint', [await report('Unused variable'), await report('Unused import')], { label: 'ESLint' })
+    await waitFor(async () => (await calls()).badges.at(-1)?.badge, '3')
+    await waitFor(async () => (await calls()).messages['my-bad:problems:lint']?.message, 'ESLint: 2 errors')
+    expect(new Set((await calls()).added)).toEqual(new Set(['my-bad:problems:lint']))
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
