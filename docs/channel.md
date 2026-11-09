@@ -86,7 +86,7 @@ The channel trusts a caller that connects from a loopback address. It reads the 
 
 Any other caller is untrusted, including a caller whose address is unknown. This covers a dev server bound with `--host`, and a connection forwarded into a container. Untrusted callers still connect and receive updates, with these limits:
 
-- History and `hello` hold only the reports that concern the page. A report that names a request id concerns only the page with that id, never a page with the same path.
+- History and `hello` hold only the reports that concern the page, each as published for a request of that page. A report that names a request id concerns only the page with that id, never a page with the same path.
 - `/history/{id}` responds with a 404 for any other report.
 - `/problems` responds with a 403. Problem sets reach the page only as counts.
 - Log entries reach the page only when they belong to a request that concerns it.
@@ -145,6 +145,8 @@ channel.setDevTools(true)
 An error can name the request that it came from, with a `requestId` and a `request` such as `GET /widgets`. It then reaches only the pages that the request concerns, and replaces only earlier errors from the same request. Other trusted pages list it in their history.
 
 An error from no request reaches every page, and replaces every open error. Compile errors and client runtime errors usually have no request.
+
+Several requests can raise the same error, with the same report id. The error then stays open on the page of each request, up to the 20 most recent requests. `clearError(id)` retires it for all of them.
 
 The channel matches an error to a page like this:
 
