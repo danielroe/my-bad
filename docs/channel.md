@@ -60,7 +60,7 @@ The handler routes on the end of the path, so only pass it requests under the ba
 | `POST {channel}/open` | Opens a file in an editor, when `open` is set. |
 | `GET {channel}/history/{id}` | A stored report, as JSON. Untrusted callers pass the `requestId` or `path` of their page as query parameters. |
 | `GET {channel}/problems` | Every problem set in full, as JSON. Only for trusted callers. |
-| `GET {channel}/panel` | The page that the badge drawer and the DevTools dock show. |
+| `GET {channel}/panel` | The page that the badge drawer and the DevTools dock show. Pass `{ nonce }` to the handler to stamp its scripts and styles with a CSP nonce. |
 | `GET {channel}/client.js`, `client.css`, `badge.js`, `devtools.js` | The client assets. |
 
 The channel caches an asset forever when the request names the hash of the current build in `?v=`, as `renderBadge` does. With any other hash, it serves the asset uncached.

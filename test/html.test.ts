@@ -34,8 +34,7 @@ async function report() {
 }
 
 function stateJson(html: string): string {
-  const start = html.indexOf('<script type="application/json">') + '<script type="application/json">'.length
-  return html.slice(start, html.indexOf('</script>', start))
+  return /<script type="application\/json"[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!
 }
 
 /** Server-rendered markup only, without the embedded state and client script. */
@@ -258,6 +257,59 @@ describe('injectOverlay', () => {
     const html = injectOverlay('<html><body><p>page</p></body></html>', r)
     expect(html.endsWith('</script></body></html>')).toBe(true)
     expect(injectOverlay('<p>no body</p>', r).startsWith('<p>no body</p><my-bad-overlay>')).toBe(true)
+  })
+})
+
+describe('nonce', () => {
+  function tags(html: string): string[] {
+    return [
+      ...html.replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/g, '$1').matchAll(/<(?:script|style|link)\b[^>]*>/g),
+    ].map(match => match[0])
+  }
+
+  async function outputs(nonce?: string): Promise<string[]> {
+    const r = await report()
+    return [
+      renderPage(r, { nonce }),
+      renderPage(r, {
+        nonce,
+        assets: { script: '/client.js', styles: '/client.css' },
+      }),
+      renderOverlay(r, { nonce }),
+      injectOverlay('<html><body><p>page</p></body></html>', r, { nonce }),
+      renderBadge({ channel: '/__my-bad', nonce }),
+    ]
+  }
+
+  it('stamps every script and stylesheet with the escaped nonce', async () => {
+    for (const html of await outputs('a"b<c')) {
+      const found = tags(html)
+      expect(found.length).toBeGreaterThan(1)
+      for (const tag of found) {
+        expect(tag).toContain(' nonce="a&quot;b&lt;c"')
+      }
+      expect(JSON.stringify(JSON.parse(stateJson(html)))).not.toMatch(/nonce|b<c/)
+    }
+  })
+
+  it('renders no nonce without one', async () => {
+    const [page, external] = await outputs()
+    expect(tags(page!)).toEqual([
+      '<script>',
+      '<style>',
+      '<script type="application/json">',
+      '<script>',
+    ])
+    expect(tags(external!)).toEqual([
+      '<script>',
+      '<link rel="stylesheet" href="/client.css">',
+      '<style>',
+      '<script type="application/json">',
+      '<script src="/client.js">',
+    ])
+    for (const html of await outputs('')) {
+      expect(tags(html).join('')).not.toContain('nonce')
+    }
   })
 })
 

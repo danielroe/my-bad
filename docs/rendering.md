@@ -37,6 +37,7 @@ With a `channel`, the page connects to the [live channel](./channel.md). It swap
 | `cwd` | | Directory that paths are shown relative to. |
 | `channel` | | Base path of the live channel, for example `/__my-bad`. Without it, the page is static. |
 | `requestId` | | Id of the request that the page was rendered for. The channel uses it to match errors to the page. See [Errors and requests](./channel.md#errors-and-requests). |
+| `nonce` | | CSP nonce of the page. See [Content Security Policy](#content-security-policy). |
 | `history` | | Entries to list before the page connects to the channel. Pass `channel.historyFor({ requestId })`. `channel.history` holds every stored report, so don't pass it to pages that untrusted callers can load. See [History for one page](./channel.md#history-for-one-page). |
 | `environment` | | Where the error happened, for example `Server` or `Client`. Shown next to the error name. |
 | `theme` | | See [Theming](#theming). |
@@ -124,7 +125,7 @@ The event also fires on other pages when an error from no request is retired. On
 
 ### Badge options
 
-`renderBadge` takes the `cwd`, `requestId`, `environment`, `theme`, `editor`, `maxMessageLength`, `dock`, and `tag` options of the [overlay](#overlay), and these:
+`renderBadge` takes the `cwd`, `requestId`, `nonce`, `environment`, `theme`, `editor`, `maxMessageLength`, `dock`, and `tag` options of the [overlay](#overlay), and these:
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -206,6 +207,24 @@ renderPage(report, {
 The channel serves both files under its base path. To serve them yourself, use the strings in `clientAssets.script`, `clientAssets.styles`, and `clientAssets.badge`.
 
 Theme overrides stay inline, so a shared stylesheet still lets each response use its own theme.
+
+## Content Security Policy
+
+A page with a nonce-based policy, such as `script-src 'nonce-…'` or `style-src 'nonce-…'`, blocks the scripts or styles that don't carry its nonce. Pass the nonce of the page to `renderPage`, `renderOverlay`, `injectOverlay`, or `renderBadge`:
+
+```ts
+html += renderBadge({ channel: '/__my-bad', nonce })
+```
+
+Every `<script>`, `<style>`, and stylesheet `<link>` in the output carries the nonce. The scripts and styles that the client adds later, such as the overlay that the badge loads, carry the nonce of the script that added them.
+
+When the DevTools dock mounts the badge on a page that renders none, it takes the nonce from `<meta property="csp-nonce">`, which Vite adds when you set [`html.cspNonce`](https://vite.dev/config/shared-options#html-cspnonce).
+
+The badge drawer and the DevTools dock show the page that the channel serves at `{channel}/panel`. If your server sends a nonce-based policy for that page too, pass its nonce to the channel handler:
+
+```ts
+await channel.handler(req, res, { nonce })
+```
 
 ## Theming
 

@@ -39,6 +39,8 @@ export interface CallerOptions {
    * the proxy.
    */
   trusted?: boolean
+  /** CSP nonce of the response, carried by every script and stylesheet of the page served at `{channel}/panel`. */
+  nonce?: string
 }
 
 export interface HistoryRequest {
@@ -575,7 +577,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
   }
 
   /** The docked page, and the problem sets in full for trusted callers. */
-  function readResponse(matched: 'panel' | 'problems', method: string | undefined, url: URL, trusted: boolean): { status: number, headers?: Record<string, string>, body?: string } {
+  function readResponse(matched: 'panel' | 'problems', method: string | undefined, url: URL, trusted: boolean, nonce: string | undefined): { status: number, headers?: Record<string, string>, body?: string } {
     if (method !== 'GET' && method !== 'HEAD') {
       return { status: 405 }
     }
@@ -587,6 +589,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
           channel: url.pathname.slice(0, -'/panel'.length).replace(/^[/\\]+/, '/'),
           embed: url.searchParams.has('embed'),
           drawer: url.searchParams.has('drawer'),
+          nonce,
         })
       : JSON.stringify([
           ...problemSets.values(),
@@ -642,7 +645,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         return true
       }
       if (matched === 'panel' || matched === 'problems') {
-        const { status, headers, body } = readResponse(matched, req.method, url, trusted)
+        const { status, headers, body } = readResponse(matched, req.method, url, trusted, caller?.nonce)
         res.writeHead(status, headers).end(body)
         return true
       }
@@ -707,7 +710,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         return new Response(null, { status: await openStatus(request.headers.get('content-type'), await request.json().catch(() => undefined)) })
       }
       if (matched === 'panel' || matched === 'problems') {
-        const { status, headers, body } = readResponse(matched, request.method, url, trusted)
+        const { status, headers, body } = readResponse(matched, request.method, url, trusted, caller?.nonce)
         return new Response(body ?? null, { status, headers })
       }
       if ('asset' in matched) {

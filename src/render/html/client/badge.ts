@@ -83,7 +83,7 @@ function failed(set: ProblemSummary): boolean {
   return set.status === 'failed'
 }
 
-function start(state: BadgeState): void {
+function start(state: BadgeState, nonce: string | undefined): void {
   const overlay = state.overlay
   const tag = overlay.tag ?? 'my-bad-overlay'
   const query = new URLSearchParams({ path: `${location.pathname}${location.search}` })
@@ -478,6 +478,9 @@ function start(state: BadgeState): void {
     json.textContent = JSON.stringify({ ...overlay, report, history } satisfies PageState)
     const script = document.createElement('script')
     script.src = state.script
+    if (nonce) {
+      json.nonce = script.nonce = nonce
+    }
     script.addEventListener('error', () => {
       loading = false
       host.remove()
@@ -561,6 +564,9 @@ function start(state: BadgeState): void {
     const shadow = host.attachShadow({ mode: 'open' })
     const style = document.createElement('style')
     style.textContent = `${styles}${overlay.styles ?? ''}`
+    if (nonce) {
+      style.nonce = nonce
+    }
     const dock = document.createElement('div')
     dock.className = 'mb-dock'
     dock.lang = 'en'
@@ -902,8 +908,9 @@ function start(state: BadgeState): void {
   }
 }
 
-const state = readJson<BadgeState>(document.currentScript?.previousElementSibling)
+const script = document.currentScript as HTMLScriptElement | null
+const state = readJson<BadgeState>(script?.previousElementSibling)
 if (state?.overlay.channel && typeof EventSource !== 'undefined' && (state.hosted || !window.__MY_BAD_CLIENT__) && !window.__MY_BAD_SOURCE__) {
-  start(state)
+  start(state, script?.nonce)
   dispatchEvent(new Event('my-bad:badge'))
 }

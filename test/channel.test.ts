@@ -559,6 +559,19 @@ describe('client assets', () => {
     channel.close()
   })
 
+  it('stamps the docked page with the nonce the caller passes', async () => {
+    const channel = createChannel()
+    const tags = async (nonce?: string) => {
+      const panel = await channel.fetchHandler(new Request('http://localhost/__my-bad/panel?embed'), { trusted: false, nonce })
+      return (await panel!.text()).replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/g, '$1').match(/<(?:script|style|link)\b[^>]*>/g)!
+    }
+    const stamped = await tags('a"b')
+    expect(stamped).toHaveLength(5)
+    expect(stamped.filter(tag => !tag.includes(' nonce="a&quot;b"'))).toEqual([])
+    expect((await tags()).join('')).not.toContain('nonce')
+    channel.close()
+  })
+
   it('keeps the docked page\'s assets on the dev server for a path starting with several slashes', async () => {
     const channel = createChannel()
     for (const path of ['//evil.example/panel', '///evil.example/panel']) {
