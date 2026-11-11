@@ -276,6 +276,70 @@ describe('createReport', () => {
     expect(report.frames[0]).toMatchObject({ file: '/proj/app.vue', line: 2, column: 9 })
   })
 
+  it('takes a code frame appended to the message of a located warning', async () => {
+    const frame = '1  |  <template>\n2  |    <input v-model="count">\n   |           ^^^^^^^^^^^^^^^\n3  |  </template>'
+    const loaders = [
+      {
+        name: 'memory',
+        read: () => '<template>\n  <input v-model="count">\n</template>\n',
+      },
+    ]
+    for (const located of [
+      { id: '/proj/app.vue' },
+      {
+        loc: { file: '/proj/app.vue', line: 2, column: 10 },
+      },
+    ]) {
+      const report = await createReport({
+        message: `v-model cannot be used on a const binding.\n${frame}\n`,
+        ...located,
+      }, { cwd: '/proj', kind: 'warning', loaders })
+      expect(report.kind).toBe('warning')
+      expect(report.message).toBe('v-model cannot be used on a const binding.')
+      expect(report.frames).toHaveLength(1)
+      expect(report.frames[0]).toMatchObject({
+        file: '/proj/app.vue',
+        line: 2,
+        column: 10,
+        type: 'app',
+        snippet: {
+          start: 1,
+          lines: ['<template>', '  <input v-model="count">', '</template>'],
+        },
+      })
+    }
+  })
+
+  it('takes the snippet of a located warning from its message, and leaves the message of an unlocated one alone', async () => {
+    const message = 'Broken\n1  |  a\n   |  ^'
+    const unlocated = await createReport({ message }, { cwd: '/proj', loaders: [] })
+    expect(unlocated.message).toBe(message)
+    expect(unlocated.frames).toEqual([])
+
+    for (const location of [
+      { id: '/proj/app.vue' },
+      {
+        loc: { file: '/proj/app.vue', line: 1, column: 1 },
+      },
+    ]) {
+      const located = await createReport({ message, ...location }, { cwd: '/proj', kind: 'warning', loaders: [] })
+      expect(located.message).toBe('Broken')
+      expect(located.frames).toEqual([
+        {
+          file: '/proj/app.vue',
+          line: 1,
+          column: 1,
+          type: 'app',
+          snippet: {
+            start: 1,
+            lines: ['a'],
+            lang: 'vue',
+          },
+        },
+      ])
+    }
+  })
+
   it('picks up status, code and data', async () => {
     const error = Object.assign(new Error('Not found'), {
       statusCode: 404,

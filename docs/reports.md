@@ -165,6 +165,8 @@ Parsers and loaders often throw an error whose message ends in a `file:line:colu
 
 An error without a stack stays an `error`. To place it, pass the Vite error shape: `{ message, id, loc }`.
 
+Vite plugins often append the code frame to the message they pass to `this.warn`, as `NN |  code` lines and a `^` line. When an input has an `id` or a `loc` but no `frame`, `createReport` splits a code frame like this off the end of the message, and uses it for the location and the snippet.
+
 ### Code frames from compiled code
 
 A bundler sometimes reports a position in the code it generated, but names the source file. For example, Rolldown can fail to parse a compiled Vue render function. `my-bad` then moves the position and code frame to `frame.compiled`, so the page labels the generated code as generated.

@@ -8,7 +8,7 @@ import { stripAnsi } from './ansi'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
 import { hasScheme, isFilePath, isModuleLocation, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath, withoutQuery } from './path'
-import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
+import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, splitEmbeddedFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeSnippet } from './tokenize'
 
@@ -196,15 +196,17 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     seen.add(input)
   }
 
-  const quoted = options.kind === undefined && !isCompileInput(input)
-    ? await compileInputFromMessage(error, ctx)
-    : undefined
-  const kind = options.kind ?? (quoted || isCompileInput(input)
-    ? 'compile'
-    : 'error')
-  const located = quoted ?? (isCompileInput(input)
+  const embedded = embeddedFrameInput(input, error)
+  const declared = embedded ?? (isCompileInput(input)
     ? input
     : undefined)
+  const quoted = options.kind === undefined && !declared
+    ? await compileInputFromMessage(error, ctx)
+    : undefined
+  const kind = options.kind ?? (quoted || declared
+    ? 'compile'
+    : 'error')
+  const located = quoted ?? declared
   const frames = await buildFrames(located ?? input, error, ctx, kind)
 
   const sources = await buildSourceFrames(error.sources, ctx, !located)
@@ -232,8 +234,8 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     name: quoted?.name ?? (error.unnamed && kind === 'warning'
       ? 'Warning'
       : error.name),
-    message: truncate(quoted
-      ? quoted.message
+    message: truncate(quoted ?? embedded
+      ? located!.message
       : located
         ? stripEmbeddedFrame(error.message)
         : error.message, options.maxMessageLength),
@@ -511,6 +513,31 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
     frames.push(frame)
   }
   return { frames, related, unresolved }
+}
+
+/**
+ * Vite plugins warn with a code frame appended to the message and only an `id`
+ * or `loc` to place it, so the frame is split off to locate the report.
+ */
+function embeddedFrameInput(input: unknown, error: NormalizedError): CompileErrorInput | undefined {
+  if (typeof input !== 'object' || input === null) {
+    return
+  }
+  const candidate = input as CompileErrorInput
+  const id = typeof candidate.id === 'string' && candidate.id
+    ? candidate.id
+    : undefined
+  if ((typeof candidate.frame === 'string' && candidate.frame) || (!id && !compileLoc(candidate))) {
+    return
+  }
+  const split = splitEmbeddedFrame(error.message)
+  return split && {
+    message: split.message,
+    frame: split.frame,
+    ...(id && { id }),
+    ...(candidate.loc && { loc: candidate.loc }),
+    ...(candidate.compiled !== undefined && { compiled: candidate.compiled }),
+  }
 }
 
 function isCompileInput(input: unknown): input is CompileErrorInput {
