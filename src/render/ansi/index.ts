@@ -62,13 +62,17 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const indent = '  '.repeat(depth)
   const width = ctx.width - indent.length
 
-  const icon = report.kind === 'warning'
-    ? p.yellow('⚠')
-    : p.red('✖')
-  const reportName = clean(report.name)
-  const name = report.kind === 'warning'
-    ? p.yellow(p.bold(reportName))
-    : p.red(p.bold(reportName))
+  const tone = report.kind === 'warning'
+    ? p.yellow
+    : report.kind === 'info'
+      ? p.blue
+      : p.red
+  const icon = tone(report.kind === 'warning'
+    ? '⚠'
+    : report.kind === 'info'
+      ? 'ℹ'
+      : '✖')
+  const name = tone(p.bold(clean(report.name)))
   const status = finite(report.status)
   const meta = [report.code !== report.name && report.code && p.dim(`[${clean(report.code)}]`), status && p.dim(`(${status})`)].filter(Boolean).join(' ')
   const header = depth === 0

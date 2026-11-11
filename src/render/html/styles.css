@@ -84,6 +84,8 @@
 .mb-kicker svg { width: 1.1em; height: 1.1em; }
 .mb-report[data-kind='warning'] { --mb-error: var(--mb-warning); --mb-error-bg: var(--mb-warning-bg); }
 .mb-report[data-kind='warning'] [data-kind-label], .mb-report[data-kind='warning'] .mb-kind-icon { color: var(--mb-warning); }
+.mb-report[data-kind='info'] { --mb-error: var(--mb-info); --mb-error-bg: var(--mb-info-bg); }
+.mb-report[data-kind='info'] [data-kind-label], .mb-report[data-kind='info'] .mb-kind-icon { color: var(--mb-info); }
 .mb-code a { display: inline-flex; align-items: center; gap: 4px; }
 .mb-copy { display: flex; flex: none; }
 .mb-copy > button { border-color: var(--mb-line-strong); border-radius: 6px 0 0 6px; color: var(--mb-fg); }
@@ -322,8 +324,10 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-index-item:hover { background: var(--mb-surface-2); }
 .mb-index-item[aria-current='true'] { border-radius: 0 6px 6px 0; background: color-mix(in oklab, var(--mb-fg) 10%, var(--mb-bg)); box-shadow: inset 2px 0 0 var(--mb-error); }
 .mb-index-item[data-kind='warning'][aria-current='true'] { box-shadow: inset 2px 0 0 var(--mb-warning); }
+.mb-index-item[data-kind='info'][aria-current='true'] { box-shadow: inset 2px 0 0 var(--mb-info); }
 .mb-index-item > svg { width: 14px; height: 14px; margin-top: 3px; color: var(--mb-error); }
 .mb-index-item[data-kind='warning'] > svg { color: var(--mb-warning); }
+.mb-index-item[data-kind='info'] > svg { color: var(--mb-info); }
 .mb-index-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mb-index-loc { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px/1.5 var(--mb-font-mono); color: var(--mb-fg-muted); }
 .mb-index-empty { margin: 0; padding: 12px 16px; color: var(--mb-fg-muted); }

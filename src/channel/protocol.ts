@@ -58,6 +58,8 @@ export interface ProblemSummary extends ProblemMeta {
   source: string
   errors: number
   warnings: number
+  /** Problems of kind `info`, when there are any. */
+  info?: number
 }
 
 export interface ProblemChanges {

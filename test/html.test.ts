@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createReport, injectOverlay, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
+import { createProblemReport, createReport, injectOverlay, renderAnsi, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
 import { nuxtTheme } from '../src/presets'
 import { renderDockedPage } from '../src/render/html'
-import { renderDocked, renderIndex } from '../src/render/html/view'
+import { ICONS, renderDocked, renderIndex } from '../src/render/html/view'
 
 async function report() {
   const error = Object.assign(new Error('Something <broke>'), { code: 'E1001' })
@@ -569,6 +569,35 @@ describe('docked view', () => {
     expect(html).not.toMatch(/mb-brand[ "]/)
     expect(html).not.toContain('my-bad')
     expect(renderDocked({ mode: 'docked', version: '', title: 'Nuxt <errors>' }, index)).toContain('<p class="mb-docked-title">Nuxt &lt;errors&gt;</p>')
+  })
+
+  it('lists info problems with their own icon and count, apart from the totals', () => {
+    const info = {
+      ...createProblemReport({ name: 'Checker', message: 'Consider a type annotation', kind: 'info' }),
+      id: 'i',
+    }
+    const index = {
+      history: [],
+      problems: [
+        {
+          source: 'checker',
+          label: 'Checker',
+          errors: 0,
+          warnings: 0,
+          info: 1,
+          reports: [info],
+        },
+      ],
+    }
+    const html = renderDocked({ mode: 'docked', version: '' }, index)
+    expect(html).toContain('<span class="mb-count">1 info</span>')
+    expect(html).toContain(`data-kind="info" data-id="i" data-source="checker" aria-current="false">${ICONS.info}`)
+    expect(html).toContain('data-docked-count>All clear</span>')
+    const page = renderPage(info)
+    expect(page).toContain('<span data-kind-label>Info</span>')
+    expect(page).toContain('Copy problem')
+    expect(renderAnsi(info, { colors: false }).split('\n')[0]).toBe('ℹ Checker: Consider a type annotation')
+    expect(toMarkdown(info)).toContain('## Info: Checker')
   })
 
   it('styles the dock after its host and the drawer after the page', () => {

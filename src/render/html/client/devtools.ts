@@ -104,7 +104,7 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
       if (summary.devtoolsDock || (!summary.errors && !summary.warnings && !failed)) {
         continue
       }
-      const reports = summary.reports ?? []
+      const reports = (summary.reports ?? []).filter(report => report.kind !== 'info')
       const label = summary.group
         ? `${summary.group} · ${summary.label ?? summary.source}`
         : summary.label ?? summary.source

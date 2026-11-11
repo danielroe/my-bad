@@ -1250,6 +1250,10 @@ describe('createProblemReport', () => {
     })
   })
 
+  it('takes an info problem', () => {
+    expect(createProblemReport({ name: 'Checker', message: 'Consider a type annotation', kind: 'info' }).kind).toBe('info')
+  })
+
   it('keeps the hint of a problem, without colours', () => {
     const problem = createProblemReport({
       name: 'ESLint',

@@ -141,7 +141,7 @@ function mount(): Mount | undefined {
 }
 
 function errorOf(report: ErrorReport | undefined): ErrorReport | undefined {
-  return report?.kind === 'warning'
+  return report?.kind === 'warning' || report?.kind === 'info'
     ? undefined
     : report
 }
@@ -341,7 +341,9 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
 function headline(report: ErrorReport): string {
   return `${report.kind === 'warning'
     ? 'Warning'
-    : 'Error'}: ${report.name}: ${plainText(firstLine(report.message), report.codeSpans)}`
+    : report.kind === 'info'
+      ? 'Info'
+      : 'Error'}: ${report.name}: ${plainText(firstLine(report.message), report.codeSpans)}`
 }
 
 const labelRestores = new WeakMap<HTMLElement, () => void>()

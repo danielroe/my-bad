@@ -34,7 +34,24 @@ export const ICONS = {
   checking: '<svg class="mb-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
 }
 
-const KIND_LABEL = { error: 'Error', warning: 'Warning', compile: 'Compile error' }
+const KIND_LABEL = {
+  error: 'Error',
+  warning: 'Warning',
+  compile: 'Compile error',
+  info: 'Info',
+}
+const KIND_NOUN = {
+  error: 'error',
+  warning: 'warning',
+  compile: 'error',
+  info: 'problem',
+}
+const KIND_ICON = {
+  error: ICONS.error,
+  warning: ICONS.warning,
+  compile: ICONS.error,
+  info: ICONS.info,
+}
 
 function headerCount(report: ErrorReport): string {
   if (report.kind !== 'error') {
@@ -109,9 +126,7 @@ function renderIndexItem(entry: Pick<HistoryEntry, 'id' | 'kind' | 'name' | 'mes
   const title = repeatsLabel(entry.name, heading)
     ? message
     : `${escapeHtml(entry.name)}: ${message}`
-  return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${entry.kind === 'warning'
-    ? ICONS.warning
-    : ICONS.error}<span class="mb-index-title">${title}</span>${location
+  return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${KIND_ICON[entry.kind]}<span class="mb-index-title">${title}</span>${location
     ? `<span class="mb-index-loc">${escapeHtml(location)}</span>`
     : ''}</button></li>`
 }
@@ -150,7 +165,7 @@ function renderIndexSet(set: DockedIndex['problems'][number], state: DockedState
 /** The list beside a docked view, of the open error, the warnings and every problem set. */
 export function renderIndex(state: DockedState, index: DockedIndex, shown?: BadgeFocus): string {
   const warnings = (index.history ?? []).filter(entry => entry.kind === 'warning').reverse()
-  const sets = index.problems.filter(set => set.errors + set.warnings || failed(set) || set.status === 'checking')
+  const sets = index.problems.filter(set => set.errors + set.warnings + (set.info ?? 0) || failed(set) || set.status === 'checking')
   const groups = [
     index.current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(index.current, indexLocation(index.current, state), shown)}</ul></section>`,
     warnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${warnings.length}</span></h2><ul>${warnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
@@ -316,7 +331,9 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
   return `<article class="mb-report" data-kind="${escapeHtml(report.kind)}" aria-labelledby="${id}-name ${id}-message">
   <div class="mb-report-heading"><p class="mb-kicker">${report.kind === 'error'
     ? ''
-    : `<span class="mb-kind-icon" aria-hidden="true">${ICONS.warning}</span>`}<span class="mb-name" id="${id}-name" data-name>${escapeHtml(selfCoded ? KIND_LABEL[report.kind] : report.name)}</span>${selfCoded
+    : `<span class="mb-kind-icon" aria-hidden="true">${report.kind === 'info'
+      ? ICONS.info
+      : ICONS.warning}</span>`}<span class="mb-name" id="${id}-name" data-name>${escapeHtml(selfCoded ? KIND_LABEL[report.kind] : report.name)}</span>${selfCoded
     ? ''
     : `${report.kind === 'error'
       ? ''
@@ -327,9 +344,7 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
     : ''}${code}${report.status
     ? `<span data-status>HTTP ${escapeHtml(report.status)}</span>`
     : ''}</p>${chrome
-    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy ${report.kind === 'warning'
-      ? 'warning'
-      : 'error'}</button>
+    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy ${KIND_NOUN[report.kind]}</button>
         <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
         <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
           <li><button type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy as Markdown</button></li>
@@ -386,9 +401,7 @@ function renderRelated(related: Location[] | undefined, state: PageState): strin
 
 function renderFrames(frames: Frame[], related: Location[] | undefined, state: PageState, parent: string): string {
   if (!frames.length) {
-    return `<p class="mb-unavailable">No stack trace was provided. The ${state.report.kind === 'warning'
-      ? 'warning'
-      : 'error'} message and request context are still available to copy.</p>${related?.length
+    return `<p class="mb-unavailable">No stack trace was provided. The ${KIND_NOUN[state.report.kind]} message and request context are still available to copy.</p>${related?.length
       ? `<div class="mb-ordered-stack">${renderRelated(related, state)}</div>`
       : ''}`
   }
@@ -454,7 +467,9 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
     ? 'Stack frame'
     : `${state.report.kind === 'warning'
       ? 'Warning'
-      : 'Error'} source`}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function
+      : state.report.kind === 'info'
+        ? 'Problem'
+        : 'Error'} source`}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function
     ? `<span class="mb-function"${attr('title', frame.function)}>${escapeHtml(frame.function)}</span>`
     : ''}<span data-location-source>${location(frame)}</span>${generated
     ? `<span data-location-compiled>${location(frame.compiled!)}</span>`

@@ -21,7 +21,9 @@ function render(report: ErrorReport, options: MarkdownOptions, level: number): s
     ? 'Warning'
     : report.kind === 'compile'
       ? 'Compile error'
-      : 'Error'
+      : report.kind === 'info'
+        ? 'Info'
+        : 'Error'
   out.push(`${h} ${label}: ${report.name}${report.code && report.code !== report.name
     ? ` [${report.code}]`
     : ''}`, '')

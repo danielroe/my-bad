@@ -1463,6 +1463,33 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('leaves info problems out of the pill and the card', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const info = (message: string) => createProblemReport({ name: 'Checker', message, kind: 'info' })
+    channel.setProblems('checker', [
+      info('Consider a type annotation'),
+    ], { label: 'Checker' })
+    const { page, errors } = await open('/badge')
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
+    expect(await page.locator('my-bad-overlay-badge .mb-problems').isVisible()).toBe(false)
+
+    channel.setProblems('checker', [
+      info('Consider a type annotation'),
+      info('Prefer a const'),
+      createProblemReport({ name: 'Checker', message: 'Type mismatch' }),
+    ], { label: 'Checker' })
+    await waitFor(() => peek.isVisible(), true)
+    expect(await peek.locator('.mb-peek-message').textContent()).toBe('Type mismatch')
+    expect(await peek.locator('.mb-peek-meta').textContent()).toBe('Checker')
+    expect(await page.locator('my-bad-overlay-badge .mb-problems').textContent()).toBe('Checker 1')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it('renders code spans in the card of a report that uses them', async () => {
     channel.clearWarning()
     channel.clearError()

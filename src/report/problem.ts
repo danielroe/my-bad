@@ -21,8 +21,8 @@ export interface ProblemInput {
   snippet?: Snippet | string
   /** Other files the problem concerns, absolute or relative to `cwd`. */
   related?: Array<{ file: string, line?: number, column?: number }>
-  /** Default `error`. */
-  kind?: 'error' | 'warning'
+  /** Default `error`. An `info` problem is listed, but counts as neither an error nor a warning. */
+  kind?: 'error' | 'warning' | 'info'
 }
 
 export interface ProblemReportOptions extends Pick<ReportOptions, 'cwd' | 'maxMessageLength' | 'maxSnippetLineLength' | 'tokenizer'> {

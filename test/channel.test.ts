@@ -1456,7 +1456,7 @@ describe('problem sets', () => {
     return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
   }
 
-  async function problem(message: string, kind: 'error' | 'warning' = 'error') {
+  async function problem(message: string, kind: 'error' | 'warning' | 'info' = 'error') {
     return {
       ...await createReport(new Error(message), { loaders: [], snippets: false }),
       kind,
@@ -1496,6 +1496,28 @@ describe('problem sets', () => {
     expect(sunk.filter(event => event.type === 'problems').map(event => event.payload.devtoolsDock)).toEqual(['checker', 'other', undefined])
     expect((await hello(channel)).problems).toEqual([
       { source: 'ts', errors: 0, warnings: 0 },
+    ])
+    channel.close()
+  })
+
+  it('counts info problems apart from errors and warnings', async () => {
+    const channel = createChannel()
+    channel.setProblems('ts', [await problem('a'), await problem('b', 'info'), await problem('c', 'info')], { label: 'TypeScript' })
+    channel.setProblems('lint', [await problem('d', 'warning')], { label: 'ESLint' })
+    expect((await hello(channel)).problems).toEqual([
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        errors: 1,
+        warnings: 0,
+        info: 2,
+      },
+      {
+        source: 'lint',
+        label: 'ESLint',
+        errors: 0,
+        warnings: 1,
+      },
     ])
     channel.close()
   })

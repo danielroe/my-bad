@@ -25,10 +25,11 @@ export function plural(count: number, noun: string): string {
     : 's'}`
 }
 
-export function countsLabel(counts: { errors: number, warnings: number }): string {
+export function countsLabel(counts: { errors: number, warnings: number, info?: number }): string {
   return [
     counts.errors && plural(counts.errors, 'error'),
     counts.warnings && plural(counts.warnings, 'warning'),
+    counts.info && `${counts.info} info`,
   ].filter(Boolean).join(' · ')
 }
 

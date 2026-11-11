@@ -59,7 +59,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | `docsUrl` | Link to the documentation of the diagnostic. |
 | `file` | Absolute, or relative to `cwd`. |
 | `line`, `column` | Position in `file`. |
-| `kind` | `error` or `warning`. Default `error`. |
+| `kind` | `error`, `warning`, or `info`. Default `error`. The drawer and the dock list `info` problems, but the pill, the card, and the DevTools icon leave them out. |
 | `snippet` | A `Snippet`, or a code frame of `3 \| code` lines. A code frame can mark a line with `>`. |
 | `related` | Other files the problem concerns, as `{ file, line, column }`. Pages list them under **Also in**. |
 
@@ -153,7 +153,7 @@ The channel uses ids to skip repeated updates. If a source publishes the same re
 
 ## What pages and sinks receive
 
-Every page receives the error and warning counts of each set, but not its reports. A page receives the counts of every set when it connects. After that, it receives a `problems` event when a set changes, and a `problems:clear` event when `clearProblems` retires a set. The `problems:clear` payload names the `source`, or no source when every set is retired.
+Every page receives the error and warning counts of each set, and its `info` count when it has any, but not its reports. A page receives the counts of every set when it connects. After that, it receives a `problems` event when a set changes, and a `problems:clear` event when `clearProblems` retires a set. The `problems:clear` payload names the `source`, or no source when every set is retired.
 
 Trusted callers can fetch every set in full from `{channel}/problems`. Untrusted callers receive only the counts. See [Who can use the channel](./channel.md#who-can-use-the-channel).
 

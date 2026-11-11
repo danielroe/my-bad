@@ -253,7 +253,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
     for (const set of sets) {
       const known = new Set(problemReports.get(set.source)?.map(report => report.id))
       for (const report of set.reports) {
-        if (problemsKnown && !known.has(report.id)) {
+        if (problemsKnown && !known.has(report.id) && report.kind !== 'info') {
           fresh.push({ report, source: set.source })
         }
       }

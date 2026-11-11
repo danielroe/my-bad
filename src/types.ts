@@ -1,4 +1,5 @@
-export type ReportKind = 'error' | 'warning' | 'compile'
+/** `info` is for problem sets: lists and filters show it, but it counts as neither an error nor a warning. */
+export type ReportKind = 'error' | 'warning' | 'compile' | 'info'
 
 export type FrameType = 'app' | 'vendor' | 'native' | 'internal'
 

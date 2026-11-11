@@ -148,10 +148,12 @@ export interface Channel {
 
 function summarize({ reports, ...set }: ProblemSet): ProblemSummary {
   const warnings = reports.filter(report => report.kind === 'warning').length
+  const info = reports.filter(report => report.kind === 'info').length
   return {
     ...set,
-    errors: reports.length - warnings,
+    errors: reports.length - warnings - info,
     warnings,
+    ...(info && { info }),
   }
 }
 
