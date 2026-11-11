@@ -12,7 +12,7 @@ An error takes over the page until it's fixed. Problems don't interrupt you, so 
 - They raise no toasts, and never take over a page.
 - Every page shows a count for each source, in a pill beside the badge.
 - Selecting an entry in the pill opens its problems in a drawer beside the page.
-- New problems grow the pill into a card for a few seconds. The card shows the first new problem, and how many more arrived with it.
+- New problems grow the pill into a card for a few seconds. The card shows the first new problem with its hint, and how many more arrived with it.
 
 The card shows only on pages that the channel sends reports to. See [Trusted and untrusted callers](./channel.md#trusted-and-untrusted-callers).
 
@@ -54,6 +54,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | --- | --- |
 | `name` | Heads the report when it's opened. |
 | `message` | The diagnostic. |
+| `hint` | How to fix the problem, shown below the message. |
 | `code` | For example a rule name or `TS2322`. |
 | `docsUrl` | Link to the documentation of the diagnostic. |
 | `file` | Absolute, or relative to `cwd`. |

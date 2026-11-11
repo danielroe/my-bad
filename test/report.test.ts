@@ -1155,6 +1155,16 @@ describe('createProblemReport', () => {
     })
   })
 
+  it('keeps the hint of a problem, without colours', () => {
+    const problem = createProblemReport({
+      name: 'ESLint',
+      message: 'Missing return type.',
+      hint: '\u001B[36mAnnotate the return type.\u001B[39m',
+    })
+    expect(problem.hint).toBe('Annotate the return type.')
+    expect(createProblemReport({ name: 'ESLint', message: 'Missing return type.', hint: '' }).hint).toBeUndefined()
+  })
+
   it('keeps the indentation of a code frame with a single-space gutter', () => {
     const problem = createProblemReport({
       name: 'ESLint',

@@ -570,7 +570,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
     const dock = document.createElement('div')
     dock.className = 'mb-dock'
     dock.lang = 'en'
-    dock.innerHTML = '<span class="mb-problems"><span></span><span class="mb-problems-count"></span></span><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span></button><button type="button" class="mb-peek" hidden><span class="mb-peek-inner"><span></span><span class="mb-peek-message"></span><span class="mb-peek-meta"></span></span></button>'
+    dock.innerHTML = '<span class="mb-problems"><span></span><span class="mb-problems-count"></span></span><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span></button><button type="button" class="mb-peek" hidden><span class="mb-peek-inner"><span></span><span class="mb-peek-message"></span><span class="mb-peek-hint"></span><span class="mb-peek-meta"></span></span></button>'
     const [problems, button, card] = dock.children as unknown as [HTMLElement, HTMLButtonElement, HTMLButtonElement]
     button.addEventListener('click', () => void expand())
     card.addEventListener('click', openPeek)
@@ -673,10 +673,12 @@ function start(state: BadgeState, nonce: string | undefined): void {
       ? 'warning'
       : 'error'
     const frame = reportLocation(report)
-    const [icon, message, meta] = card.firstElementChild!.children as unknown as HTMLElement[]
+    const [icon, message, hint, meta] = card.firstElementChild!.children as unknown as HTMLElement[]
     card.dataset.kind = kind
     icon!.outerHTML = ICONS[kind]
     message!.textContent = `${report.name}: ${firstLine(report.message)}`
+    hint!.textContent = report.hint ?? ''
+    hint!.hidden = !report.hint
     meta!.textContent = [
       set && (set.group
         ? `${set.group} · ${set.label ?? set.source}`

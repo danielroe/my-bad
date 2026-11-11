@@ -9,6 +9,8 @@ export interface ProblemInput {
   /** Heads the report, and prefixes its message in problem lists unless it repeats the set's `label` (or `source`). */
   name: string
   message: string
+  /** How to fix the problem, shown below the message. */
+  hint?: string
   code?: string
   docsUrl?: string
   /** Absolute, or relative to `cwd`. */
@@ -50,6 +52,9 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
     message: truncate(stripAnsi(input.message), options.maxMessageLength ?? 10_000),
     ...(input.code && { code: input.code }),
     ...(input.code && input.code === input.name && { diagnostic: true as const }),
+    ...(input.hint && {
+      hint: stripAnsi(input.hint),
+    }),
     ...(input.docsUrl && { docsUrl: input.docsUrl }),
     frames: frame
       ? [frame]

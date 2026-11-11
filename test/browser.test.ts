@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
-import { clientAssets, createReport, renderBadge, renderOverlay, renderPage } from '../src'
+import { clientAssets, createProblemReport, createReport, renderBadge, renderOverlay, renderPage } from '../src'
 import { createChannel } from '../src/channel'
 import { badgeState } from '../src/render/html'
 import { assetUrls } from '../src/render/html/assets'
@@ -1396,6 +1396,53 @@ describe('badge', () => {
     expect(await peek.isVisible()).toBe(false)
     channel.setProblems('ts', [mismatch], { label: 'TypeScript' })
     await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'Error: Returning mismatch')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('shows the hint of a problem in its card', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const first = createProblemReport({
+      name: 'ESLint',
+      message: 'Unused variable',
+      file: `${proj}/src/handler.ts`,
+      line: 2,
+    })
+    channel.setProblems('lint', [first], { label: 'ESLint' })
+    const { page, errors } = await open('/badge', page => page.clock.install())
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
+
+    channel.setProblems('lint', [
+      first,
+      createProblemReport({
+        name: 'ESLint',
+        message: 'Missing return type',
+        hint: 'Annotate the return type.',
+        file: `${proj}/src/handler.ts`,
+        line: 2,
+      }),
+    ], { label: 'ESLint' })
+    await waitFor(() => peek.isVisible(), true)
+    expect(await peek.locator('.mb-peek-hint').textContent()).toBe('Annotate the return type.')
+    expect(await peek.locator('.mb-peek-hint').isVisible()).toBe(true)
+    await page.clock.fastForward(7000)
+    await waitFor(() => peek.isVisible(), false)
+
+    channel.setProblems('lint', [
+      first,
+      createProblemReport({
+        name: 'ESLint',
+        message: 'No hint here',
+        file: `${proj}/src/handler.ts`,
+        line: 2,
+      }),
+    ], { label: 'ESLint' })
+    await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'ESLint: No hint here')
+    expect(await peek.locator('.mb-peek-hint').isVisible()).toBe(false)
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
