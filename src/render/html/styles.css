@@ -144,6 +144,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-ln { width: 44px; flex: 0 0 44px; padding: 0 12px; text-align: right; color: var(--mb-fg-muted); user-select: none; }
 .mb-src { white-space: pre; }
 .mb-line-active { background: var(--mb-error-bg); border-left-color: var(--mb-error); }
+.mb-line-range { background: var(--mb-error-bg); border-left-color: color-mix(in oklab, var(--mb-error) 50%, transparent); }
 .mb-line-active .mb-ln, .mb-caret { color: var(--mb-error); }
 .mb-caret { display: block; line-height: 1; user-select: none; }
 .mb-source:not([data-expanded]) [data-context] { display: none; }

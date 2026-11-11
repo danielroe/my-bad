@@ -59,6 +59,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | `docsUrl` | Link to the documentation of the diagnostic. |
 | `file` | Absolute, or relative to `cwd`. |
 | `line`, `column` | Position in `file`. |
+| `endLine`, `endColumn` | End of the range in `file`. The snippet marks the range. `endColumn` is the column just past it. |
 | `kind` | `error`, `warning`, or `info`. Default `error`. The drawer and the dock list `info` problems, but the pill, the card, and the DevTools icon leave them out. |
 | `snippet` | A `Snippet`, or a code frame of `3 \| code` lines. A code frame can mark a line with `>`. |
 | `related` | Other files the problem concerns, as `{ file, line, column }`. Pages list them under **Also in**. |

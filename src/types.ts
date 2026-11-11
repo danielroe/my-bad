@@ -61,6 +61,9 @@ export interface Frame {
   displayFile?: string
   line?: number
   column?: number
+  /** End of the range the problem covers, when known. `endColumn` is the column just past it. */
+  endLine?: number
+  endColumn?: number
   function?: string
   type: FrameType
   isAsync?: boolean

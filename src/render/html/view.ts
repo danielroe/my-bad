@@ -453,7 +453,9 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
   const snippet = (compiled: boolean) => {
     const target = compiled ? frame.compiled! : frame
     return target.snippet && target.line !== undefined
-      ? renderSnippet(target.snippet, target.line, target.column, shortPath(target, state))
+      ? renderSnippet(target.snippet, target.line, target.column, shortPath(target, state), compiled
+          ? undefined
+          : frame)
       : '<p class="mb-unavailable">Source is unavailable at this stack location.</p>'
   }
   const copy = renderCopyLocation(frame, generated)
@@ -515,19 +517,32 @@ function shortPath(target: string | DisplayTarget, state: PageState): string {
   return displayPath(target, state.cwd)
 }
 
-export function renderSnippet(snippet: Snippet, line: number, column?: number, label?: string): string {
+export function renderSnippet(snippet: Snippet, line: number, column?: number, label?: string, end?: Pick<Frame, 'endLine' | 'endColumn'>): string {
   const more = line >= snippet.start && line < snippet.start + snippet.lines.length && (snippet.start < line - 3 || snippet.start + snippet.lines.length - 1 > line + 3)
   const gutter = String(snippet.start + snippet.lines.length - 1).length
+  const offset = snippet.offset ?? 0
+  const endLine = end?.endLine !== undefined && end.endLine > line
+    ? end.endLine
+    : line
   let rows = ''
   for (const [index, text] of snippet.lines.entries()) {
     const n = snippet.start + index
     const active = n === line
-    rows += `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${more && Math.abs(n - line) > 3
+    const ranged = n > line && n <= endLine
+    const start = column === undefined
+      ? undefined
+      : column - offset
+    const width = start === undefined
+      ? 1
+      : endLine > line
+        ? text.length - start + 1
+        : end?.endColumn === undefined
+          ? 1
+          : end.endColumn - offset - start
+    rows += `<span class="mb-line${active ? ' mb-line-active' : ''}${ranged ? ' mb-line-range' : ''}"${active ? ' data-active aria-current="true"' : ''}${more && Math.abs(n - line) > 3
       ? ' data-context="true"'
       : ''}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${active
-      ? renderCaret(text, column === undefined
-          ? undefined
-          : column - (snippet.offset ?? 0))
+      ? renderCaret(text, start, width)
       : ''}</span></span>`
   }
   const description = `Source${label
@@ -536,15 +551,18 @@ export function renderSnippet(snippet: Snippet, line: number, column?: number, l
   return `<pre class="mb-snippet"${attr('data-more-context', more)} data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows}</code></pre>`
 }
 
-function renderCaret(text: string, column: number | undefined): string {
+function renderCaret(text: string, column: number | undefined, width = 1): string {
   if (column === undefined || !Number.isInteger(column)) {
     return ''
   }
   const firstToken = text.search(/\S/)
+  const carets = Number.isInteger(width)
+    ? Math.min(Math.max(1, width), Math.max(1, text.length - column + 1))
+    : 1
   return column > (firstToken < 0
     ? text.length
     : firstToken) && column <= text.length + 1
-    ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}^</span>`
+    ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}${'^'.repeat(carets)}</span>`
     : ''
 }
 

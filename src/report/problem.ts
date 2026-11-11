@@ -17,6 +17,9 @@ export interface ProblemInput {
   file?: string
   line?: number
   column?: number
+  /** End of the range in `file`, for the snippet to mark. `endColumn` is the column just past the range. */
+  endLine?: number
+  endColumn?: number
   /** Source around `line`: a `Snippet`, or a code frame of `3 | code` lines, which may mark a line with `>`. */
   snippet?: Snippet | string
   /** Other files the problem concerns, absolute or relative to `cwd`. */
@@ -46,6 +49,8 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
         ...(file && { file }),
         ...(input.line !== undefined && { line: input.line }),
         ...(input.column !== undefined && { column: input.column }),
+        ...(input.endLine !== undefined && { endLine: input.endLine }),
+        ...(input.endColumn !== undefined && { endColumn: input.endColumn }),
         type: 'app',
         ...(snippet && { snippet }),
       }

@@ -600,6 +600,40 @@ describe('docked view', () => {
     expect(toMarkdown(info)).toContain('## Info: Checker')
   })
 
+  it('marks the range of a problem in its snippet', () => {
+    const snippet = {
+      start: 1,
+      lines: ['const a = 1', 'const b: string = a', 'export {}'],
+    }
+    const problem = (end: { endLine?: number, endColumn?: number }) => markup(renderPage(createProblemReport({
+      name: 'TS2322',
+      message: 'Type mismatch',
+      file: '/proj/a.ts',
+      line: 2,
+      column: 7,
+      ...end,
+      snippet,
+    }, { cwd: '/proj' })))
+    expect(problem({ endColumn: 8 })).toContain('<span class="mb-caret" aria-hidden="true">      ^</span>')
+    expect(problem({ endColumn: 16 })).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^</span>')
+    expect(problem({ endColumn: 99 })).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
+    const lines = problem({ endLine: 3, endColumn: 4 })
+    expect(lines).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
+    expect(lines.match(/class="mb-line mb-line-range"/g)).toHaveLength(1)
+    expect(problem({})).not.toContain('class="mb-line mb-line-range"')
+
+    const ansi = renderAnsi(createProblemReport({
+      name: 'TS2322',
+      message: 'Type mismatch',
+      file: '/proj/a.ts',
+      line: 2,
+      column: 7,
+      endColumn: 16,
+      snippet,
+    }, { cwd: '/proj' }), { cwd: '/proj', colors: false })
+    expect(ansi).toContain('  │       ^^^^^^^^^\n')
+  })
+
   it('styles the dock after its host and the drawer after the page', () => {
     const dock = renderDockedPage({ channel: '/__my-bad', embed: true })
     expect(dock).toContain('<html lang="en" dir="ltr" data-host>')

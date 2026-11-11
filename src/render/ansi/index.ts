@@ -123,7 +123,9 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const topApp = report.frames.find(frame => frame.type === 'app' && frame.snippet)
   if (topApp?.snippet && topApp.line !== undefined) {
     out.push('')
-    out.push(...renderSnippet(topApp.snippet, topApp.line, topApp.column, ctx, `${indent}  `))
+    out.push(...renderSnippet(topApp.snippet, topApp.line, topApp.column, ctx, `${indent}  `, topApp.endLine === undefined || topApp.endLine === topApp.line
+      ? finite(topApp.endColumn)
+      : undefined))
   }
   else {
     const generated = report.frames.find(frame => frame.type === 'app' && frame.compiled?.snippet && frame.compiled.line !== undefined)?.compiled
@@ -281,7 +283,7 @@ function finite(value: unknown): number | undefined {
     : undefined
 }
 
-function renderSnippet(snippet: Snippet, line: number, column: number | undefined, ctx: Ctx, indent: string): string[] {
+function renderSnippet(snippet: Snippet, line: number, column: number | undefined, ctx: Ctx, indent: string, endColumn?: number): string[] {
   const { p } = ctx
   const out: string[] = []
   const first = Math.max(snippet.start, line - ctx.snippetContext)
@@ -302,7 +304,10 @@ function renderSnippet(snippet: Snippet, line: number, column: number | undefine
         ? undefined
         : column - (snippet.offset ?? 0)
       if (shown !== undefined && shown > 0 && shown <= codeWidth) {
-        out.push(`${indent}  ${' '.repeat(gutter)} ${p.dim('│')} ${' '.repeat(shown - 1)}${p.red('^')}`)
+        const width = endColumn === undefined || column === undefined
+          ? 1
+          : Math.min(Math.max(1, endColumn - column), codeWidth - shown + 1, Math.max(1, raw.length - shown + 1))
+        out.push(`${indent}  ${' '.repeat(gutter)} ${p.dim('│')} ${' '.repeat(shown - 1)}${p.red('^'.repeat(width))}`)
       }
     }
     else {
