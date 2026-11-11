@@ -52,7 +52,7 @@ class WidgetNameError extends Error {
 }
 ```
 
-Each entry of `sources` becomes an app frame, with a snippet when it names a line. An entry that `my-bad` can't read goes into a **Sources** section instead.
+Each entry of `sources` becomes an app frame, with a snippet when it names a line. An entry without a line shows as a reference to the file, without a snippet, since the error doesn't say where in the file the problem is. An entry that `my-bad` can't read goes into a **Sources** section instead.
 
 An error named after its own `code` describes itself. The heading shows the code once, and presets don't add a documentation link to it.
 

@@ -430,9 +430,13 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
       : '<p class="mb-unavailable">Source is unavailable at this stack location.</p>'
   }
   const copy = renderCopyLocation(frame, generated)
-  if (supporting && !source && !generated)
-    return `<div class="mb-empty-frame"><span class="mb-function">${escapeHtml(frame.function ?? '<anonymous>')}</span>${location(frame)}${copy}</div>`
-  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)} aria-label="${supporting
+  const fileOnly = !!frame.file && frame.line === undefined && !frame.compiled
+  if (supporting && !source && !generated) {
+    return `<div class="mb-empty-frame">${fileOnly && !frame.function
+      ? ''
+      : `<span class="mb-function">${escapeHtml(frame.function ?? '<anonymous>')}</span>`}${location(frame)}${copy}</div>`
+  }
+  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)}${attr('data-file-only', fileOnly)} aria-label="${supporting
     ? 'Stack frame'
     : `${state.report.kind === 'warning'
       ? 'Warning'
@@ -448,7 +452,9 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
     ? `<p class="mb-compiled-note">Compiled JavaScript${frame.compiled!.file === frame.file
       ? ' (in memory)'
       : ''} · Editor opens the original source location.</p>`
-    : ''}<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>${generated
+    : ''}${fileOnly
+    ? ''
+    : `<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>`}${generated
     ? `<div data-snippet-compiled${attr('hidden', source)}>${snippet(true)}</div>`
     : ''}</section>`
 }

@@ -2119,6 +2119,36 @@ describe('copy location', () => {
     await page.close()
   })
 
+  it('copies and opens a location that names only a file', async () => {
+    const current = await report('Named only a file')
+    current.frames = [
+      { file: `${proj}/caller.ts`, type: 'app' },
+    ]
+    channel.setError(current)
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.assign(window, { testClipboard: '' })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => Object.assign(window, { testClipboard: text }),
+        },
+      })
+    })
+    await page.goto(origin)
+    const copied = () => page.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
+    const source = page.locator('.mb-source[data-file-only]')
+    await waitFor(() => source.count(), 1)
+    expect(await source.locator('[data-loc]').textContent()).toBe('caller.ts')
+    expect(await page.locator('.mb-unavailable').count()).toBe(0)
+    await source.getByRole('button', { name: 'Copy location', exact: true }).click()
+    await waitFor(copied, `${proj}/caller.ts`)
+    const requests = openRequests.length
+    await source.getByRole('button', { name: 'Open original source in your editor', exact: true }).click()
+    await waitFor(() => openRequests.length, requests + 1)
+    expect(openRequests.at(-1)).toEqual({ file: `${proj}/caller.ts` })
+    await page.close()
+  })
+
   it('keeps the icon button compact while offering a keyboard copy', async () => {
     channel.setError(await compiledReport('Copy a location by hand'))
     const page = await browser.newPage()

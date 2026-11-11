@@ -131,6 +131,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-source[data-compiled] [data-location-compiled], .mb-source[data-compiled] .mb-compiled-note { display: block; }
 .mb-compiled-note { margin: 0; padding: 8px 13px; font-size: 12px; color: var(--mb-fg-muted); background: var(--mb-surface); border-bottom: 1px solid var(--mb-line); }
 .mb-source:not(:has([data-more-context])) [data-action='context'] { display: none; }
+.mb-source[data-file-only] .mb-source-toolbar { border-bottom: 0; border-radius: 7px; }
 .mb-snippet { margin: 0; padding: 14px 0; overflow: auto; border-radius: 0 0 7px 7px; font: 13px/23px var(--mb-font-mono); color: var(--mb-fg); tab-size: 2; }
 .mb-snippet code { display: block; width: max-content; min-width: 100%; font-size: inherit; }
 .mb-line { display: flex; min-height: 23px; padding-right: 24px; border-left: 2px solid transparent; }

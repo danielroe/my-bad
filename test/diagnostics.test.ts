@@ -85,6 +85,20 @@ describe('diagnostic errors', () => {
     expect(report.sections.some(section => section.id === 'sources')).toBe(false)
   })
 
+  it('renders a source without a line as a reference to the file', async () => {
+    const report = await createReport(diagnostic({
+      sources: ['/proj/pages/index.vue'],
+    }), { cwd: '/proj', loaders })
+    const html = renderPage(report, { cwd: '/proj' })
+    const page = html.slice(0, html.indexOf('<script type="application/json">'))
+    const source = /<section class="mb-source"[^>]*data-file-only[^>]*>[\s\S]*?<\/section>/.exec(page)![0]
+    expect(source).toContain('<button type="button" class="mb-loc" data-loc data-action="open" data-file="/proj/pages/index.vue" title="/proj/pages/index.vue">pages/index.vue</button>')
+    expect(source).toContain('data-action="copy-location" data-file="/proj/pages/index.vue"')
+    expect(source).toContain('title="Open original source in your editor"')
+    expect(source).not.toContain('mb-snippet')
+    expect(page).not.toContain('Source is unavailable')
+  })
+
   it('tells apart the same diagnostic at different files, lines and columns', async () => {
     const sources = [
       '/proj/pages/index.vue',
