@@ -2,7 +2,7 @@ import type { ErrorReport, HistoryEntry } from '../../types'
 import type { BadgeState, Dock, DockedState, PageState, Theme } from './state'
 import { getClientScript, getClientStyles } from 'virtual:my-bad-client'
 import { plainText } from '../../report/code'
-import { clampMessage } from '../../report/message'
+import { clampMessage, splitHeadline } from '../../report/message'
 import { assetHash, assetUrls } from './assets'
 import { attr, escapeHtml, escapeScript } from './escape'
 import { THEME_STORAGE_KEY } from './state'
@@ -144,7 +144,7 @@ export function renderPage(report: ErrorReport, options: RenderPageOptions = {})
     ...baseState(options, 'page'),
     report,
   }
-  const title = options.title ?? `${report.name}: ${clampMessage(plainText(report.message.split('\n')[0] ?? '', report.codeSpans), options.maxMessageLength).head}`
+  const title = options.title ?? `${report.name}: ${clampMessage(plainText(splitHeadline(report.message).headline, report.codeSpans), options.maxMessageLength).head}`
   const scheme = options.theme?.scheme
   const nonce = nonceAttr(options.nonce)
   const bootstrap = scheme

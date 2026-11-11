@@ -1,5 +1,6 @@
 import type { ErrorReport, Frame, HistoryEntry } from '../../types'
 import type { DockedIndex } from './state'
+import { splitHeadline } from '../../report/message'
 
 export function warningCount(history: HistoryEntry[] | undefined): number {
   return history?.filter(entry => entry.kind === 'warning').length ?? 0
@@ -37,5 +38,5 @@ export function reportLocation(report: ErrorReport): Frame | undefined {
 }
 
 export function firstLine(text: string): string {
-  return text.split('\n')[0] ?? ''
+  return splitHeadline(text).headline
 }

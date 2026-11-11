@@ -4,7 +4,7 @@ import process from 'node:process'
 import { hyperlink, link } from 'clickable-path'
 import { stripAnsi as clean } from '../../report/ansi'
 import { codeSpans } from '../../report/code'
-import { clampMessage, DEFAULT_DISPLAY_MESSAGE_LENGTH } from '../../report/message'
+import { clampMessage, DEFAULT_DISPLAY_MESSAGE_LENGTH, splitHeadline } from '../../report/message'
 import { displayPath, isFilePath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { snippetTokens } from '../../report/tokenize'
@@ -80,12 +80,18 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     ? ` ${meta}`
     : ''}${p.dim(':')} `
   const { head, rest } = clampMessage(clean(report.message), ctx.maxMessageLength)
-  const messageLines = wrap(styleCode(rest
+  const { headline, body } = splitHeadline(rest
     ? `${head}…`
-    : head, report.codeSpans, p), width - 2, '')
+    : head.trimEnd())
+  const messageLines = wrap(styleCode(headline, report.codeSpans, p), width - 2, '')
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)
   for (const line of messageLines.slice(1)) {
     out.push(`${indent}  ${p.bold(line)}`)
+  }
+  if (body) {
+    for (const line of wrap(styleCode(body, report.codeSpans, p), width - 2, '')) {
+      out.push(`${indent}  ${line}`)
+    }
   }
   if (rest) {
     out.push(`${indent}  ${p.dim(`${rest.length} more characters`)}`)

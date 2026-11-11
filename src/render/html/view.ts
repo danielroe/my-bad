@@ -3,7 +3,7 @@ import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../types'
 import type { BadgeFocus, DockedIndex, DockedState, PageState } from './state'
 import { plainText } from '../../report/code'
-import { clampMessage } from '../../report/message'
+import { clampMessage, splitHeadline } from '../../report/message'
 import { displayPath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
@@ -218,7 +218,7 @@ export function pagerIndex(report: ErrorReport, history: HistoryEntry[]): number
 
 export function renderHistoryItems(report: ErrorReport, history: HistoryEntry[]): string {
   const index = pagerIndex(report, history)
-  return history.map((entry, position) => `<li><button type="button" data-entry="${escapeHtml(entry.id)}" data-action="history" data-dir="${position - index}">${inlineHtml(entry.message, entry.codeSpans)}</button></li>`).join('')
+  return history.map((entry, position) => `<li><button type="button" data-entry="${escapeHtml(entry.id)}" data-action="history" data-dir="${position - index}">${inlineHtml(firstLine(entry.message), entry.codeSpans)}</button></li>`).join('')
 }
 
 export function renderHistory(report: ErrorReport, history?: HistoryEntry[]): string {
@@ -268,7 +268,7 @@ function renderCauseNavigation(state: PageState, selected: string): string {
     ? entries
     : entries.reverse()
   const current = chain.findIndex(entry => entry.path === selected)
-  const message = (report: ErrorReport) => inlineHtml(report.message, report.codeSpans)
+  const message = (report: ErrorReport) => inlineHtml(firstLine(report.message), report.codeSpans)
   const entry = (index: number, html = escapeHtml(chain[index]!.label)) => `<button type="button" data-action="cause" data-path="${chain[index]!.path}" aria-current="${index === current}" title="${escapeHtml(plainText(chain[index]!.report.message, chain[index]!.report.codeSpans))}">${html}</button>`
   if (chain.length === 2 && !related) {
     return `<nav class="mb-single-cause" aria-label="Error cause">${selected === 'r'
@@ -357,10 +357,16 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
 
 function renderMessage(report: ErrorReport, state: PageState, tag: string, id: string): string {
   const { head, rest } = clampMessage(report.message || report.name, state.maxMessageLength)
+  const { headline, body } = splitHeadline(head)
   const more = rest
     ? `<span class="mb-message-rest" data-message-rest hidden>${inlineHtml(rest, report.codeSpans)}</span><button type="button" class="mb-message-more" data-action="expand-message">Show full message <span class="mb-count">${rest.length} more characters</span></button>`
     : ''
-  return `<${tag} class="mb-message" id="${id}" data-message>${inlineHtml(head, report.codeSpans)}${more}</${tag}>`
+  const text = rest
+    ? body
+    : body.trimEnd()
+  return text
+    ? `<${tag} class="mb-message" id="${id}" data-message>${inlineHtml(headline, report.codeSpans)}</${tag}><p class="mb-message-body" data-message-body>${inlineHtml(text, report.codeSpans)}${more}</p>`
+    : `<${tag} class="mb-message" id="${id}" data-message>${inlineHtml(headline, report.codeSpans)}${more}</${tag}>`
 }
 
 function renderTrace(report: ErrorReport, state: PageState): string {
@@ -535,7 +541,7 @@ export function renderSection(section: Section): string {
 
 export function renderToast(report: ErrorReport): string {
   return `<article class="mb-toast" data-toast data-kind="${escapeHtml(report.kind)}" data-toast-id="${escapeHtml(report.id)}">
-  ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${inlineHtml(report.message, report.codeSpans)}</span></button>
+  ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${inlineHtml(firstLine(report.message), report.codeSpans)}</span></button>
   <button type="button" class="mb-tool" data-action="dismiss-toast" title="Dismiss warning" aria-label="Dismiss warning">${ICONS.close}</button>
 </article>`
 }

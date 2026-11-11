@@ -70,16 +70,17 @@ export function truncateMiddle(text: string, max: number): string {
 export function wrap(text: string, width: number, indent = ''): string[] {
   const out: string[] = []
   for (const paragraph of text.split('\n')) {
-    let line = ''
-    for (const word of paragraph.split(' ')) {
-      if (line && visibleWidth(line) + 1 + visibleWidth(word) > width) {
+    const words = paragraph.trimStart()
+    let line = paragraph.slice(0, paragraph.length - words.length)
+    for (const word of words.split(' ')) {
+      if (line.trim() && visibleWidth(line) + 1 + visibleWidth(word) > width) {
         out.push(line)
         line = indent + word
       }
       else {
-        line = line
+        line = line.trim()
           ? `${line} ${word}`
-          : word
+          : `${line}${word}`
       }
     }
     out.push(line)

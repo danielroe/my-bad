@@ -5,6 +5,7 @@ import { plainText } from '../../../report/code'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
+import { firstLine } from '../summary'
 import { themeStyles } from '../theme'
 import { dockedSummary, ICONS, pagerIndex, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
 
@@ -335,7 +336,7 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
 function headline(report: ErrorReport): string {
   return `${report.kind === 'warning'
     ? 'Warning'
-    : 'Error'}: ${report.name}: ${plainText(report.message, report.codeSpans)}`
+    : 'Error'}: ${report.name}: ${plainText(firstLine(report.message), report.codeSpans)}`
 }
 
 const labelRestores = new WeakMap<HTMLElement, () => void>()
@@ -1665,12 +1666,12 @@ function bind(m: Mount): void {
         }
         m.root.querySelector('.mb-report')?.replaceWith(article)
         markOverflowingSnippets(m)
-        announce(m, `${selected.label}: ${selected.report.name}: ${plainText(selected.report.message, selected.report.codeSpans)}`)
+        announce(m, `${selected.label}: ${selected.report.name}: ${plainText(firstLine(selected.report.message), selected.report.codeSpans)}`)
         focusHeading(m)
         return
       }
       case 'expand-message': {
-        const rest = target.closest('[data-message]')?.querySelector('[data-message-rest]')
+        const rest = target.closest('[data-message], [data-message-body]')?.querySelector('[data-message-rest]')
         rest?.removeAttribute('hidden')
         target.remove()
         return

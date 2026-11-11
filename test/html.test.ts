@@ -559,6 +559,25 @@ describe('long messages', () => {
   })
 })
 
+describe('multi-line messages', () => {
+  it('heads the report with the first line and renders the rest as body text', async () => {
+    const r = await report()
+    r.message = '\nTwo components are named <Widget>:\n\n - ~/a.vue\n - ~/b.vue\n'
+    const html = markup(renderPage(r))
+    expect(html).toContain(`<title>Error: Two components are named &lt;Widget&gt;:</title>`)
+    expect(html).toContain(`data-message>Two components are named &lt;Widget&gt;:</h1><p class="mb-message-body" data-message-body> - ~/a.vue\n - ~/b.vue</p>`)
+    expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [], current: r })).toContain('<span class="mb-index-title">Error: Two components are named &lt;Widget&gt;:</span>')
+  })
+
+  it('keeps the button for the rest of a long message in the body', async () => {
+    const r = await report()
+    r.message = `Headline\n${'L'.repeat(3000)}`
+    const html = markup(renderPage(r, { maxMessageLength: 100 }))
+    expect(html).toContain('data-message>Headline</h1><p class="mb-message-body" data-message-body>L')
+    expect(html).toMatch(/data-message-body>L+<span class="mb-message-rest" data-message-rest hidden>L+<\/span><button[^>]*data-action="expand-message"/)
+  })
+})
+
 describe('history pager', () => {
   it('points navigation at the first entry when the history has dropped the shown report', async () => {
     const r = await report()

@@ -1799,6 +1799,30 @@ describe('badge', () => {
   }, 30_000)
 })
 
+describe('multi-line messages', () => {
+  it('heads the overlay with the first line and expands the rest of the body', async () => {
+    channel.clearError()
+    const current = await report('Two components are named Widget:')
+    current.message = `Two components are named Widget:\n - ~/a.vue\n${' - ~/b.vue\n'.repeat(200)}`
+    channel.setError(current)
+    const page = await browser.newPage()
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${origin}/overlay`)
+    const root = page.locator('[data-my-bad-root]')
+    await waitFor(() => root.locator('h1').textContent(), 'Two components are named Widget:')
+    const body = root.locator('[data-message-body]')
+    expect(await body.isVisible()).toBe(true)
+    expect((await body.textContent())!.startsWith(' - ~/a.vue\n - ~/b.vue')).toBe(true)
+    expect(await body.locator('[data-message-rest]').isVisible()).toBe(false)
+    await body.getByRole('button', { name: /Show full message/ }).click()
+    expect(await body.locator('[data-message-rest]').isVisible()).toBe(true)
+    expect(errors).toEqual([])
+    await page.close()
+    channel.clearError()
+  }, 30_000)
+})
+
 describe('source-first inspection', () => {
   it('keeps source in place, scopes context and compiled views, and reveals supporting evidence', async () => {
     const current = await report('Cannot save this widget')
@@ -2178,7 +2202,7 @@ describe('devtools dock', () => {
   interface Calls {
     switched: string[]
     badges: Array<{ badge?: string, badgeVariant?: string, title?: string }>
-    messages: Record<string, { message: string, level: string, status?: string, notify?: boolean, filePosition?: unknown, actions?: Array<{ id: string, activate: { dockId: string, params?: Record<string, unknown> } }> }>
+    messages: Record<string, { message: string, description?: string, level: string, status?: string, notify?: boolean, filePosition?: unknown, actions?: Array<{ id: string, activate: { dockId: string, params?: Record<string, unknown> } }> }>
     added: string[]
     removed: string[]
   }
@@ -2370,6 +2394,27 @@ describe('devtools dock', () => {
     expect(new Set((await calls()).added)).toEqual(new Set(['my-bad:problems:lint']))
     channel.clearProblems()
     expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('heads DevTools messages with the first line, without the backticks of code spans', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const current = {
+      ...await report('Use `Widget`'),
+      message: '\nUse `Widget`\n\n - `props` is unused',
+      hint: 'Remove the `import`.',
+      codeSpans: true,
+    }
+    channel.setError(current)
+    channel.setProblems('vue', [current], { label: 'Vue' })
+    const { page, errors, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).messages[`my-bad:error:${current.id}`]?.message, 'Error: Use Widget')
+    expect((await calls()).messages[`my-bad:error:${current.id}`]?.description).toBe(' - props is unused\n\nRemove the import.')
+    await waitFor(async () => (await calls()).messages['my-bad:problems:vue']?.description, 'src/handler.ts:2  Use Widget')
+    expect(errors).toEqual([])
+    channel.clearError()
+    channel.clearProblems()
     await page.close()
   }, 30_000)
 

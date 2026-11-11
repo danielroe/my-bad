@@ -89,7 +89,9 @@
 .mb-copy > button { border-color: var(--mb-line-strong); border-radius: 6px 0 0 6px; color: var(--mb-fg); }
 .mb-copy > button[aria-expanded='true'] { background: var(--mb-surface-2); }
 .mb-copy > button + button { padding: 0; border-left: 0; border-radius: 0 6px 6px 0; }
-.mb-message:has(+ .mb-single-cause), .mb-message:has(+ .mb-causes) { margin-bottom: 12px; }
+.mb-message:has(+ .mb-single-cause), .mb-message:has(+ .mb-causes), .mb-message-body:has(+ .mb-single-cause), .mb-message-body:has(+ .mb-causes) { margin-bottom: 12px; }
+.mb-message:has(+ .mb-message-body) { margin-bottom: 10px; }
+.mb-message-body { margin: 0 0 20px; font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mb-message { margin: 0 0 20px; font: 600 28px/1.3 var(--mb-font-display); letter-spacing: -.6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mb-message-more { display: block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--mb-accent); font: inherit; font-size: 13px; cursor: pointer; }
 .mb-message-more:hover { text-decoration: underline; }
@@ -359,7 +361,7 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-overlay[data-panel] .mb-pager > span { display: inline-flex; align-items: center; }
 .mb-overlay[data-panel] :is(.mb-brand, .mb-warning-count) { white-space: nowrap; }
 .mb-overlay[data-minimized] > .mb-root { display: block; overflow: hidden; pointer-events: none; }
-.mb-overlay[data-minimized] .mb-ordered-stack, .mb-overlay[data-minimized] .mb-secondary, .mb-overlay[data-minimized] .mb-causes, .mb-overlay[data-minimized] .mb-single-cause, .mb-overlay[data-minimized] .mb-copy, .mb-overlay[data-minimized] .mb-disclosure, .mb-overlay[data-minimized] .mb-unavailable, .mb-overlay[data-minimized] .mb-header, .mb-overlay[data-minimized] .mb-hint, .mb-overlay[data-minimized] .mb-logs, .mb-overlay[data-minimized] .mb-toasts, .mb-overlay[data-minimized] .mb-progress { display: none; }
+.mb-overlay[data-minimized] .mb-ordered-stack, .mb-overlay[data-minimized] .mb-secondary, .mb-overlay[data-minimized] .mb-causes, .mb-overlay[data-minimized] .mb-single-cause, .mb-overlay[data-minimized] .mb-copy, .mb-overlay[data-minimized] .mb-disclosure, .mb-overlay[data-minimized] .mb-unavailable, .mb-overlay[data-minimized] .mb-header, .mb-overlay[data-minimized] .mb-hint, .mb-overlay[data-minimized] .mb-message-body, .mb-overlay[data-minimized] .mb-logs, .mb-overlay[data-minimized] .mb-toasts, .mb-overlay[data-minimized] .mb-progress { display: none; }
 .mb-overlay[data-minimized] .mb-main { padding: 14px 44px 14px 16px; max-width: none; }
 .mb-overlay[data-minimized] .mb-kicker { margin-bottom: 6px; gap: 6px; font-size: 11.5px; }
 .mb-overlay[data-minimized] .mb-name { font-size: 13px; }

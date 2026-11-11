@@ -4,6 +4,7 @@ import type { ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport } from '../../../types'
 import type { BadgeFocus, BadgeSnapshot, BadgeState } from '../state'
 import { plainText } from '../../../report/code'
+import { splitHeadline } from '../../../report/message'
 import { displayPath } from '../../../report/path'
 import { countsLabel, dockedCounts, firstLine, plural, reportLocation } from '../summary'
 import { focusSender } from './frame'
@@ -215,11 +216,11 @@ function badgeSource(): Promise<MyBadSharedSource> {
 }
 
 function describe(report: ErrorReport, snapshot: BadgeSnapshot): Pick<DevToolsMessageEntryInput, 'message' | 'description' | 'stacktrace' | 'filePosition'> {
-  const [title = '', ...rest] = plainText(report.message, report.codeSpans).split('\n')
+  const { headline, body } = splitHeadline(plainText(report.message, report.codeSpans))
   return {
-    message: `${report.name}: ${title}`,
+    message: `${report.name}: ${headline}`,
     description: [
-      rest.join('\n').trim(),
+      body.trimEnd(),
       report.hint && plainText(report.hint, report.codeSpans),
     ].filter(Boolean).join('\n\n') || where(report, snapshot),
     stacktrace: report.rawStack,

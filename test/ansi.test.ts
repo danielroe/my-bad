@@ -242,6 +242,20 @@ describe('long messages', () => {
     expect(output).toContain('4900 more characters')
     expect(output).not.toContain('L'.repeat(101))
   })
+
+  it('prints only the first line of a multi-line message in bold', async () => {
+    const report = await createReport(new Error('Two components are named Widget:\n\n - ~/a.vue\n - ~/b.vue'), { loaders: [], snippets: false })
+    const output = renderAnsi(report, { colors: true, hyperlinks: false, width: 80 })
+    const { text, styleAt } = await terminal(output)
+    const lines = text.split('\n')
+    expect(lines.slice(0, 3).map(line => line.trimEnd())).toEqual([
+      '✖ Error: Two components are named Widget:',
+      '   - ~/a.vue',
+      '   - ~/b.vue',
+    ])
+    expect(styleAt(0, 10)?.bold).toBe(true)
+    expect(styleAt(1, 5)?.bold).toBeFalsy()
+  })
 })
 
 // eslint-disable-next-line no-control-regex
