@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createReport, injectOverlay, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
-import { renderIndex } from '../src/render/html/view'
+import { nuxtTheme } from '../src/presets'
+import { renderDocked, renderIndex } from '../src/render/html/view'
 
 async function report() {
   const error = Object.assign(new Error('Something <broke>'), { code: 'E1001' })
@@ -556,6 +557,17 @@ describe('long messages', () => {
   it('leaves a short message alone', async () => {
     const html = markup(renderPage(await report()))
     expect(html).not.toContain('data-message-rest')
+  })
+})
+
+describe('docked view', () => {
+  it('heads the view with its title, without the brand of the theme', () => {
+    const index = { history: [], problems: [] }
+    const html = renderDocked({ mode: 'docked', version: '', theme: nuxtTheme }, index)
+    expect(html).toContain('<p class="mb-docked-title">Problems</p>')
+    expect(html).not.toMatch(/mb-brand[ "]/)
+    expect(html).not.toContain('my-bad')
+    expect(renderDocked({ mode: 'docked', version: '', title: 'Nuxt <errors>' }, index)).toContain('<p class="mb-docked-title">Nuxt &lt;errors&gt;</p>')
   })
 })
 

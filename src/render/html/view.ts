@@ -9,6 +9,7 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
+import { DOCKED_TITLE } from './state'
 import { countsLabel, dockedCounts, firstLine, repeatsLabel, reportLocation, warningCount } from './summary'
 
 export const ICONS = {
@@ -163,16 +164,14 @@ export function renderIndex(state: DockedState, index: DockedIndex, shown?: Badg
 /** A docked view: the index of everything open, and the report it has selected rendered as the overlay renders it. */
 export function renderDocked(state: DockedState, index: DockedIndex, report?: ErrorReport, shown?: BadgeFocus, selected = 'r'): string {
   const live = !!state.channel
-  const name = escapeHtml(state.theme?.name ?? 'my-bad')
-  const lockup = `${state.theme?.logo ?? ''}<span class="mb-brand-name${state.theme?.logo ? ' mb-sr-only' : ''}">${name}</span>`
   const view = report && { ...state, mode: 'docked' as const, report }
   const set = shown?.list
     ? index.problems.find(entry => entry.source === shown.source)
     : undefined
   const list = safeUrl(set?.url)
   return `<header class="mb-header mb-corners">
-  <div class="mb-brand-group"><p class="mb-brand">${lockup}</p><span class="mb-header-count" data-docked-count>${escapeHtml(dockedSummary(index))}</span></div>
-  <nav class="mb-tools" aria-label="Tools"><ul><li><button class="mb-tool" type="button" data-action="theme" title="Toggle colour scheme" aria-label="Toggle colour scheme">${ICONS.theme}</button></li>${state.drawer
+  <div class="mb-brand-group"><p class="mb-docked-title">${escapeHtml(state.title || DOCKED_TITLE)}</p><span class="mb-header-count" data-docked-count>${escapeHtml(dockedSummary(index))}</span></div>
+  <nav class="mb-tools" aria-label="Tools"><ul>${state.drawer
     ? `<li><button class="mb-tool" type="button" data-action="close-docked" title="Close" aria-label="Close">${ICONS.close}</button></li>`
     : ''}</ul></nav>
   ${live ? '<div class="mb-progress" data-progress hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Build progress"><div class="mb-progress-bar"></div><span class="mb-progress-label" data-progress-label></span></div>' : ''}

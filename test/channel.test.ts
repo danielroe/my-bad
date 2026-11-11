@@ -684,6 +684,17 @@ describe('client assets', () => {
     channel.close()
   })
 
+  it('heads the docked page with the title it is asked for, or `Problems`', async () => {
+    const channel = createChannel()
+    const page = async (query: string) => (await channel.fetchHandler(new Request(`http://localhost/__my-bad/panel?embed${query}`)))!.text()
+    expect(await page('')).toContain('<title>Problems</title>')
+    const titled = await page('&title=Nuxt%20%3Cerrors%3E')
+    expect(titled).toContain('<title>Nuxt &lt;errors&gt;</title>')
+    expect(titled).toContain('"title":"Nuxt \\u003cerrors>"')
+    expect(titled).not.toContain('my-bad</')
+    channel.close()
+  })
+
   it('stamps the docked page with the nonce the caller passes', async () => {
     const channel = createChannel()
     const tags = async (nonce?: string) => {

@@ -4,6 +4,9 @@ import type { ErrorReport, HistoryEntry } from '../../types'
 /** `localStorage` key holding the colour scheme the user picked. */
 export const THEME_STORAGE_KEY = 'my-bad:theme'
 
+/** Heading of the docked view, and title of the DevTools dock, unless one is given. */
+export const DOCKED_TITLE = 'Problems'
+
 export interface Theme {
   /** Product name shown in the header. */
   name?: string
@@ -57,6 +60,8 @@ export interface PageState {
 /** The view docked into a host such as a DevTools panel: every open report, one shown in full. */
 export interface DockedState extends Omit<PageState, 'mode' | 'report'> {
   mode: 'docked'
+  /** Heading of the view. Default `Problems`. */
+  title?: string
   /** Take the scope, theme and paths of the badge on the embedding page. */
   embed?: boolean
   /** Shown in the badge's drawer, which the view can close. */

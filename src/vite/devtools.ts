@@ -1,12 +1,13 @@
 import type { Plugin } from 'vite'
 import { assetUrls } from '../render/html/assets'
+import { DOCKED_TITLE } from '../render/html/state'
 
 export interface MyBadDevToolsOptions {
   /** Base path of the channel, e.g. `/__my-bad`. It serves the dock's page and script. */
   channel: string
   /** Default `my-bad`. */
   id?: string
-  /** Default `my-bad`. */
+  /** Default `Problems`. */
   title?: string
   /** An Iconify name or an image URL. */
   icon?: string
@@ -39,9 +40,11 @@ export function registerDock(ctx: DockHost, options: Omit<MyBadDevToolsOptions, 
   ctx.docks.register({
     id: options.id ?? 'my-bad',
     type: 'iframe',
-    title: options.title ?? 'my-bad',
+    title: options.title ?? DOCKED_TITLE,
     icon: options.icon ?? 'ph:bug-beetle-duotone',
-    url: `${options.channel}/panel?embed`,
+    url: `${options.channel}/panel?embed${options.title
+      ? `&title=${encodeURIComponent(options.title)}`
+      : ''}`,
     clientScript: {
       importFrom: options.clientScript ?? assetUrls(options.channel).devtools,
       eager: true,

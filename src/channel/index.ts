@@ -597,6 +597,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     const body = matched === 'panel'
       ? renderDockedPage({
           channel: url.pathname.slice(0, -'/panel'.length).replace(/^[/\\]+/, '/'),
+          title: url.searchParams.get('title') ?? undefined,
           embed: url.searchParams.has('embed'),
           drawer: url.searchParams.has('drawer'),
           nonce,

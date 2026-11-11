@@ -5,7 +5,7 @@ import { plainText } from '../../report/code'
 import { clampMessage, splitHeadline } from '../../report/message'
 import { assetHash, assetUrls } from './assets'
 import { attr, escapeHtml, escapeScript } from './escape'
-import { THEME_STORAGE_KEY } from './state'
+import { DOCKED_TITLE, THEME_STORAGE_KEY } from './state'
 import { themeStyles } from './theme'
 import { renderView } from './view'
 
@@ -236,10 +236,11 @@ export function badgeState(options: RenderBadgeOptions): { state: BadgeState, sr
  * the scope, theme and paths of the badge on the page embedding it. With
  * `drawer`, it has a button closing the badge's drawer it is shown in.
  */
-export function renderDockedPage(options: { channel: string, embed?: boolean, drawer?: boolean, nonce?: string }): string {
+export function renderDockedPage(options: { channel: string, title?: string, embed?: boolean, drawer?: boolean, nonce?: string }): string {
   const state: DockedState = {
     mode: 'docked',
     channel: options.channel,
+    ...(options.title && { title: options.title }),
     embed: options.embed,
     drawer: options.drawer,
     version: __MY_BAD_VERSION__,
@@ -254,7 +255,7 @@ export function renderDockedPage(options: { channel: string, embed?: boolean, dr
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>my-bad</title>
+<title>${escapeHtml(options.title || DOCKED_TITLE)}</title>
 ${themeBootstrap(options.nonce)}<link rel="stylesheet"${nonce} href="${escapeHtml(asset('styles'))}">
 <style${nonce}>html{background:var(--mb-bg)}html,body{margin:0;min-height:100%}</style>
 </head>
