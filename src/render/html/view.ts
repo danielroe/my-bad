@@ -1,7 +1,7 @@
 import type { ProblemSummary } from '../../channel/protocol'
 import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Location, Section, Snippet } from '../../types'
-import type { BadgeFocus, DockedIndex, DockedState, PageState } from './state'
+import type { BadgeFocus, DockedIndex, DockedState, IndexView, PageState } from './state'
 import { plainText } from '../../report/code'
 import { clampMessage, splitHeadline } from '../../report/message'
 import { displayPath } from '../../report/path'
@@ -9,6 +9,7 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
+import { sourceStatus, sourceTone } from './problems'
 import { DOCKED_TITLE } from './state'
 import { countsLabel, dockedCounts, firstLine, repeatsLabel, reportLocation, warningCount } from './summary'
 
@@ -162,16 +163,43 @@ function renderIndexSet(set: DockedIndex['problems'][number], state: DockedState
     : ''}</section>`
 }
 
+const TONE_ICON = {
+  busy: ICONS.checking,
+  error: ICONS.error,
+  warning: ICONS.warning,
+  ok: ICONS.check,
+}
+
+function renderSources(sets: DockedIndex['problems'], view: IndexView): string {
+  const now = view.now ?? Date.now()
+  return sets.length
+    ? `<ul class="mb-index-sources" aria-label="Sources">${sets.map((set) => {
+      const label = set.label ?? set.source
+      const shown = !view.hiddenSources?.includes(set.source)
+      const total = set.errors + set.warnings + (set.info ?? 0)
+      const tone = sourceTone(set)
+      return `<li><button type="button" class="mb-pill" data-action="toggle-source" data-source="${escapeHtml(set.source)}" data-tone="${tone}" aria-pressed="${shown}" title="${escapeHtml(`${sourceStatus(set, now)}. ${shown ? 'Hide' : 'Show'} ${label} problems.`)}">${failed(set)
+        ? ICONS.close
+        : TONE_ICON[tone]}<span class="mb-pill-label">${escapeHtml(label)}</span>${failed(set)
+        ? '<span class="mb-pill-count">failed</span>'
+        : total
+          ? `<span class="mb-pill-count">${total}</span>`
+          : ''}</button></li>`
+    }).join('')}</ul>`
+    : ''
+}
+
 /** The list beside a docked view, of the open error, the warnings and every problem set. */
 export function renderIndex(state: DockedState, index: DockedIndex, shown?: BadgeFocus): string {
+  const view = state.view ?? {}
   const warnings = (index.history ?? []).filter(entry => entry.kind === 'warning').reverse()
-  const sets = index.problems.filter(set => set.errors + set.warnings + (set.info ?? 0) || failed(set) || set.status === 'checking')
+  const sets = index.problems.filter(set => !view.hiddenSources?.includes(set.source) && (set.errors + set.warnings + (set.info ?? 0) || failed(set) || set.status === 'checking'))
   const groups = [
     index.current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(index.current, indexLocation(index.current, state), shown)}</ul></section>`,
     warnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${warnings.length}</span></h2><ul>${warnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
     ...sets.map(set => renderIndexSet(set, state, shown)),
   ].filter(Boolean)
-  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${groups.length
+  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${renderSources(index.problems, view)}${groups.length
     ? groups.join('')
     : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
 }

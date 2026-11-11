@@ -2513,6 +2513,39 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('hides and shows the problems of a source from its pill', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], {
+      label: 'ESLint',
+      lastRun: {
+        startedAt: Date.now() - 1000,
+        finishedAt: Date.now(),
+      },
+    })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const pill = panel.getByRole('button', { name: 'ESLint 1' })
+    await pill.waitFor()
+    expect(await pill.getAttribute('title')).toBe('Checked just now. Hide ESLint problems.')
+    await pill.click()
+    await waitFor(() => panel.locator('[data-index-source="lint"]').count(), 0)
+    expect(await pill.getAttribute('aria-pressed')).toBe('false')
+    expect(await pill.evaluate(button => button === document.activeElement)).toBe(true)
+    expect(await panel.locator('[data-index-source="ts"]').count()).toBe(1)
+    await page.keyboard.press('Enter')
+    await waitFor(() => panel.locator('[data-index-source="lint"]').count(), 1)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
   it('marks the selected row in its severity colour, not the accent', async () => {
     channel.clearError()
     channel.clearProblems()

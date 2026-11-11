@@ -70,6 +70,16 @@ export interface DockedState extends Omit<PageState, 'mode' | 'report'> {
   docks?: boolean
   /** The channel withholds problem reports from this page, which is not on the dev server's machine. */
   withheld?: boolean
+  /** How the list is narrowed down. */
+  view?: IndexView
+}
+
+/** What the list of a docked view shows. */
+export interface IndexView {
+  /** Problem sources whose problems are left out. */
+  hiddenSources?: string[]
+  /** Current time, for how long ago each source last ran. */
+  now?: number
 }
 
 /** What a docked view lists. Problem sets carry their reports once fetched. */

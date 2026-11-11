@@ -119,7 +119,9 @@ The pill shows each status like this:
 - **`idle`**: the count of errors and warnings. A source without a status is idle.
 - **`failed`**: `failed` in place of the count, with the `error` reason in the title of the pill.
 
-An empty set shows nothing in the pill unless it failed. The drawer lists it only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
+An empty set shows nothing in the pill unless it failed. The drawer lists its problems only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
+
+The drawer and the dock show a status pill for every source, empty sets included. The title of each pill tells whether the source is starting, checking, or failed, or when it last finished a run. Selecting a pill hides or shows the problems of that source.
 
 ## Problem metadata
 
@@ -133,6 +135,7 @@ The third argument of `setProblems` describes the source:
 | `url` | A page that lists the problems in full. The drawer shows it in a frame, so it must allow framing by the app. |
 | `group` | Sources with the same group count together under this name, as one entry. |
 | `devtoolsDock` | Id of a Vite DevTools dock that lists the problems in full. |
+| `lastRun` | `{ startedAt, finishedAt }` of the latest run, in epoch milliseconds. Leave out `finishedAt` while the run is in progress. Pills show it as, for example, `Checked 3s ago`. |
 
 ### Count several sources together
 

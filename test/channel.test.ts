@@ -1500,6 +1500,33 @@ describe('problem sets', () => {
     channel.close()
   })
 
+  it('keeps the last run of a source, and republishes the set when it changes', async () => {
+    const sunk: any[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    const reports = [await problem('a')]
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 1, finishedAt: 2 },
+    })
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 1, finishedAt: 2 },
+    })
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 3 },
+    })
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 3, finishedAt: 4, extra: true } as never,
+    })
+    expect(sunk.filter(event => event.type === 'problems').map(event => event.payload.lastRun)).toEqual([
+      { startedAt: 1, finishedAt: 2 },
+      { startedAt: 3 },
+      { startedAt: 3, finishedAt: 4 },
+    ])
+    expect((await hello(channel)).problems[0].lastRun).toEqual({ startedAt: 3, finishedAt: 4 })
+    channel.close()
+  })
+
   it('counts info problems apart from errors and warnings', async () => {
     const channel = createChannel()
     channel.setProblems('ts', [await problem('a'), await problem('b', 'info'), await problem('c', 'info')], { label: 'TypeScript' })

@@ -164,6 +164,8 @@ function sameProblems(a: ProblemSet, b: ProblemSet): boolean {
     && a.error === b.error
     && a.url === b.url
     && a.devtoolsDock === b.devtoolsDock
+    && a.lastRun?.startedAt === b.lastRun?.startedAt
+    && a.lastRun?.finishedAt === b.lastRun?.finishedAt
     && sameReports(a.reports, b.reports)
 }
 
@@ -854,6 +856,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         ...(meta.error !== undefined && { error: meta.error }),
         ...(meta.url !== undefined && { url: meta.url }),
         ...(meta.devtoolsDock !== undefined && { devtoolsDock: meta.devtoolsDock }),
+        ...(typeof meta.lastRun?.startedAt === 'number' && {
+          lastRun: {
+            startedAt: meta.lastRun.startedAt,
+            ...(typeof meta.lastRun.finishedAt === 'number' && { finishedAt: meta.lastRun.finishedAt }),
+          },
+        }),
         reports: [...reports],
       }
       const previous = problemSets.get(source)

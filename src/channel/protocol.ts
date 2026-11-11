@@ -51,6 +51,8 @@ export interface ProblemMeta {
    * source gets no DevTools message, since its dock posts its own.
    */
   devtoolsDock?: string
+  /** When the latest run started, and finished unless it is still running, in epoch milliseconds. */
+  lastRun?: { startedAt: number, finishedAt?: number }
 }
 
 /** A problem set as pages receive it: its counts, without the reports. */

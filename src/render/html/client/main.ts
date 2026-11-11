@@ -1084,17 +1084,32 @@ function dockedIndex(d: Docked): DockedIndex {
 
 function focusedItem(m: Mount): DOMStringMap | undefined {
   const active = document.activeElement as HTMLElement | null
-  return active?.matches('[data-index] [data-id]') && m.root.contains(active)
+  return active?.matches('[data-index] [data-id], [data-index] [data-action="toggle-source"]') && m.root.contains(active)
     ? { ...active.dataset }
     : undefined
 }
 
 function refocusItem(m: Mount, item: DOMStringMap | undefined): void {
-  if (item) {
+  if (item?.action === 'toggle-source') {
+    m.root.querySelector<HTMLElement>(`[data-index] [data-action="toggle-source"][data-source="${CSS.escape(item.source ?? '')}"]`)?.focus({ preventScroll: true })
+  }
+  else if (item) {
     m.root.querySelector<HTMLElement>(`[data-index] [data-id="${CSS.escape(item.id ?? '')}"]${item.source
       ? `[data-source="${CSS.escape(item.source)}"]`
       : ':not([data-source])'}`)?.focus({ preventScroll: true })
   }
+}
+
+function toggleSource(m: Mount, d: Docked, source: string): void {
+  const hidden = new Set(d.state.view?.hiddenSources)
+  if (!hidden.delete(source)) {
+    hidden.add(source)
+  }
+  d.state.view = {
+    ...d.state.view,
+    hiddenSources: [...hidden],
+  }
+  refreshIndex(m, d)
 }
 
 function refreshIndex(m: Mount, d: Docked): void {
@@ -1339,6 +1354,13 @@ function connectDocked(m: Mount, d: Docked): void {
   })
   on('log', payload => appendLog(m, payload))
   on('build', payload => showProgress(m, payload))
+  setInterval(() => {
+    if ([
+      ...d.summaries.values(),
+    ].some(set => set.lastRun)) {
+      refreshIndex(m, d)
+    }
+  }, 15_000)
 
   addEventListener('message', (event) => {
     const data = event.data as { type?: string } & BadgeFocus
@@ -1825,6 +1847,10 @@ function bind(m: Mount): void {
         return void navigateHistory(m, Number(target.dataset.dir))
       case 'select':
         return void selectDocked(m, { id: target.dataset.id, source: target.dataset.source })
+      case 'toggle-source':
+        return m.docked && target.dataset.source !== undefined
+          ? toggleSource(m, m.docked, target.dataset.source)
+          : undefined
       case 'list': {
         const source = target.dataset.source
         const dock = source === undefined

@@ -634,6 +634,80 @@ describe('docked view', () => {
     expect(ansi).toContain('  │       ^^^^^^^^^\n')
   })
 
+  it('shows a pill with the status of each source, and leaves out the problems of hidden ones', () => {
+    const problem = (message: string) => ({
+      ...createProblemReport({ name: 'TS', message }),
+      id: message,
+    })
+    const index = {
+      history: [],
+      problems: [
+        {
+          source: 'ts',
+          label: 'TypeScript',
+          errors: 1,
+          warnings: 0,
+          lastRun: { startedAt: 0, finishedAt: 7000 },
+          reports: [
+            problem('Type mismatch'),
+          ],
+        },
+        {
+          source: 'lint',
+          label: 'ESLint',
+          errors: 0,
+          warnings: 0,
+          status: 'checking' as const,
+        },
+        {
+          source: 'vue',
+          label: 'Vue',
+          errors: 0,
+          warnings: 0,
+          status: 'failed' as const,
+          error: 'crashed',
+        },
+        {
+          source: 'a11y',
+          label: 'Audit',
+          errors: 0,
+          warnings: 0,
+          lastRun: { startedAt: 0, finishedAt: 1000 },
+        },
+      ],
+    }
+    const pills = (hiddenSources?: string[]) => [
+      ...renderIndex({
+        mode: 'docked',
+        version: '',
+        view: { now: 10_000, hiddenSources },
+      }, index).matchAll(/<button type="button" class="mb-pill"[^>]*data-tone="(\w+)" aria-pressed="(\w+)" title="([^"]*)">.*?<span class="mb-pill-label">([^<]*)<\/span>(?:<span class="mb-pill-count">([^<]*)<\/span>)?<\/button>/g),
+    ].map(match => match.slice(1).join(' | '))
+    expect(pills()).toEqual([
+      'error | true | Checked just now. Hide TypeScript problems. | TypeScript | 1',
+      'busy | true | Starting. Hide ESLint problems. | ESLint | ',
+      'error | true | Failed: crashed. Hide Vue problems. | Vue | failed',
+      'ok | true | Checked 9s ago. Hide Audit problems. | Audit | ',
+    ])
+    const hidden = renderIndex({
+      mode: 'docked',
+      version: '',
+      view: {
+        hiddenSources: ['ts'],
+      },
+    }, index)
+    expect(hidden).toContain('data-source="ts" data-tone="error" aria-pressed="false" title="Checked')
+    expect(hidden).not.toContain('Type mismatch')
+    expect(hidden).not.toContain('data-index-source="ts"')
+    const rechecking = renderIndex({ mode: 'docked', version: '' }, {
+      history: [],
+      problems: [
+        { ...index.problems[0]!, status: 'checking' },
+      ],
+    })
+    expect(rechecking).toContain(`data-tone="busy" aria-pressed="true" title="Checking. Hide TypeScript problems.">${ICONS.checking}<span class="mb-pill-label">TypeScript</span><span class="mb-pill-count">1</span>`)
+  })
+
   it('styles the dock after its host and the drawer after the page', () => {
     const dock = renderDockedPage({ channel: '/__my-bad', embed: true })
     expect(dock).toContain('<html lang="en" dir="ltr" data-host>')
