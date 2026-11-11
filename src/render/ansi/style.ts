@@ -72,7 +72,7 @@ export function wrap(text: string, width: number, indent = ''): string[] {
   for (const paragraph of text.split('\n')) {
     let line = ''
     for (const word of paragraph.split(' ')) {
-      if (line && visibleWidth(line) + 1 + word.length > width) {
+      if (line && visibleWidth(line) + 1 + visibleWidth(word) > width) {
         out.push(line)
         line = indent + word
       }

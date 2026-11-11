@@ -29,7 +29,7 @@ This page lists the runtime exports of each entry point, with a link to the page
 | --- | --- |
 | `createChannel(options?)` | Creates a live channel. See [Live channel](./channel.md). |
 | `openInEditor(request)` | Opens a file at a line in the editor of the user. See [Open files in an editor](./channel.md#open-files-in-an-editor). |
-| `toHistoryEntry(report)` | Returns the history entry for a report: its id, kind, name, message, and timestamp. |
+| `toHistoryEntry(report)` | Returns the history entry for a report: its id, kind, name, message, `codeSpans` flag, and timestamp. |
 
 ## `my-bad/sinks`
 

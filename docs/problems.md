@@ -62,7 +62,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | `kind` | `error` or `warning`. Default `error`. |
 | `snippet` | A `Snippet`, or a code frame of `3 \| code` lines. A code frame can mark a line with `>`. |
 
-A report without a `file` or a `snippet` has no frames. As a second argument, `createProblemReport` takes `cwd`, `tokenizer`, `maxMessageLength`, and `maxSnippetLineLength`.
+A report without a `file` or a `snippet` has no frames. As a second argument, `createProblemReport` takes `cwd`, `tokenizer`, `maxMessageLength`, and `maxSnippetLineLength`. Pass `codeSpans: true` too when the tool writes code in backticks, as the Vue compiler does, to show it as code. See [Code in messages](./reports.md#code-in-messages).
 
 If you want `my-bad` to read the snippet from disk, use `createReport` instead. Pass the location as a compile-shaped input (`{ message, loc }`), or as `sources`, and set `kind: 'warning'` for warnings.
 

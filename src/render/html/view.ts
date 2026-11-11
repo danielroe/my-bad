@@ -2,11 +2,12 @@ import type { ProblemSummary } from '../../channel/protocol'
 import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../types'
 import type { BadgeFocus, DockedIndex, DockedState, PageState } from './state'
+import { plainText } from '../../report/code'
 import { clampMessage } from '../../report/message'
 import { displayPath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
-import { attr, escapeHtml, safeUrl } from './escape'
+import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
 import { countsLabel, dockedCounts, firstLine, reportLocation, warningCount } from './summary'
 
@@ -101,14 +102,15 @@ export function dockedSummary(index: DockedIndex): string {
   return countsLabel(dockedCounts(index)) || 'All clear'
 }
 
-function renderIndexItem(entry: { id: string, kind: string, name: string, message: string }, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
+function renderIndexItem(entry: Pick<HistoryEntry, 'id' | 'kind' | 'name' | 'message' | 'codeSpans'>, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
   const current = shown?.id === entry.id && shown.source === source
+  const message = inlineHtml(firstLine(entry.message), entry.codeSpans)
   const title = heading !== undefined && entry.name.toLowerCase() === heading.toLowerCase()
-    ? firstLine(entry.message)
-    : `${entry.name}: ${firstLine(entry.message)}`
+    ? message
+    : `${escapeHtml(entry.name)}: ${message}`
   return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${entry.kind === 'warning'
     ? ICONS.warning
-    : ICONS.error}<span class="mb-index-title">${escapeHtml(title)}</span>${location
+    : ICONS.error}<span class="mb-index-title">${title}</span>${location
     ? `<span class="mb-index-loc">${escapeHtml(location)}</span>`
     : ''}</button></li>`
 }
@@ -216,7 +218,7 @@ export function pagerIndex(report: ErrorReport, history: HistoryEntry[]): number
 
 export function renderHistoryItems(report: ErrorReport, history: HistoryEntry[]): string {
   const index = pagerIndex(report, history)
-  return history.map((entry, position) => `<li><button type="button" data-entry="${escapeHtml(entry.id)}" data-action="history" data-dir="${position - index}">${escapeHtml(entry.message)}</button></li>`).join('')
+  return history.map((entry, position) => `<li><button type="button" data-entry="${escapeHtml(entry.id)}" data-action="history" data-dir="${position - index}">${inlineHtml(entry.message, entry.codeSpans)}</button></li>`).join('')
 }
 
 export function renderHistory(report: ErrorReport, history?: HistoryEntry[]): string {
@@ -266,20 +268,21 @@ function renderCauseNavigation(state: PageState, selected: string): string {
     ? entries
     : entries.reverse()
   const current = chain.findIndex(entry => entry.path === selected)
-  const entry = (index: number, text = chain[index]!.label) => `<button type="button" data-action="cause" data-path="${chain[index]!.path}" aria-current="${index === current}" title="${escapeHtml(chain[index]!.report.message)}">${escapeHtml(text)}</button>`
+  const message = (report: ErrorReport) => inlineHtml(report.message, report.codeSpans)
+  const entry = (index: number, html = escapeHtml(chain[index]!.label)) => `<button type="button" data-action="cause" data-path="${chain[index]!.path}" aria-current="${index === current}" title="${escapeHtml(plainText(chain[index]!.report.message, chain[index]!.report.codeSpans))}">${html}</button>`
   if (chain.length === 2 && !related) {
     return `<nav class="mb-single-cause" aria-label="Error cause">${selected === 'r'
-      ? `Caused by ${entry(0, chain[0]!.report.message)}`
-      : entry(1, `Back to: ${state.report.message}`)}</nav>`
+      ? `Caused by ${entry(0, message(chain[0]!.report))}`
+      : entry(1, `Back to: ${message(state.report)}`)}</nav>`
   }
-  return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, `1 ${chain[0]!.label}`)}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1
+  return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, escapeHtml(`1 ${chain[0]!.label}`))}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1
     ? `${current + 1} ${chain[current]!.label}`
     : related
       ? `${chain.length - 1} related errors`
-      : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${index + 1} ${item.label}: ${item.report.message}`)}</li>`).join('')}</ol></details>${related
+      : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${escapeHtml(`${index + 1} ${item.label}`)}: ${message(item.report)}`)}</li>`).join('')}</ol></details>${related
     ? ''
-    : `${ICONS.chevron}${entry(chain.length - 1, `${chain.length} Reported error`)}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r'
-    ? `<span>Reported as: ${escapeHtml(state.report.message)}</span>`
+    : `${ICONS.chevron}${entry(chain.length - 1, escapeHtml(`${chain.length} Reported error`))}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r'
+    ? `<span>Reported as: ${message(state.report)}</span>`
     : ''}</p></nav>`
 }
 
@@ -338,7 +341,7 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
     : ''}</div>
   ${renderMessage(report, state, tag, `${id}-message`)}
   ${report.hint
-    ? `<p class="mb-hint" data-hint>${escapeHtml(report.hint)}${docs
+    ? `<p class="mb-hint" data-hint>${inlineHtml(report.hint, report.codeSpans)}${docs
       ? ` <a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer">Learn more</a>`
       : ''}</p>`
     : ''}
@@ -355,9 +358,9 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
 function renderMessage(report: ErrorReport, state: PageState, tag: string, id: string): string {
   const { head, rest } = clampMessage(report.message || report.name, state.maxMessageLength)
   const more = rest
-    ? `<span class="mb-message-rest" data-message-rest hidden>${escapeHtml(rest)}</span><button type="button" class="mb-message-more" data-action="expand-message">Show full message <span class="mb-count">${rest.length} more characters</span></button>`
+    ? `<span class="mb-message-rest" data-message-rest hidden>${inlineHtml(rest, report.codeSpans)}</span><button type="button" class="mb-message-more" data-action="expand-message">Show full message <span class="mb-count">${rest.length} more characters</span></button>`
     : ''
-  return `<${tag} class="mb-message" id="${id}" data-message>${escapeHtml(head)}${more}</${tag}>`
+  return `<${tag} class="mb-message" id="${id}" data-message>${inlineHtml(head, report.codeSpans)}${more}</${tag}>`
 }
 
 function renderTrace(report: ErrorReport, state: PageState): string {
@@ -532,7 +535,7 @@ export function renderSection(section: Section): string {
 
 export function renderToast(report: ErrorReport): string {
   return `<article class="mb-toast" data-toast data-kind="${escapeHtml(report.kind)}" data-toast-id="${escapeHtml(report.id)}">
-  ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${escapeHtml(report.message)}</span></button>
+  ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${inlineHtml(report.message, report.codeSpans)}</span></button>
   <button type="button" class="mb-tool" data-action="dismiss-toast" title="Dismiss warning" aria-label="Dismiss warning">${ICONS.close}</button>
 </article>`
 }

@@ -55,6 +55,7 @@
 .mb-peek-inner svg { margin-top: 1px; }
 .mb-peek-message { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .mb-peek-hint { grid-column: 2; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--mb-fg-muted); font-weight: 400; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mb-peek code { font-family: var(--mb-font-mono); font-size: max(12px, .9em); }
 .mb-peek-meta { grid-column: 2; min-width: 0; overflow: hidden; color: var(--mb-fg-muted); font: 12px/1.4 var(--mb-font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .mb-drawer {
   position: fixed; top: 16px; right: 16px; bottom: 58px; z-index: 2147482999;

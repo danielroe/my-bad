@@ -3,6 +3,7 @@ import type { DockClientScriptContext } from '@vitejs/devtools-kit/client'
 import type { ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport } from '../../../types'
 import type { BadgeFocus, BadgeSnapshot, BadgeState } from '../state'
+import { plainText } from '../../../report/code'
 import { displayPath } from '../../../report/path'
 import { countsLabel, dockedCounts, firstLine, plural, reportLocation } from '../summary'
 import { focusSender } from './frame'
@@ -115,7 +116,7 @@ export default async function setup(ctx: DockClientScriptContext, options: DevTo
           : `${label}: ${countsLabel({ errors: summary.errors, warnings: summary.warnings })}`,
         description: reports.length
           ? [
-              ...reports.slice(0, DESCRIBED).map(report => `${where(report, snapshot) ?? ''}  ${firstLine(report.message)}`.trim()),
+              ...reports.slice(0, DESCRIBED).map(report => `${where(report, snapshot) ?? ''}  ${plainText(firstLine(report.message), report.codeSpans)}`.trim()),
               ...reports.length > DESCRIBED
                 ? [`and ${plural(reports.length - DESCRIBED, 'more')}`]
                 : [],
@@ -214,12 +215,12 @@ function badgeSource(): Promise<MyBadSharedSource> {
 }
 
 function describe(report: ErrorReport, snapshot: BadgeSnapshot): Pick<DevToolsMessageEntryInput, 'message' | 'description' | 'stacktrace' | 'filePosition'> {
-  const [title = '', ...rest] = report.message.split('\n')
+  const [title = '', ...rest] = plainText(report.message, report.codeSpans).split('\n')
   return {
     message: `${report.name}: ${title}`,
     description: [
       rest.join('\n').trim(),
-      report.hint,
+      report.hint && plainText(report.hint, report.codeSpans),
     ].filter(Boolean).join('\n\n') || where(report, snapshot),
     stacktrace: report.rawStack,
     filePosition: position(report),

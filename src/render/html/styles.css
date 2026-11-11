@@ -17,7 +17,7 @@
 :where(.mb-root) a { color: var(--mb-accent-ink); text-decoration: none; }
 :where(.mb-root) a:hover { text-decoration: underline; text-underline-offset: 3px; }
 :where(.mb-root button, .mb-pip-button, .mb-preview button, .mb-restore) { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit; }
-:where(.mb-root code, .mb-root pre, .mb-root kbd) { font-family: var(--mb-font-mono); font-size: 0.9em; }
+:where(.mb-root code, .mb-root pre, .mb-root kbd) { font-family: var(--mb-font-mono); font-size: max(12px, 0.9em); }
 .mb-root :focus-visible, .mb-pip-button:focus-visible, .mb-preview :focus-visible, .mb-restore:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; border-radius: 4px; }
 .mb-root [hidden], .mb-restore[hidden], .mb-preview[hidden], .mb-pip-button[hidden] { display: none !important; }
 :where(.mb-root svg, .mb-pip-button svg, .mb-preview svg) { display: block; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }

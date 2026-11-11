@@ -48,6 +48,7 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
     maxSnippets: snippetCount(options.maxSnippets),
     maxSnippetLineLength: lineLength(options.maxSnippetLineLength),
     snippets: options.snippets ?? true,
+    codeSpans: options.codeSpans,
     context: options.context ?? {},
     tokenizer: options.tokenizer,
     compiled: options.compiled,
@@ -122,6 +123,7 @@ function collapseDuplicateCauses(report: ErrorReport): ErrorReport {
     code: report.code ?? duplicate.code,
     ...((report.diagnostic ?? duplicate.diagnostic) && { diagnostic: true as const }),
     hint: report.hint ?? duplicate.hint,
+    ...((report.codeSpans ?? duplicate.codeSpans) && { codeSpans: true as const }),
     docsUrl: report.docsUrl ?? duplicate.docsUrl,
     status: report.status ?? duplicate.status,
     trace: report.trace ?? duplicate.trace,
@@ -237,6 +239,7 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     ...(error.code && { code: error.code }),
     ...(error.diagnostic && { diagnostic: true as const }),
     ...(error.hint && { hint: error.hint }),
+    ...((error.diagnostic || options.codeSpans) && { codeSpans: true as const }),
     ...(error.docsUrl && { docsUrl: error.docsUrl }),
     ...(error.status && { status: error.status }),
     frames,
@@ -285,7 +288,12 @@ export function reportId(report: Pick<ErrorReport, 'name' | 'message' | 'frames'
 function nestedContext(ctx: BuildContext): BuildContext {
   return {
     ...ctx,
-    options: { ...ctx.options, kind: undefined, compiled: undefined },
+    options: {
+      ...ctx.options,
+      kind: undefined,
+      compiled: undefined,
+      codeSpans: undefined,
+    },
   }
 }
 

@@ -2,7 +2,9 @@ import type { ChannelEvent, ProblemSet, ProblemSummary } from '../../../channel/
 import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { BadgeFocus, BadgeState, PageState } from '../state'
 import styles from 'virtual:my-bad-badge-styles'
+import { plainText } from '../../../report/code'
 import { displayPath } from '../../../report/path'
+import { escapeHtml, inlineHtml } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
 import { firstLine, plural, reportLocation } from '../summary'
 import { focusSender } from './frame'
@@ -177,7 +179,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
       ? `${set.label ?? set.source}: `
       : ''}${report.kind === 'warning'
       ? 'Warning'
-      : 'Error'}: ${report.name}: ${firstLine(report.message)}${more
+      : 'Error'}: ${report.name}: ${plainText(firstLine(report.message), report.codeSpans)}${more
       ? `, and ${more} more`
       : ''}`
   }
@@ -676,8 +678,8 @@ function start(state: BadgeState, nonce: string | undefined): void {
     const [icon, message, hint, meta] = card.firstElementChild!.children as unknown as HTMLElement[]
     card.dataset.kind = kind
     icon!.outerHTML = ICONS[kind]
-    message!.textContent = `${report.name}: ${firstLine(report.message)}`
-    hint!.textContent = report.hint ?? ''
+    message!.innerHTML = `${escapeHtml(report.name)}: ${inlineHtml(firstLine(report.message), report.codeSpans)}`
+    hint!.innerHTML = inlineHtml(report.hint ?? '', report.codeSpans)
     hint!.hidden = !report.hint
     meta!.textContent = [
       set && (set.group

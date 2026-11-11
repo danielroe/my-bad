@@ -23,7 +23,10 @@ export interface ProblemInput {
   kind?: 'error' | 'warning'
 }
 
-export type ProblemReportOptions = Pick<ReportOptions, 'cwd' | 'maxMessageLength' | 'maxSnippetLineLength' | 'tokenizer'>
+export interface ProblemReportOptions extends Pick<ReportOptions, 'cwd' | 'maxMessageLength' | 'maxSnippetLineLength' | 'tokenizer'> {
+  /** Backtick code spans in `message` and `hint` are inline code. See `ErrorReport['codeSpans']`. */
+  codeSpans?: boolean
+}
 
 /**
  * Build a report from a diagnostic another tool has already located, without
@@ -55,6 +58,7 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
     ...(input.hint && {
       hint: stripAnsi(input.hint),
     }),
+    ...(options.codeSpans && { codeSpans: true as const }),
     ...(input.docsUrl && { docsUrl: input.docsUrl }),
     frames: frame
       ? [frame]

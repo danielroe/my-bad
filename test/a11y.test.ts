@@ -58,6 +58,7 @@ beforeAll(async () => {
     ],
   })
   report.hint = 'Check the `name` prop passed from the parent component.'
+  report.codeSpans = true
   report.docsUrl = 'https://nuxt.com/docs/errors/e1001'
   report.trace = [
     { label: '<App>', file: '/proj/app.vue' },

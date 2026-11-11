@@ -3,6 +3,7 @@ import type { Palette } from './style'
 import process from 'node:process'
 import { hyperlink, link } from 'clickable-path'
 import { stripAnsi as clean } from '../../report/ansi'
+import { codeSpans } from '../../report/code'
 import { clampMessage, DEFAULT_DISPLAY_MESSAGE_LENGTH } from '../../report/message'
 import { displayPath, isFilePath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
@@ -79,9 +80,9 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     ? ` ${meta}`
     : ''}${p.dim(':')} `
   const { head, rest } = clampMessage(clean(report.message), ctx.maxMessageLength)
-  const messageLines = wrap(rest
+  const messageLines = wrap(styleCode(rest
     ? `${head}…`
-    : head, width - 2, '')
+    : head, report.codeSpans, p), width - 2, '')
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)
   for (const line of messageLines.slice(1)) {
     out.push(`${indent}  ${p.bold(line)}`)
@@ -92,7 +93,7 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
 
   if (report.hint) {
     out.push('')
-    for (const [index, line] of wrap(clean(report.hint), width - 4).entries()) {
+    for (const [index, line] of wrap(styleCode(clean(report.hint), report.codeSpans, p), width - 4).entries()) {
       out.push(`${indent}  ${index === 0
         ? p.cyan('ℹ')
         : ' '} ${line}`)
@@ -159,6 +160,15 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   }
 
   return out
+}
+
+/** Code spans lose their backticks and take a colour, word by word so that wrapping keeps each word styled. */
+function styleCode(text: string, spans: boolean | undefined, p: Palette): string {
+  return spans && text.includes('`')
+    ? codeSpans(text).map(segment => segment.code
+        ? segment.text.split(' ').map(word => word && p.cyan(word)).join(' ')
+        : segment.text).join('')
+    : text
 }
 
 /** Skip a cause that only repeats its parent's message, keeping whatever it wraps. */

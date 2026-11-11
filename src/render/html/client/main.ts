@@ -1,6 +1,7 @@
 import type { BuildProgress, ChannelEvent, ProblemSet, ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { BadgeFocus, Dock, DockedIndex, DockedState, PageState } from '../state'
+import { plainText } from '../../../report/code'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
@@ -334,7 +335,7 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
 function headline(report: ErrorReport): string {
   return `${report.kind === 'warning'
     ? 'Warning'
-    : 'Error'}: ${report.name}: ${report.message}`
+    : 'Error'}: ${report.name}: ${plainText(report.message, report.codeSpans)}`
 }
 
 const labelRestores = new WeakMap<HTMLElement, () => void>()
@@ -1664,7 +1665,7 @@ function bind(m: Mount): void {
         }
         m.root.querySelector('.mb-report')?.replaceWith(article)
         markOverflowingSnippets(m)
-        announce(m, `${selected.label}: ${selected.report.name}: ${selected.report.message}`)
+        announce(m, `${selected.label}: ${selected.report.name}: ${plainText(selected.report.message, selected.report.codeSpans)}`)
         focusHeading(m)
         return
       }

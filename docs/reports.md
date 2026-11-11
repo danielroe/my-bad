@@ -56,6 +56,21 @@ Each entry of `sources` becomes an app frame, with a snippet when it names a lin
 
 An error named after its own `code` describes itself. The heading shows the code once, and presets don't add a documentation link to it.
 
+### Code in messages
+
+A report can mark its `message` and `hint` as using backtick code spans, such as `` Pass a non-empty `name` prop ``. The report then has `codeSpans: true`, and renderers show each span as code:
+
+| Output | Code span |
+| --- | --- |
+| HTML | A `<code>` element. |
+| ANSI | Coloured, without the backticks. |
+| Plain text, such as titles and DevTools messages | Without the backticks. |
+| Markdown, JSON, and sinks | Unchanged. |
+
+Spans follow the CommonMark rules: a run of backticks opens a span, and the next run of the same length closes it. A backtick without a match stays as it is.
+
+An error named after its own `code` always uses code spans. For other errors, pass `codeSpans: true` to `createReport`. The option applies to the top-level report only, since causes often quote source code that contains backticks.
+
 ## Report options
 
 | Option | Default | Description |
@@ -70,6 +85,7 @@ An error named after its own `code` describes itself. The heading shows the code
 | `tokenizer` | Built in | See [Syntax highlighting](#syntax-highlighting). |
 | `compiled` | Detected | See [Compile errors](#compile-errors). |
 | `snippets` | `true` | Read source snippets. |
+| `codeSpans` | `false` | Mark the top-level report as using [code spans](#code-in-messages). |
 | `snippetLines` | `5` | Lines of source read on each side of the error line. |
 | `maxSnippets` | `100` | Snippets across the whole report, causes and related errors included. Later frames keep their location without a snippet. |
 | `maxSnippetLineLength` | `500` | Characters of each snippet line. Longer lines are cropped around the column. |

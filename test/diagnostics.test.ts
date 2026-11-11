@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createReport, renderAnsi, renderOverlay, renderPage, toMarkdown } from '../src'
+import { createProblemReport, createReport, renderAnsi, renderOverlay, renderPage, toMarkdown } from '../src'
+import { toHistoryEntry } from '../src/channel/protocol'
+import { renderIndex } from '../src/render/html/view'
+import { stripAnsi } from '../src/report/ansi'
 
 const SOURCE = 'const props = defineProps()\nconst widget = useWidget()\nawait widget.load()\nexport {}\n'
 
@@ -108,6 +111,55 @@ describe('diagnostic errors', () => {
     const report = await createReport(Object.assign(new Error('x'), { code: 'ERR_MODULE_NOT_FOUND' }), { cwd: '/proj', loaders: [], snippets: false })
     expect(report.diagnostic).toBeUndefined()
     expect(report.hint).toBeUndefined()
+  })
+
+  it('marks a diagnostic, and only a diagnostic, as using code spans', async () => {
+    const report = await createReport(diagnostic({
+      cause: new Error('Quoted `code` in a cause'),
+    }), { cwd: '/proj', loaders })
+    expect(report.codeSpans).toBe(true)
+    expect(report.causes[0]!.codeSpans).toBeUndefined()
+    expect(toHistoryEntry(report).codeSpans).toBe(true)
+    expect((await createReport(new Error('Unexpected `x` and `y`'), { cwd: '/proj', loaders: [] })).codeSpans).toBeUndefined()
+  })
+
+  it('marks the top-level report as using code spans when asked', async () => {
+    const report = await createReport(new Error('`defineProps` is a compiler macro', {
+      cause: new Error('`x`'),
+    }), { cwd: '/proj', loaders: [], codeSpans: true })
+    expect(report.codeSpans).toBe(true)
+    expect(report.causes[0]!.codeSpans).toBeUndefined()
+    expect(createProblemReport({ name: 'Vue', message: '`defineProps` is a compiler macro' }, { codeSpans: true }).codeSpans).toBe(true)
+    expect(createProblemReport({ name: 'Vue', message: '`defineProps` is a compiler macro' }).codeSpans).toBeUndefined()
+  })
+
+  it('renders code spans as code in HTML and ANSI, and keeps them in Markdown', async () => {
+    const report = await createReport(diagnostic({
+      message: 'The `<Widget>` factory received an empty `name`, see `',
+    }), { cwd: '/proj', loaders })
+
+    const page = renderPage(report, { cwd: '/proj' })
+    expect(page).toContain('data-message>The <code>&lt;Widget&gt;</code> factory received an empty <code>name</code>, see `</h1>')
+    expect(page).toContain('data-hint>Pass a non-empty <code>name</code> prop to <code>&lt;Widget&gt;</code>.')
+    expect(page).toContain('<title>NUXT_E1001: The &lt;Widget&gt; factory received an empty name, see `</title>')
+    expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [], current: report })).toContain('<span class="mb-index-title">NUXT_E1001: The <code>&lt;Widget&gt;</code> factory')
+
+    const plain = renderAnsi(report, { cwd: '/proj', colors: false, hyperlinks: false }).split('\n')
+    expect(plain[0]).toBe('✖ NUXT_E1001: The <Widget> factory received an empty name, see `')
+    expect(plain).toContain('  ℹ Pass a non-empty name prop to <Widget>.')
+    const coloured = renderAnsi(report, { cwd: '/proj', colors: true, hyperlinks: false })
+    expect(coloured).toContain('\u001B[36m<Widget>\u001B[39m')
+    expect(stripAnsi(coloured).split('\n')[0]).toBe(plain[0])
+
+    const markdown = toMarkdown(report, { cwd: '/proj' })
+    expect(markdown).toContain('The `<Widget>` factory received an empty `name`, see `')
+    expect(markdown).toContain('> Pass a non-empty `name` prop to `<Widget>`.')
+  })
+
+  it('leaves backticks alone in reports that do not use code spans', async () => {
+    const report = await createReport(new Error('Unexpected `x` in `y`'), { cwd: '/proj', loaders: [] })
+    expect(renderPage(report, { cwd: '/proj' })).toContain('data-message>Unexpected `x` in `y`</h1>')
+    expect(renderAnsi(report, { cwd: '/proj', colors: false }).split('\n')[0]).toBe('✖ Error: Unexpected `x` in `y`')
   })
 
   it('renders the code once in HTML, ANSI and Markdown', async () => {

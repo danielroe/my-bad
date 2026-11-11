@@ -1448,6 +1448,33 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('renders code spans in the card of a report that uses them', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const first = createProblemReport({ name: 'SFC', message: 'Unused `ref`' })
+    channel.setProblems('vue', [first], { label: 'Vue' })
+    const { page, errors } = await open('/badge')
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
+
+    channel.setProblems('vue', [
+      first,
+      createProblemReport({
+        name: 'SFC',
+        message: '`<defineProps>` is a compiler macro',
+        hint: 'Remove the `import`.',
+      }, { codeSpans: true }),
+    ], { label: 'Vue' })
+    await waitFor(() => peek.isVisible(), true)
+    expect(await peek.locator('.mb-peek-message').innerHTML()).toBe('SFC: <code>&lt;defineProps&gt;</code> is a compiler macro')
+    expect(await peek.locator('.mb-peek-hint').innerHTML()).toBe('Remove the <code>import</code>.')
+    await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'Vue: Error: SFC: <defineProps> is a compiler macro')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it('ignores reports fetched for a source cleared while the fetch was in flight', async () => {
     channel.clearWarning()
     channel.clearError()

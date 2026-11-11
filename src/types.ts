@@ -100,6 +100,12 @@ export interface ErrorReport {
    */
   diagnostic?: boolean
   hint?: string
+  /**
+   * Backtick code spans in `message` and `hint` are inline code, following
+   * CommonMark: renderers mark them up as code, and plain-text surfaces drop
+   * the backticks. Markdown and JSON keep the text as it is.
+   */
+  codeSpans?: boolean
   docsUrl?: string
   status?: number
   frames: Frame[]
@@ -189,6 +195,11 @@ export interface ReportOptions {
   maxSnippetLineLength?: number
   /** Skip snippet loading entirely. */
   snippets?: boolean
+  /**
+   * Mark the top-level report's `message` and `hint` as using backtick code
+   * spans. Errors named after their `code` are always marked.
+   */
+  codeSpans?: boolean
   /** Arbitrary data for plugins: request, event, Vue instance, route... */
   context?: Record<string, unknown>
   /** Custom syntax tokenizer for snippets. Tokens are stored on the report. */
@@ -225,6 +236,7 @@ export interface ResolvedReportOptions {
   maxSnippets: number
   maxSnippetLineLength: number
   snippets: boolean
+  codeSpans?: boolean
   context: Record<string, unknown>
   tokenizer?: Tokenizer
   compiled?: CompiledMarker
@@ -258,5 +270,6 @@ export interface HistoryEntry {
   kind: ReportKind
   name: string
   message: string
+  codeSpans?: boolean
   timestamp: number
 }

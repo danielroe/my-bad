@@ -92,6 +92,7 @@ export function toHistoryEntry(report: ErrorReport): HistoryEntry {
     kind: report.kind,
     name: report.name,
     message: report.message,
+    ...(report.codeSpans && { codeSpans: true }),
     timestamp: report.timestamp,
   }
 }
