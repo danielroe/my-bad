@@ -1,6 +1,7 @@
 import type { ProblemSummary } from '../../channel/protocol'
 import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Location, Section, Snippet } from '../../types'
+import type { Listed } from './problems'
 import type { BadgeFocus, DockedIndex, DockedState, IndexView, PageState } from './state'
 import { plainText } from '../../report/code'
 import { clampMessage, splitHeadline } from '../../report/message'
@@ -9,7 +10,7 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
-import { sourceStatus, sourceTone } from './problems'
+import { filtering, levelOf, LEVELS, matches, sourceStatus, sourceTone } from './problems'
 import { DOCKED_TITLE } from './state'
 import { countsLabel, dockedCounts, firstLine, repeatsLabel, reportLocation, warningCount } from './summary'
 
@@ -190,18 +191,51 @@ function renderSources(sets: DockedIndex['problems'], view: IndexView): string {
 }
 
 /** The list beside a docked view, of the open error, the warnings and every problem set. */
+const LEVEL_LABEL = { error: 'Errors', warning: 'Warnings', info: 'Info' }
+
+function renderLevels(entries: Listed[], view: IndexView): string {
+  const levels = LEVELS.map(level => ({ level, count: entries.filter(entry => levelOf(entry.kind) === level).length, hidden: !!view.hiddenLevels?.includes(level) }))
+    .filter(({ count, hidden }) => count || hidden)
+  return levels.length
+    ? `<div class="mb-index-levels" role="group" aria-label="Levels">${levels.map(({ level, count, hidden }) => `<button type="button" class="mb-level" data-action="level" data-level="${level}" aria-pressed="${!hidden}" title="${hidden ? 'Show' : 'Hide'} ${LEVEL_LABEL[level].toLowerCase()}">${KIND_ICON[level]}<span class="mb-sr-only">${LEVEL_LABEL[level]} </span>${count}</button>`).join('')}</div>`
+    : ''
+}
+
 export function renderIndex(state: DockedState, index: DockedIndex, shown?: BadgeFocus): string {
   const view = state.view ?? {}
+  const visible = (entry: Listed) => matches(entry, view, state.cwd)
+  const narrowed = filtering(view)
   const warnings = (index.history ?? []).filter(entry => entry.kind === 'warning').reverse()
-  const sets = index.problems.filter(set => !view.hiddenSources?.includes(set.source) && (set.errors + set.warnings + (set.info ?? 0) || failed(set) || set.status === 'checking'))
+  const sets = index.problems.filter(set => !view.hiddenSources?.includes(set.source))
+  const all: Listed[] = [
+    ...index.current
+      ? [index.current]
+      : [],
+    ...warnings,
+    ...sets.flatMap(set => set.reports ?? []),
+  ]
+  const shownWarnings = warnings.filter(visible)
+  const listedSets = sets
+    .map(set => ({
+      ...set,
+      ...set.reports && {
+        reports: set.reports.filter(visible),
+      },
+    }))
+    .filter(set => narrowed
+      ? set.reports?.length
+      : set.errors + set.warnings + (set.info ?? 0) || failed(set) || set.status === 'checking')
   const groups = [
-    index.current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(index.current, indexLocation(index.current, state), shown)}</ul></section>`,
-    warnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${warnings.length}</span></h2><ul>${warnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
-    ...sets.map(set => renderIndexSet(set, state, shown)),
+    index.current && visible(index.current) && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(index.current, indexLocation(index.current, state), shown)}</ul></section>`,
+    shownWarnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${shownWarnings.length}</span></h2><ul>${shownWarnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
+    ...listedSets.map(set => renderIndexSet(set, state, shown)),
   ].filter(Boolean)
-  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${renderSources(index.problems, view)}${groups.length
+  const hidden = narrowed || !!view.hiddenSources?.length
+  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${renderLevels(all, view)}${renderSources(index.problems, view)}${groups.length
     ? groups.join('')
-    : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
+    : hidden
+      ? '<div class="mb-index-empty"><p class="mb-index-empty-title">No problems match the current filters</p><button type="button" class="mb-index-reset" data-action="show-all">Show all</button></div>'
+      : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
 }
 
 /** A docked view: the index of everything open, and the report it has selected rendered as the overlay renders it. */
@@ -221,7 +255,7 @@ export function renderDocked(state: DockedState, index: DockedIndex, report?: Er
 </header>
 <div class="mb-sr-only" role="status" aria-live="polite" data-announce></div>
 <div class="mb-docked">
-${renderIndex(state, index, shown)}
+<div class="mb-index-pane"><div class="mb-index-filter"><input type="search" data-filter placeholder="Filter problems" aria-label="Filter problems" autocomplete="off" spellcheck="false"${attr('value', state.view?.filter || undefined)}></div>${renderIndex(state, index, shown)}</div>
 <main class="mb-main"${attr('data-report-id', report?.id)}${attr('data-list', !!list)} tabindex="-1">
   ${list
     ? `<p class="mb-docked-list-bar"><a href="${escapeHtml(list)}" target="_blank" rel="noreferrer">Open in a new tab${ICONS.open}</a></p><iframe class="mb-docked-list" src="${escapeHtml(list)}" title="${escapeHtml(`${set!.label ?? set!.source}: full list`)}"></iframe>`

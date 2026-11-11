@@ -74,8 +74,14 @@ export interface DockedState extends Omit<PageState, 'mode' | 'report'> {
   view?: IndexView
 }
 
+export type Level = 'error' | 'warning' | 'info'
+
 /** What the list of a docked view shows. */
 export interface IndexView {
+  /** Text that every entry listed contains, in its name, message, code or file. */
+  filter?: string
+  /** Levels left out. */
+  hiddenLevels?: Level[]
   /** Problem sources whose problems are left out. */
   hiddenSources?: string[]
   /** Current time, for how long ago each source last ran. */

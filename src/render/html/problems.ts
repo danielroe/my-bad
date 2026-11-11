@@ -1,4 +1,44 @@
 import type { ProblemSummary } from '../../channel/protocol'
+import type { ErrorReport, HistoryEntry, ReportKind } from '../../types'
+import type { IndexView, Level } from './state'
+import { plainText } from '../../report/code'
+import { displayPath } from '../../report/path'
+import { reportLocation } from './summary'
+
+/** An entry of the list: a report, or a warning known only from the history. */
+export type Listed = ErrorReport | HistoryEntry
+
+export const LEVELS: Level[] = ['error', 'warning', 'info']
+
+export function levelOf(kind: ReportKind): Level {
+  return kind === 'warning' || kind === 'info'
+    ? kind
+    : 'error'
+}
+
+/** Whether a view narrows the list down by text or level. */
+export function filtering(view: IndexView): boolean {
+  return !!(view.filter?.trim() || view.hiddenLevels?.length)
+}
+
+export function matches(entry: Listed, view: IndexView, cwd: string | undefined): boolean {
+  if (view.hiddenLevels?.includes(levelOf(entry.kind))) {
+    return false
+  }
+  const filter = view.filter?.trim().toLowerCase()
+  if (!filter) {
+    return true
+  }
+  const frame = 'frames' in entry
+    ? reportLocation(entry)
+    : undefined
+  return [
+    entry.name,
+    plainText(entry.message, entry.codeSpans),
+    'code' in entry && entry.code,
+    frame?.file && displayPath(frame, cwd),
+  ].some(text => text && text.toLowerCase().includes(filter))
+}
 
 export type SourceTone = 'busy' | 'error' | 'warning' | 'ok'
 

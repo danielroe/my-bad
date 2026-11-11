@@ -2546,6 +2546,72 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('clears the filter of the drawer with Escape before closing the drawer', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/badge`)
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    const drawer = page.locator('my-bad-overlay-badge .mb-drawer')
+    const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
+    const filter = panel.getByRole('searchbox', { name: 'Filter problems' })
+    await filter.fill('no match')
+    await panel.getByText('No problems match the current filters').waitFor()
+    await filter.press('Escape')
+    expect(await filter.inputValue()).toBe('')
+    await waitFor(() => panel.locator('.mb-index-title').count(), 1)
+    expect(await drawer.count()).toBe(1)
+    await filter.press('Escape')
+    await waitFor(() => drawer.count(), 0)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('filters the list as you type, by level, and shows all again', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch'), await report('Missing property')], { label: 'TypeScript' })
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], { label: 'ESLint' })
+    const page = await browser.newPage()
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const titles = () => panel.locator('.mb-index-title').allTextContents()
+    await waitFor(async () => (await titles()).length, 3)
+    const filter = panel.getByRole('searchbox', { name: 'Filter problems' })
+    await filter.pressSequentially('mis')
+    await waitFor(async () => (await titles()).join(), 'Error: Type mismatch,Error: Missing property')
+    channel.setError(await report('Render mismatch'))
+    await waitFor(async () => (await titles()).join(), 'Error: Render mismatch,Error: Type mismatch,Error: Missing property')
+    expect(await filter.evaluate(input => input === document.activeElement)).toBe(true)
+    await filter.pressSequentially('sing')
+    await waitFor(async () => (await titles()).join(), 'Error: Missing property')
+    await page.keyboard.press('Escape')
+    expect(await filter.inputValue()).toBe('')
+    await waitFor(async () => (await titles()).length, 4)
+
+    await panel.getByRole('button', { name: 'Errors 3' }).click()
+    await waitFor(async () => (await titles()).join(), 'Error: Unused variable')
+    await panel.getByRole('button', { name: 'Warnings 1' }).click()
+    await panel.getByText('No problems match the current filters').waitFor()
+    await panel.getByRole('button', { name: 'Show all' }).click()
+    await waitFor(async () => (await titles()).length, 4)
+    expect(await panel.getByRole('button', { name: 'Errors 3' }).getAttribute('aria-pressed')).toBe('true')
+    expect(errors).toEqual([])
+    channel.clearError()
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
   it('marks the selected row in its severity colour, not the accent', async () => {
     channel.clearError()
     channel.clearProblems()

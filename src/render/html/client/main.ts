@@ -1,6 +1,6 @@
 import type { BuildProgress, ChannelEvent, ProblemSet, ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
-import type { BadgeFocus, Dock, DockedIndex, DockedState, PageState } from '../state'
+import type { BadgeFocus, Dock, DockedIndex, DockedState, Level, PageState } from '../state'
 import { plainText } from '../../../report/code'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
@@ -294,6 +294,9 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
   const scroll = m.root.scrollTop
   const root = m.root.getRootNode() as Document | ShadowRoot
   const focused = [m.root, m.overlay].some(el => el?.contains(root.activeElement))
+  const typing = root.activeElement instanceof HTMLInputElement && root.activeElement.matches('[data-filter]')
+    ? root.activeElement.selectionStart
+    : undefined
   revive(m)
   m.error = error
   m.selected = undefined
@@ -333,7 +336,12 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
       ? headline(report)
       : 'Nothing to report'))
   }
-  if (focused || !(options.quiet || options.inPlace)) {
+  if (typing !== undefined) {
+    const filter = m.root.querySelector<HTMLInputElement>('[data-filter]')
+    filter?.focus({ preventScroll: true })
+    filter?.setSelectionRange(typing, typing)
+  }
+  else if (focused || !(options.quiet || options.inPlace)) {
     focusHeading(m)
   }
 }
@@ -1084,20 +1092,48 @@ function dockedIndex(d: Docked): DockedIndex {
 
 function focusedItem(m: Mount): DOMStringMap | undefined {
   const active = document.activeElement as HTMLElement | null
-  return active?.matches('[data-index] [data-id], [data-index] [data-action="toggle-source"]') && m.root.contains(active)
+  return active?.matches('[data-index] [data-action]') && m.root.contains(active)
     ? { ...active.dataset }
     : undefined
 }
 
 function refocusItem(m: Mount, item: DOMStringMap | undefined): void {
-  if (item?.action === 'toggle-source') {
-    m.root.querySelector<HTMLElement>(`[data-index] [data-action="toggle-source"][data-source="${CSS.escape(item.source ?? '')}"]`)?.focus({ preventScroll: true })
+  if (!item) {
+    return
   }
-  else if (item) {
-    m.root.querySelector<HTMLElement>(`[data-index] [data-id="${CSS.escape(item.id ?? '')}"]${item.source
-      ? `[data-source="${CSS.escape(item.source)}"]`
-      : ':not([data-source])'}`)?.focus({ preventScroll: true })
+  const selector = ['action', 'id', 'source', 'level'].map(key => item[key] === undefined
+    ? key === 'source'
+      ? ':not([data-source])'
+      : ''
+    : `[data-${key}="${CSS.escape(item[key]!)}"]`).join('')
+  m.root.querySelector<HTMLElement>(`[data-index] ${selector}`)?.focus({ preventScroll: true })
+}
+
+function toggleLevel(m: Mount, d: Docked, level: Level): void {
+  const hidden = new Set(d.state.view?.hiddenLevels)
+  if (!hidden.delete(level)) {
+    hidden.add(level)
   }
+  d.state.view = {
+    ...d.state.view,
+    hiddenLevels: [...hidden],
+  }
+  refreshIndex(m, d)
+}
+
+function showAll(m: Mount, d: Docked): void {
+  d.state.view = { now: d.state.view?.now }
+  const filter = m.root.querySelector<HTMLInputElement>('[data-filter]')
+  if (filter) {
+    filter.value = ''
+  }
+  refreshIndex(m, d)
+  filter?.focus()
+}
+
+function filterIndex(m: Mount, d: Docked, text: string): void {
+  d.state.view = { ...d.state.view, filter: text }
+  refreshIndex(m, d)
 }
 
 function toggleSource(m: Mount, d: Docked, source: string): void {
@@ -1851,6 +1887,14 @@ function bind(m: Mount): void {
         return m.docked && target.dataset.source !== undefined
           ? toggleSource(m, m.docked, target.dataset.source)
           : undefined
+      case 'level':
+        return m.docked && target.dataset.level
+          ? toggleLevel(m, m.docked, target.dataset.level as Level)
+          : undefined
+      case 'show-all':
+        return m.docked
+          ? showAll(m, m.docked)
+          : undefined
       case 'list': {
         const source = target.dataset.source
         const dock = source === undefined
@@ -1903,6 +1947,20 @@ function bind(m: Mount): void {
     }
   })
   container.addEventListener('toggle', () => markOverflowingSnippets(m), true)
+  container.addEventListener('input', (event) => {
+    const target = event.target
+    if (m.docked && target instanceof HTMLInputElement && target.matches('[data-filter]')) {
+      filterIndex(m, m.docked, target.value)
+    }
+  })
+  container.addEventListener('keydown', (event) => {
+    const target = (event as KeyboardEvent).key === 'Escape' && event.target
+    if (m.docked && target instanceof HTMLInputElement && target.matches('[data-filter]') && target.value) {
+      event.preventDefault()
+      target.value = ''
+      filterIndex(m, m.docked, '')
+    }
+  })
   container.addEventListener('change', (event) => {
     const select = event.target as HTMLSelectElement
     if (select.matches('[data-log-filter]')) {
@@ -1956,7 +2014,7 @@ if (m?.docked) {
       const target = event.target instanceof Element
         ? event.target
         : undefined
-      const layered = !!m.root.querySelector('.mb-cause-picker[open], .mb-history[open], [data-menu-list]:not([hidden]), [data-logs]:not([hidden]), dialog[open]') || !!target?.closest('[data-toast]')
+      const layered = !!m.root.querySelector('.mb-cause-picker[open], .mb-history[open], [data-menu-list]:not([hidden]), [data-logs]:not([hidden]), dialog[open]') || !!target?.closest('[data-toast]') || (target instanceof HTMLInputElement && target.matches('[data-filter]') && !!target.value)
       if (event.key === 'Escape' && !layered) {
         closeDrawer()
       }

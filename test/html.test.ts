@@ -708,6 +708,87 @@ describe('docked view', () => {
     expect(rechecking).toContain(`data-tone="busy" aria-pressed="true" title="Checking. Hide TypeScript problems.">${ICONS.checking}<span class="mb-pill-label">TypeScript</span><span class="mb-pill-count">1</span>`)
   })
 
+  it('narrows the list down by text and level, with counts per level', () => {
+    const problem = (message: string, kind: 'error' | 'warning' | 'info', file?: string) => ({
+      ...createProblemReport({
+        name: 'Checker',
+        message,
+        code: `C-${message.length}`,
+        kind,
+        file,
+        line: 1,
+      }, { cwd: '/proj' }),
+      id: message,
+    })
+    const index = {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning' as const,
+          name: 'Vue warn',
+          message: 'Extraneous attrs',
+          timestamp: 0,
+        },
+      ],
+      problems: [
+        {
+          source: 'checker',
+          label: 'Checker',
+          errors: 1,
+          warnings: 1,
+          info: 1,
+          reports: [
+            problem('Type mismatch', 'error', '/proj/src/a.ts'),
+            problem('Unused import', 'warning', '/proj/src/b.ts'),
+            problem('Prefer const', 'info'),
+          ],
+        },
+      ],
+    }
+    const titles = (view: object) => [
+      ...renderIndex({
+        mode: 'docked',
+        version: '',
+        cwd: '/proj',
+        view,
+      }, index).matchAll(/<span class="mb-index-title">([^<]*)<\/span>/g),
+    ].map(match => match[1])
+    expect(titles({})).toEqual([
+      'Vue warn: Extraneous attrs',
+      'Type mismatch',
+      'Unused import',
+      'Prefer const',
+    ])
+    expect(titles({ filter: '  TYPE ' })).toEqual(['Type mismatch'])
+    expect(titles({ filter: 'src/b' })).toEqual(['Unused import'])
+    expect(titles({ filter: 'c-12' })).toEqual(['Prefer const'])
+    expect(titles({
+      hiddenLevels: ['warning', 'info'],
+    })).toEqual(['Type mismatch'])
+    const levels = renderIndex({
+      mode: 'docked',
+      version: '',
+      view: {
+        hiddenLevels: ['info'],
+      },
+    }, index)
+    expect([
+      ...levels.matchAll(/data-level="(\w+)" aria-pressed="(\w+)"[^>]*>.*?<span class="mb-sr-only">([^<]*)<\/span>(\d+)/g),
+    ].map(match => match.slice(1).join(' '))).toEqual([
+      'error true Errors  1',
+      'warning true Warnings  2',
+      'info false Info  1',
+    ])
+    const none = renderIndex({
+      mode: 'docked',
+      version: '',
+      view: { filter: 'nothing like this' },
+    }, index)
+    expect(none).toContain('<p class="mb-index-empty-title">No problems match the current filters</p><button type="button" class="mb-index-reset" data-action="show-all">Show all</button>')
+    expect(none).not.toContain('data-index-source="checker"')
+    expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [] })).toContain('Nothing to report.')
+  })
+
   it('styles the dock after its host and the drawer after the page', () => {
     const dock = renderDockedPage({ channel: '/__my-bad', embed: true })
     expect(dock).toContain('<html lang="en" dir="ltr" data-host>')
