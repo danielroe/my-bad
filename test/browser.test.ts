@@ -2486,6 +2486,40 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('marks the selected row in its severity colour, not the accent', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], { label: 'ESLint' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const selected = panel.locator('.mb-index-item[aria-current="true"]')
+    await selected.waitFor()
+    const colours = await selected.evaluate((item) => {
+      const style = getComputedStyle(item)
+      const probe = document.createElement('span')
+      item.append(probe)
+      probe.style.backgroundColor = 'var(--mb-accent-soft)'
+      const accent = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return {
+        bar: style.boxShadow,
+        icon: getComputedStyle(item.querySelector('svg')!).color,
+        background: style.backgroundColor,
+        accent,
+      }
+    })
+    expect(colours.bar).toContain(colours.icon)
+    expect(colours.background).not.toBe(colours.accent)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
   it('heads DevTools messages with the first line, without the backticks of code spans', async () => {
     channel.clearError()
     channel.clearProblems()
