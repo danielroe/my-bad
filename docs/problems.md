@@ -83,6 +83,8 @@ The drawer and the DevTools dock list the open error, the warnings, and every pr
 
 When nothing matches, the list says so, and **Show all** clears every filter.
 
+The copy button in the header copies every entry listed as Markdown, for example to paste into an issue or a prompt. The **Copy** button of the entry shown copies that entry alone.
+
 ## Report the lifecycle of a run
 
 Tell pages when a source is checking, and when it fails. This example follows a linter in watch mode:

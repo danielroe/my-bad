@@ -2640,6 +2640,40 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('copies the problems listed as Markdown', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.warn({
+      ...await report('Deprecated option'),
+      kind: 'warning',
+    })
+    channel.setProblems('ts', [await report('Type mismatch'), await report('Missing property')], { label: 'TypeScript' })
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => Object.assign(window, { testClipboard: text }),
+        },
+      })
+    })
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const copied = () => page.frames().find(frame => frame.url().includes('/panel'))!.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
+    await waitFor(async () => (await panel.locator('.mb-index-title').allTextContents()).length, 3)
+    await panel.getByRole('button', { name: 'Copy the problems listed as Markdown' }).click()
+    await waitFor(async () => (await copied()).match(/^## /gm)?.length, 3)
+    expect(await copied()).toContain('## Warning: Error\n\n```\nDeprecated option\n```')
+    await panel.getByRole('searchbox', { name: 'Filter problems' }).fill('missing')
+    await waitFor(async () => (await panel.locator('.mb-index-title').allTextContents()).length, 1)
+    await panel.getByRole('button', { name: /Copy the problems listed as Markdown|Copied problems/ }).click()
+    await waitFor(async () => (await copied()).match(/^## /gm)?.length, 1)
+    expect(await copied()).toContain('Missing property')
+    channel.clearWarning()
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
   it('marks the selected row in its severity colour, not the accent', async () => {
     channel.clearError()
     channel.clearProblems()

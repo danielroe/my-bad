@@ -1,6 +1,6 @@
 import type { ProblemSummary } from '../../channel/protocol'
 import type { ErrorReport, HistoryEntry, ReportKind } from '../../types'
-import type { IndexView, Level } from './state'
+import type { DockedIndex, IndexView, Level } from './state'
 import { plainText } from '../../report/code'
 import { displayPath } from '../../report/path'
 import { reportLocation } from './summary'
@@ -19,6 +19,38 @@ export function levelOf(kind: ReportKind): Level {
 /** Whether a view narrows the list down by text or level. */
 export function filtering(view: IndexView): boolean {
   return !!(view.filter?.trim() || view.hiddenLevels?.length)
+}
+
+/** What a docked view lists: everything open in sources that are shown, and the part of it the view lets through. */
+export function listing(index: DockedIndex, view: IndexView, cwd: string | undefined) {
+  const visible = (entry: Listed) => matches(entry, view, cwd)
+  const narrowed = filtering(view)
+  const warnings = (index.history ?? []).filter(entry => entry.kind === 'warning').reverse()
+  const sets = index.problems.filter(set => !view.hiddenSources?.includes(set.source))
+  const all: Listed[] = [
+    ...index.current
+      ? [index.current]
+      : [],
+    ...warnings,
+    ...sets.flatMap(set => set.reports ?? []),
+  ]
+  return {
+    all,
+    current: index.current && visible(index.current)
+      ? index.current
+      : undefined,
+    warnings: warnings.filter(visible),
+    sets: sets
+      .map(set => ({
+        ...set,
+        ...set.reports && {
+          reports: set.reports.filter(visible),
+        },
+      }))
+      .filter(set => narrowed
+        ? set.reports?.length
+        : set.errors + set.warnings + (set.info ?? 0) || set.status === 'failed' || set.status === 'checking'),
+  }
 }
 
 export function matches(entry: Listed, view: IndexView, cwd: string | undefined): boolean {

@@ -4,6 +4,7 @@ import type { BadgeFocus, Dock, DockedIndex, DockedState, Level, PageState } fro
 import { plainText } from '../../../report/code'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
+import { listing } from '../problems'
 import { THEME_STORAGE_KEY } from '../state'
 import { firstLine } from '../summary'
 import { themeStyles } from '../theme'
@@ -1150,6 +1151,20 @@ function groupIndex(m: Mount, d: Docked, group: string | undefined): void {
   refreshIndex(m, d)
 }
 
+async function copyListed(m: Mount, d: Docked, button: HTMLElement): Promise<void> {
+  const listed = listing(dockedIndex(d), d.state.view ?? {}, d.state.cwd)
+  const reports = [
+    ...listed.current
+      ? [listed.current]
+      : [],
+    ...(await Promise.all(listed.warnings.map(entry => warnings.get(entry.id) ?? fetchDocked(m, d, entry.id)))).filter(report => !!report),
+    ...listed.sets.flatMap(set => set.reports ?? []),
+  ]
+  return reports.length
+    ? copyText(m, reports.map(report => toMarkdown(report, { cwd: m.state.cwd })).join('\n'), button, 'problems')
+    : undefined
+}
+
 function filterIndex(m: Mount, d: Docked, text: string): void {
   d.state.view = { ...d.state.view, filter: text }
   refreshIndex(m, d)
@@ -1918,6 +1933,8 @@ function bind(m: Mount): void {
         return m.docked
           ? groupIndex(m, m.docked, target.dataset.group)
           : undefined
+      case 'copy-listed':
+        return void (m.docked && copyListed(m, m.docked, target))
       case 'list': {
         const source = target.dataset.source
         const dock = source === undefined

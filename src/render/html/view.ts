@@ -10,7 +10,7 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
-import { filtering, levelOf, LEVELS, matches, sourceStatus, sourceTone } from './problems'
+import { filtering, levelOf, LEVELS, listing, sourceStatus, sourceTone } from './problems'
 import { DOCKED_TITLE } from './state'
 import { countsLabel, dockedCounts, firstLine, repeatsLabel, reportLocation, warningCount } from './summary'
 
@@ -243,45 +243,24 @@ function renderLevels(entries: Listed[], view: IndexView): string {
 /** The list beside a docked view, of the open error, the warnings and every problem set. */
 export function renderIndex(state: DockedState, index: DockedIndex, shown?: BadgeFocus): string {
   const view = state.view ?? {}
-  const visible = (entry: Listed) => matches(entry, view, state.cwd)
-  const narrowed = filtering(view)
-  const warnings = (index.history ?? []).filter(entry => entry.kind === 'warning').reverse()
-  const sets = index.problems.filter(set => !view.hiddenSources?.includes(set.source))
-  const all: Listed[] = [
-    ...index.current
-      ? [index.current]
-      : [],
-    ...warnings,
-    ...sets.flatMap(set => set.reports ?? []),
-  ]
-  const shownWarnings = warnings.filter(visible)
-  const listedSets = sets
-    .map(set => ({
-      ...set,
-      ...set.reports && {
-        reports: set.reports.filter(visible),
-      },
-    }))
-    .filter(set => narrowed
-      ? set.reports?.length
-      : set.errors + set.warnings + (set.info ?? 0) || failed(set) || set.status === 'checking')
+  const { all, current, warnings: shownWarnings, sets: listedSets } = listing(index, view, state.cwd)
   const groups = [
-    index.current && visible(index.current) && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(index.current, indexLocation(index.current, state), shown)}</ul></section>`,
+    current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(current, indexLocation(current, state), shown)}</ul></section>`,
     shownWarnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${shownWarnings.length}</span></h2><ul>${shownWarnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
     ...listedSets.map(set => renderIndexSet(set, state, shown)),
   ].filter(Boolean)
   if (view.group === 'file') {
     groups.splice(0, groups.length, ...renderByFile([
-      ...index.current && visible(index.current)
+      ...current
         ? [
-            { entry: index.current as Listed, label: 'Error' },
+            { entry: current as Listed, label: 'Error' },
           ]
         : [],
       ...shownWarnings.map(entry => ({ entry, label: 'Warning' })),
       ...listedSets.flatMap(set => (set.reports ?? []).map(entry => ({ entry, source: set.source, label: set.label ?? set.source }))),
     ], state, shown))
   }
-  const hidden = narrowed || !!view.hiddenSources?.length
+  const hidden = filtering(view) || !!view.hiddenSources?.length
   return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems"><div class="mb-index-tools">${renderLevels(all, view)}${all.length
     ? `<div class="mb-switch mb-index-group-by" role="group" aria-label="Group by">${(['source', 'file'] as const).map(group => `<button type="button" data-action="group" data-group="${group}" aria-pressed="${(view.group ?? 'source') === group}">${group === 'source'
       ? 'Source'
@@ -303,7 +282,7 @@ export function renderDocked(state: DockedState, index: DockedIndex, report?: Er
   const list = safeUrl(set?.url)
   return `<header class="mb-header mb-corners">
   <div class="mb-brand-group"><p class="mb-docked-title">${escapeHtml(state.title || DOCKED_TITLE)}</p><span class="mb-header-count" data-docked-count>${escapeHtml(dockedSummary(index))}</span></div>
-  <nav class="mb-tools" aria-label="Tools"><ul>${state.drawer
+  <nav class="mb-tools" aria-label="Tools"><ul><li><button class="mb-tool" type="button" data-action="copy-listed" title="Copy the problems listed as Markdown" aria-label="Copy the problems listed as Markdown">${ICONS.copy}</button></li>${state.drawer
     ? `<li><button class="mb-tool" type="button" data-action="close-docked" title="Close" aria-label="Close">${ICONS.close}</button></li>`
     : ''}</ul></nav>
   ${live ? '<div class="mb-progress" data-progress hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Build progress"><div class="mb-progress-bar"></div><span class="mb-progress-label" data-progress-label></span></div>' : ''}
