@@ -789,6 +789,63 @@ describe('docked view', () => {
     expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [] })).toContain('Nothing to report.')
   })
 
+  it('groups the list by file, sorted by path and position, with entries without a file last', () => {
+    const problem = (message: string, file?: string, line?: number) => ({
+      ...createProblemReport({
+        name: 'TypeScript',
+        message,
+        file,
+        line,
+        column: line && 2,
+      }, { cwd: '/proj' }),
+      id: message,
+    })
+    const index = {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning' as const,
+          name: 'Vue warn',
+          message: 'Extraneous attrs',
+          timestamp: 0,
+        },
+      ],
+      current: problem('Render failed', '/proj/src/b.ts', 3),
+      problems: [
+        {
+          source: 'ts',
+          label: 'TypeScript',
+          errors: 3,
+          warnings: 0,
+          reports: [
+            problem('Late', '/proj/src/b.ts', 9),
+            problem('Early', '/proj/src/b.ts', 1),
+            problem('Other file', '/proj/src/a.ts', 5),
+          ],
+        },
+      ],
+    }
+    const html = renderIndex({
+      mode: 'docked',
+      version: '',
+      cwd: '/proj',
+      view: { group: 'file' },
+    }, index)
+    expect([
+      ...html.matchAll(/<h2><span class="mb-index-label"[^>]*>([^<]*)<\/span><span class="mb-count">(\d+)/g),
+    ].map(match => `${match[1]} ${match[2]}`)).toEqual(['src/a.ts 1', 'src/b.ts 3', 'No file 1'])
+    expect([
+      ...html.matchAll(/<span class="mb-index-title">([^<]*)<\/span><span class="mb-index-loc">([^<]*)/g),
+    ].map(match => `${match[1]} (${match[2]})`)).toEqual([
+      'Other file (TypeScript · 5:2)',
+      'Early (TypeScript · 1:2)',
+      'TypeScript: Render failed (Error · 3:2)',
+      'Late (TypeScript · 9:2)',
+      'Vue warn: Extraneous attrs (Warning)',
+    ])
+    expect(html).toContain('data-group="file" aria-pressed="true"')
+  })
+
   it('styles the dock after its host and the drawer after the page', () => {
     const dock = renderDockedPage({ channel: '/__my-bad', embed: true })
     expect(dock).toContain('<html lang="en" dir="ltr" data-host>')

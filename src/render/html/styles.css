@@ -316,7 +316,11 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-index-filter input::placeholder { color: var(--mb-fg-muted); opacity: 1; }
 .mb-index-filter input:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: -1px; }
 .mb-index { flex: 1; min-height: 0; overflow: auto; padding: 4px 0 16px; font-size: 13px; }
-.mb-index-levels { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 12px 6px; }
+.mb-index-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 12px 6px; }
+.mb-index-tools:empty { display: none; }
+.mb-index-levels { display: flex; flex-wrap: wrap; gap: 4px; }
+.mb-index-group-by button { min-height: 24px; }
+.mb-index-group[data-index-file] h2 { letter-spacing: 0; text-transform: none; }
 .mb-level { display: inline-flex; align-items: center; gap: 5px; min-width: 24px; min-height: 24px; padding: 0 6px; border-radius: 6px; font: 500 12px/1 var(--mb-font-sans); color: var(--mb-fg); font-variant-numeric: tabular-nums; }
 .mb-level:hover { background: var(--mb-surface-2); }
 .mb-level svg { width: 13px; height: 13px; flex: none; color: var(--mb-error); }

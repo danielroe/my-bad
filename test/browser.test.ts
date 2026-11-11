@@ -2612,6 +2612,34 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('groups the list by file, and remembers the choice', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], { label: 'ESLint' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const headings = () => panel.locator('.mb-index-group h2 .mb-index-label').allTextContents()
+    await waitFor(async () => (await headings()).join(), 'TypeScript,ESLint')
+    await panel.getByRole('group', { name: 'Group by' }).getByRole('button', { name: 'File' }).click()
+    await waitFor(async () => (await headings()).join(), `${proj}/src/handler.ts`)
+    expect(await panel.locator('.mb-index-loc').allTextContents()).toEqual(['TypeScript · 2:3', 'ESLint · 2:3'])
+    expect(await panel.locator(':focus').textContent()).toBe('File')
+    await page.reload()
+    await waitFor(async () => (await headings()).join(), `${proj}/src/handler.ts`)
+    await panel.getByRole('group', { name: 'Group by' }).getByRole('button', { name: 'Source' }).click()
+    await waitFor(async () => (await headings()).join(), 'TypeScript,ESLint')
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
   it('marks the selected row in its severity colour, not the accent', async () => {
     channel.clearError()
     channel.clearProblems()

@@ -79,6 +79,7 @@ The drawer and the DevTools dock list the open error, the warnings, and every pr
 - Type in **Filter problems** to list only the entries whose name, message, code, or file contains the text. Press <kbd>Escape</kbd> to clear it.
 - Select the error, warning, or info count to hide or show that level.
 - Select the pill of a source to hide or show its problems.
+- Switch **Group by** from **Source** to **File** to list the entries under the file they point at, in the order of their position. The choice is remembered.
 
 When nothing matches, the list says so, and **Show all** clears every filter.
 

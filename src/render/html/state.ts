@@ -84,6 +84,8 @@ export interface IndexView {
   hiddenLevels?: Level[]
   /** Problem sources whose problems are left out. */
   hiddenSources?: string[]
+  /** Group the list by source, the default, or by file. */
+  group?: 'source' | 'file'
   /** Current time, for how long ago each source last ran. */
   now?: number
 }

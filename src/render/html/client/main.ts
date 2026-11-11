@@ -17,6 +17,7 @@ const STORAGE = {
   theme: THEME_STORAGE_KEY,
   dock: 'my-bad:overlay:dock',
   minimized: 'my-bad:overlay:minimized',
+  group: 'my-bad:docked:group',
 }
 
 /** The report id the user last expanded, so a retry of the same error starts expanded. */
@@ -925,6 +926,9 @@ function embeddingSource(): MyBadSharedSource | undefined {
 }
 
 function dockedMount(state: DockedState, root: HTMLElement): Mount {
+  if (storage(STORAGE.group) === 'file') {
+    state.view = { ...state.view, group: 'file' }
+  }
   const docked: Docked = {
     state,
     history: [],
@@ -1101,7 +1105,13 @@ function refocusItem(m: Mount, item: DOMStringMap | undefined): void {
   if (!item) {
     return
   }
-  const selector = ['action', 'id', 'source', 'level'].map(key => item[key] === undefined
+  const selector = [
+    'action',
+    'id',
+    'source',
+    'level',
+    'group',
+  ].map(key => item[key] === undefined
     ? key === 'source'
       ? ':not([data-source])'
       : ''
@@ -1122,13 +1132,22 @@ function toggleLevel(m: Mount, d: Docked, level: Level): void {
 }
 
 function showAll(m: Mount, d: Docked): void {
-  d.state.view = { now: d.state.view?.now }
+  d.state.view = { group: d.state.view?.group }
   const filter = m.root.querySelector<HTMLInputElement>('[data-filter]')
   if (filter) {
     filter.value = ''
   }
   refreshIndex(m, d)
   filter?.focus()
+}
+
+function groupIndex(m: Mount, d: Docked, group: string | undefined): void {
+  const by = group === 'file'
+    ? 'file'
+    : 'source'
+  storage(STORAGE.group, by)
+  d.state.view = { ...d.state.view, group: by }
+  refreshIndex(m, d)
 }
 
 function filterIndex(m: Mount, d: Docked, text: string): void {
@@ -1894,6 +1913,10 @@ function bind(m: Mount): void {
       case 'show-all':
         return m.docked
           ? showAll(m, m.docked)
+          : undefined
+      case 'group':
+        return m.docked
+          ? groupIndex(m, m.docked, target.dataset.group)
           : undefined
       case 'list': {
         const source = target.dataset.source

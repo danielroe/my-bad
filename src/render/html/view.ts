@@ -190,7 +190,46 @@ function renderSources(sets: DockedIndex['problems'], view: IndexView): string {
     : ''
 }
 
-/** The list beside a docked view, of the open error, the warnings and every problem set. */
+interface FileEntry {
+  entry: Listed
+  source?: string
+  label: string
+}
+
+function renderByFile(entries: FileEntry[], state: DockedState, shown: BadgeFocus | undefined): string[] {
+  const files = new Map<string, Array<FileEntry & { frame?: Frame }>>()
+  for (const item of entries) {
+    const frame = 'frames' in item.entry
+      ? reportLocation(item.entry)
+      : undefined
+    const key = frame?.file ?? ''
+    files.set(key, [
+      ...files.get(key) ?? [],
+      { ...item, frame },
+    ])
+  }
+  return [...files].map(([file, items]) => ({
+    file,
+    path: items[0]!.frame?.file
+      ? displayPath(items[0]!.frame, state.cwd)
+      : '',
+    items,
+  })).sort((a, b) => !a.file === !b.file
+    ? a.path.localeCompare(b.path)
+    : a.file
+      ? -1
+      : 1).map(({ file, path, items }) => {
+    const rows = items
+      .sort((a, b) => (a.frame?.line ?? 0) - (b.frame?.line ?? 0) || (a.frame?.column ?? 0) - (b.frame?.column ?? 0))
+      .map(({ entry, source, label, frame }) => renderIndexItem(entry, `${label}${frame?.line === undefined
+        ? ''
+        : ` · ${frame.line}${frame.column === undefined
+          ? ''
+          : `:${frame.column}`}`}`, shown, source, source && label))
+    return `<section class="mb-index-group" data-index-file="${escapeHtml(file)}"><h2><span class="mb-index-label"${attr('title', path || undefined)}>${escapeHtml(path || 'No file')}</span><span class="mb-count">${items.length}</span></h2><ul>${rows.join('')}</ul></section>`
+  })
+}
+
 const LEVEL_LABEL = { error: 'Errors', warning: 'Warnings', info: 'Info' }
 
 function renderLevels(entries: Listed[], view: IndexView): string {
@@ -201,6 +240,7 @@ function renderLevels(entries: Listed[], view: IndexView): string {
     : ''
 }
 
+/** The list beside a docked view, of the open error, the warnings and every problem set. */
 export function renderIndex(state: DockedState, index: DockedIndex, shown?: BadgeFocus): string {
   const view = state.view ?? {}
   const visible = (entry: Listed) => matches(entry, view, state.cwd)
@@ -230,8 +270,23 @@ export function renderIndex(state: DockedState, index: DockedIndex, shown?: Badg
     shownWarnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${shownWarnings.length}</span></h2><ul>${shownWarnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
     ...listedSets.map(set => renderIndexSet(set, state, shown)),
   ].filter(Boolean)
+  if (view.group === 'file') {
+    groups.splice(0, groups.length, ...renderByFile([
+      ...index.current && visible(index.current)
+        ? [
+            { entry: index.current as Listed, label: 'Error' },
+          ]
+        : [],
+      ...shownWarnings.map(entry => ({ entry, label: 'Warning' })),
+      ...listedSets.flatMap(set => (set.reports ?? []).map(entry => ({ entry, source: set.source, label: set.label ?? set.source }))),
+    ], state, shown))
+  }
   const hidden = narrowed || !!view.hiddenSources?.length
-  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${renderLevels(all, view)}${renderSources(index.problems, view)}${groups.length
+  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems"><div class="mb-index-tools">${renderLevels(all, view)}${all.length
+    ? `<div class="mb-switch mb-index-group-by" role="group" aria-label="Group by">${(['source', 'file'] as const).map(group => `<button type="button" data-action="group" data-group="${group}" aria-pressed="${(view.group ?? 'source') === group}">${group === 'source'
+      ? 'Source'
+      : 'File'}</button>`).join('')}</div>`
+    : ''}</div>${renderSources(index.problems, view)}${groups.length
     ? groups.join('')
     : hidden
       ? '<div class="mb-index-empty"><p class="mb-index-empty-title">No problems match the current filters</p><button type="button" class="mb-index-reset" data-action="show-all">Show all</button></div>'
