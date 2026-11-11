@@ -106,8 +106,10 @@ function nonceAttr(nonce: string | undefined): string {
 }
 
 /** Applies the remembered or preferred colour scheme before first paint. */
-function themeBootstrap(nonce?: string): string {
-  return `<script${nonceAttr(nonce)}>(function(){var t;try{t=localStorage.getItem(${escapeScript(JSON.stringify(THEME_STORAGE_KEY))})}catch(e){}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}})()</script>\n`
+function themeBootstrap(nonce?: string, remembered = true): string {
+  return `<script${nonceAttr(nonce)}>(function(){var t;${remembered
+    ? `try{t=localStorage.getItem(${escapeScript(JSON.stringify(THEME_STORAGE_KEY))})}catch(e){}`
+    : ''}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}})()</script>\n`
 }
 
 function stateScript(state: PageState, options: RenderHtmlOptions): string {
@@ -233,8 +235,9 @@ export function badgeState(options: RenderBadgeOptions): { state: BadgeState, sr
 /**
  * The page a channel serves at `{channel}/panel`: every open error, warning and
  * problem set, each shown the way the overlay shows it. With `embed`, it takes
- * the scope, theme and paths of the badge on the page embedding it. With
- * `drawer`, it has a button closing the badge's drawer it is shown in.
+ * the scope and paths of the badge on the page embedding it. With `drawer`, it
+ * also takes the page's theme, and has a button closing the badge's drawer it
+ * is shown in. Otherwise it follows the colours of the DevTools panel hosting it.
  */
 export function renderDockedPage(options: { channel: string, title?: string, embed?: boolean, drawer?: boolean, nonce?: string }): string {
   const state: DockedState = {
@@ -250,13 +253,15 @@ export function renderDockedPage(options: { channel: string, title?: string, emb
     : 'client.css'}?v=${assetHash(key)}`
   const nonce = nonceAttr(options.nonce)
   return `<!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="en" dir="ltr"${options.drawer
+  ? ''
+  : ' data-host'}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${escapeHtml(options.title || DOCKED_TITLE)}</title>
-${themeBootstrap(options.nonce)}<link rel="stylesheet"${nonce} href="${escapeHtml(asset('styles'))}">
+${themeBootstrap(options.nonce, !!options.drawer)}<link rel="stylesheet"${nonce} href="${escapeHtml(asset('styles'))}">
 <style${nonce}>html{background:var(--mb-bg)}html,body{margin:0;min-height:100%}</style>
 </head>
 <body>

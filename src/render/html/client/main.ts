@@ -200,13 +200,18 @@ function overlayMount(state: PageState, host: HTMLElement): Mount {
   }
 }
 
+/** The colour scheme of the DevTools panel a docked view sits in. */
+let hostScheme: 'dark' | 'light' | undefined
+
 function applyTheme(m: Mount): void {
   const forced = m.state.theme?.scheme
-  const remembered = storage(STORAGE.theme)
+  const remembered = m.docked && !m.docked.state.drawer
+    ? undefined
+    : storage(STORAGE.theme)
   const stored = remembered === 'light' || remembered === 'dark'
     ? remembered
     : undefined
-  const scheme = forced ?? stored ?? (matchMedia('(prefers-color-scheme: dark)').matches
+  const scheme = forced ?? hostScheme ?? stored ?? (matchMedia('(prefers-color-scheme: dark)').matches
     ? 'dark'
     : 'light')
   m.themeTarget.setAttribute('data-theme', scheme)
@@ -965,7 +970,9 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
   if (page) {
     const settings = {
       cwd: page.cwd,
-      theme: page.theme,
+      theme: d.state.drawer
+        ? page.theme
+        : undefined,
       editor: page.editor,
       maxMessageLength: page.maxMessageLength,
       requestId: page.requestId,
@@ -974,7 +981,7 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
     Object.assign(d.state, settings)
     Object.assign(m.state, settings)
     applyTheme(m)
-    const styles = themeStyles(page.theme, ':root')
+    const styles = themeStyles(settings.theme, ':root')
     if (styles) {
       const style = document.createElement('style')
       style.textContent = styles
@@ -985,6 +992,77 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
     }
   }
   d.query = new URL(source?.url ?? `${d.state.channel}/events`, location.href).searchParams
+}
+
+/** The element in the embedding document hosting this view, such as a DevTools panel, when it is on the same origin. */
+function hostFrame(): HTMLElement | undefined {
+  try {
+    return window.frameElement as HTMLElement | null ?? undefined
+  }
+  catch {}
+}
+
+function hostAncestors(frame: Element): Element[] {
+  const chain: Element[] = []
+  for (let node: Element | undefined = frame; node;) {
+    chain.push(node)
+    const root: Node | null = node.parentNode
+    node = node.parentElement ?? (root && 'host' in root
+      ? (root as ShadowRoot).host
+      : undefined)
+  }
+  return chain
+}
+
+const TRANSPARENT_RE = /^(?:transparent|rgba\(.*,\s*0\))$/
+
+/**
+ * Take the colour scheme, colours and font of the DevTools panel this view is
+ * docked in, following the scheme when the panel switches it. Vite DevTools
+ * marks the scheme with a `dark` or `light` class on an ancestor of the frame.
+ */
+function adoptHost(m: Mount): void {
+  const frame = hostFrame()
+  if (!frame) {
+    return
+  }
+  const chain = hostAncestors(frame)
+  const marked = chain.find(el => el.classList.contains('dark') || el.classList.contains('light'))
+  const apply = () => {
+    const view = frame.ownerDocument.defaultView!
+    const style = (el: Element) => view.getComputedStyle(el)
+    const surface = chain.slice(1).find(el => !TRANSPARENT_RE.test(style(el).backgroundColor))
+    const opaque = surface && style(surface).backgroundColor.replace(/^rgba\((.*),\s*[\d.]+\)$/, (_, channels: string) => `rgb(${channels})`)
+    const parent = style(frame.parentElement ?? frame)
+    const accent = style(marked ?? frame).getPropertyValue('--devframe-primary-DEFAULT').trim()
+    const root = document.documentElement
+    for (const [name, value] of [
+      ['--mb-bg', opaque],
+      ['--mb-fg', parent.color],
+      ['--mb-font-sans', parent.fontFamily],
+      ['--mb-accent', accent],
+    ] as const) {
+      if (value && /^[^;{}<]+$/.test(value)) {
+        root.style.setProperty(name, value)
+      }
+    }
+    if (marked) {
+      hostScheme = marked.classList.contains('dark')
+        ? 'dark'
+        : 'light'
+      applyTheme(m)
+    }
+  }
+  try {
+    apply()
+    if (marked) {
+      new MutationObserver(apply).observe(marked, {
+        attributes: true,
+        attributeFilter: ['class'],
+      })
+    }
+  }
+  catch {}
 }
 
 function dockedIndex(d: Docked): DockedIndex {
@@ -1842,6 +1920,9 @@ if (m?.docked) {
   m.root.innerHTML = renderDocked(m.docked.state, dockedIndex(m.docked))
   activate(m)
   const docked = m.docked
+  if (!docked.state.drawer) {
+    adoptHost(m)
+  }
   if (docked.state.drawer) {
     addEventListener('keydown', (event) => {
       const target = event.target instanceof Element

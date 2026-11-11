@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createReport, injectOverlay, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
 import { nuxtTheme } from '../src/presets'
+import { renderDockedPage } from '../src/render/html'
 import { renderDocked, renderIndex } from '../src/render/html/view'
 
 async function report() {
@@ -568,6 +569,15 @@ describe('docked view', () => {
     expect(html).not.toMatch(/mb-brand[ "]/)
     expect(html).not.toContain('my-bad')
     expect(renderDocked({ mode: 'docked', version: '', title: 'Nuxt <errors>' }, index)).toContain('<p class="mb-docked-title">Nuxt &lt;errors&gt;</p>')
+  })
+
+  it('styles the dock after its host and the drawer after the page', () => {
+    const dock = renderDockedPage({ channel: '/__my-bad', embed: true })
+    expect(dock).toContain('<html lang="en" dir="ltr" data-host>')
+    expect(dock).not.toContain('localStorage')
+    const drawer = renderDockedPage({ channel: '/__my-bad', embed: true, drawer: true })
+    expect(drawer).toContain('<html lang="en" dir="ltr">')
+    expect(drawer).toContain('localStorage')
   })
 })
 

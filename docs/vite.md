@@ -126,6 +126,7 @@ With DevTools running, errors no longer take over the page:
 - The badge shows on every page and opens the dock instead of the overlay.
 - The dock lists the open error, the warnings, and every problem set. It shows the one you pick the way the overlay does.
 - The dock icon in the DevTools bar counts them, in red while any of them is an error.
+- The dock follows the colour scheme, colours, and font of the DevTools panel, instead of the page's theme.
 - The open error and each problem set also appear in the DevTools messages panel, with their file position.
 
 The messages panel shows a spinner while a problem set is `checking`. Its actions show an entry in the dock, or show the full list of a problem set. The badge announces new reports, so DevTools shows no toast for them.

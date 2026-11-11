@@ -293,6 +293,9 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 
 /* Docked view */
+:root[data-host] { --mb-bg: #111111; --mb-fg: #f4f4f5; --mb-accent: #6b84fd; --mb-font-sans: ui-sans-serif, system-ui, sans-serif; --mb-font-display: var(--mb-font-sans); }
+:root[data-host][data-theme='light'] { --mb-bg: #ffffff; --mb-fg: #18181b; }
+.mb-root[data-docked] .mb-corners { height: 48px; padding: 0 16px; }
 .mb-docked-title { margin: 0; font: 600 13px/1.3 var(--mb-font-sans); }
 .mb-root[data-docked] { display: flex; flex-direction: column; height: 100vh; }
 .mb-docked { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }

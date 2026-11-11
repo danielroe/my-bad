@@ -111,6 +111,20 @@ beforeAll(async () => {
       res.end(clientAssets.badge)
       return
     }
+    if (req.url === '/devtools-panel') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><body><div id="host" class="devframes-color-root dark" style="--devframe-primary-DEFAULT:#ff7a00"><div style="background:rgba(17, 17, 17, 0.8);color:rgb(244, 244, 245);font-family:Georgia"><iframe src="/__my-bad/panel?embed" style="width:900px;height:600px"></iframe></div></div></body></html>`)
+      return
+    }
+    if (req.url === '/devtools-panel-themed') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><head>${renderBadge({
+        cwd: proj,
+        channel: '/__my-bad',
+        theme: { accent: '#00ff00', css: '.mb-root{font-family:monospace!important}' },
+      })}</head><body><div class="devframes-color-root dark"><div style="background:#111;color:#eee;font-family:Georgia"><iframe src="/__my-bad/panel?embed"></iframe></div></div></body></html>`)
+      return
+    }
     if (req.url === '/devtools-host') {
       res.setHeader('content-type', 'text/html')
       res.end(`<!DOCTYPE html><html><head>${renderBadge({ cwd: proj, channel: '/__my-bad' })}</head><body><h1 id="user">User page</h1><script type="module">${devtoolsHost}await setup(ctx)</script></body></html>`)
@@ -2425,6 +2439,50 @@ describe('devtools dock', () => {
     expect(new Set((await calls()).added)).toEqual(new Set(['my-bad:problems:lint']))
     channel.clearProblems()
     expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('takes the colour scheme, colours and font of the DevTools panel it is docked in', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const page = await browser.newPage()
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    await panel.locator('.mb-docked-title').waitFor()
+    const root = () => panel.locator('html').evaluate((html) => {
+      const style = getComputedStyle(html)
+      return [
+        html.dataset.theme,
+        style.getPropertyValue('--mb-bg'),
+        style.getPropertyValue('--mb-fg'),
+        style.getPropertyValue('--mb-accent'),
+        getComputedStyle(document.querySelector('.mb-root')!).fontFamily,
+      ].join(' | ')
+    })
+    await waitFor(root, 'dark | rgb(17, 17, 17) | rgb(244, 244, 245) | #ff7a00 | Georgia')
+    expect(await panel.locator('.mb-docked-title').textContent()).toBe('Problems')
+    expect(await panel.locator('.mb-brand').count()).toBe(0)
+    await page.evaluate(() => document.getElementById('host')!.classList.replace('dark', 'light'))
+    await waitFor(async () => (await root()).split(' | ')[0], 'light')
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('keeps the theme of the embedding page out of the DevTools dock', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [], { label: 'TypeScript' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel-themed`)
+    const panel = page.frameLocator('iframe')
+    await panel.locator('.mb-docked-title').waitFor()
+    await waitFor(() => panel.locator('.mb-root').evaluate(el => getComputedStyle(el).fontFamily), 'Georgia')
+    expect(await panel.locator('html').evaluate(el => getComputedStyle(el).getPropertyValue('--mb-accent').trim())).not.toBe('#00ff00')
+    channel.clearProblems()
     await page.close()
   }, 30_000)
 
