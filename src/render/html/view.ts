@@ -393,7 +393,9 @@ function renderFrames(frames: Frame[], related: Location[] | undefined, state: P
       ? `<div class="mb-ordered-stack">${renderRelated(related, state)}</div>`
       : ''}`
   }
-  const origin = Math.max(0, frames.findIndex(frame => frame.type === 'app' && (frame.snippet || frame.compiled?.snippet)))
+  const origin = isLocation(frames[0]!)
+    ? 0
+    : Math.max(0, frames.findIndex(frame => frame.type === 'app' && (frame.snippet || frame.compiled?.snippet)))
   const framework = frames.filter(frame => frame.type !== 'app').length
   const frameRow = (frame: Frame, index: number) => index === origin
     ? index === 0
@@ -422,6 +424,11 @@ function renderFrames(frames: Frame[], related: Location[] | undefined, state: P
     : ''}</div>`
 }
 
+/** A location the report names itself, such as a `sources` entry, rather than a stack frame. */
+function isLocation(frame: Frame): boolean {
+  return frame.type === 'app' && !!frame.file && !frame.raw && !frame.function
+}
+
 function renderSource(frame: Frame, state: PageState, supporting = false): string {
   const source = !!frame.snippet && frame.line !== undefined
   const generated = !!frame.compiled?.snippet && frame.compiled.line !== undefined
@@ -438,7 +445,7 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
       : '<p class="mb-unavailable">Source is unavailable at this stack location.</p>'
   }
   const copy = renderCopyLocation(frame, generated)
-  const fileOnly = !!frame.file && frame.line === undefined && !frame.compiled
+  const fileOnly = !!frame.file && !frame.compiled && !frame.snippet && (frame.line === undefined || isLocation(frame))
   if (supporting && !source && !generated) {
     return `<div class="mb-empty-frame">${fileOnly && !frame.function
       ? ''

@@ -389,6 +389,7 @@ function withoutHeader(stack: string, message: string, name: string): Pick<Norma
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
+const PATH_LIKE_RE = /^[^\s./]*[./]\S*$/
 const SOURCE_RE = /^(?<file>(?:[a-z]:)?[^\s:][^:]*)(?::(?<line>\d+)(?::(?<column>\d+))?)?$/i
 const ERROR_NAME_RE = /^(?<name>[A-Z][A-Za-z]*(?:Error|Exception)): (?<message>[\s\S]*)$/
 
@@ -469,7 +470,8 @@ function isInside(file: string, dir: string): boolean {
 /**
  * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`,
  * `file:line` or a bare `file`.
- * Only entries that parse and can be read are kept; the rest are listed verbatim
+ * Entries that parse are kept, and those that cannot be read only when they look
+ * like a path, so prose is not mistaken for a file; the rest are listed verbatim
  * so nothing the thrower reported is lost. With `lead`, the first entry kept
  * leads the frames, and the others are `related`.
  */
@@ -485,7 +487,7 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
     const file = raw
       ? resolveFile(raw, ctx.options.cwd)
       : undefined
-    if (!file || await readSource(file, ctx) === undefined) {
+    if (!file || (!PATH_LIKE_RE.test(raw!) && await readSource(file, ctx) === undefined)) {
       unresolved.push(source)
       continue
     }

@@ -52,7 +52,7 @@ class WidgetNameError extends Error {
 }
 ```
 
-The first entry of `sources` leads the frames, with a snippet when it names a line. An entry without a line shows as a reference to the file, without a snippet, since the error doesn't say where in the file the problem is. Later entries go into the `related` locations of the report, which pages list under **Also in**, without snippets. When the error also has a `loc`, every entry is related. An entry that `my-bad` can't read goes into a **Sources** section instead.
+The first entry of `sources` leads the frames, with a snippet when it names a line. An entry without a line shows as a reference to the file, without a snippet, since the error doesn't say where in the file the problem is. Later entries go into the `related` locations of the report, which pages list under **Also in**, without snippets. When the error also has a `loc`, every entry is related. An entry that `my-bad` can't read still shows as a reference to the file when it looks like a path, with no spaces and with a `/` or a `.`. Any other entry goes into a **Sources** section instead.
 
 An error named after its own `code` describes itself. The heading shows the code once, and presets don't add a documentation link to it.
 

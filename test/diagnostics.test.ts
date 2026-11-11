@@ -49,15 +49,35 @@ describe('diagnostic errors', () => {
     expect(report.frames[0]!.snippet!.lines).toContain('const widget = useWidget()')
   })
 
-  it('lists sources that do not resolve to a readable file', async () => {
+  it('keeps a source it cannot read as a file reference, and lists text that is not a path', async () => {
     const report = await createReport(diagnostic({
-      sources: ['/proj/pages/gone.vue:2:1', 'somewhere in the build'],
+      sources: [
+        '/proj/pages/gone.vue:2:1',
+        'somewhere in the build',
+        'pages/missing.vue',
+        'build',
+      ],
     }), { cwd: '/proj', loaders })
-    expect(report.frames.every(frame => frame.type !== 'app')).toBe(true)
+    expect(report.frames.filter(frame => frame.type === 'app')).toEqual([
+      {
+        file: '/proj/pages/gone.vue',
+        line: 2,
+        column: 1,
+        type: 'app',
+      },
+    ])
+    expect(report.related).toEqual([
+      { file: '/proj/pages/missing.vue' },
+    ])
+    const html = renderPage(report, { cwd: '/proj' })
+    const page = html.slice(0, html.indexOf('<script type="application/json">'))
+    expect(page).toContain('data-file="/proj/pages/gone.vue" data-line="2" data-column="1" title="/proj/pages/gone.vue">pages/gone.vue<span class="mb-pos">:2:1</span></button>')
+    expect(page).toContain('data-file-only')
+    expect(page).not.toContain('Source is unavailable')
     expect(report.sections.find(section => section.id === 'sources')).toEqual({
       id: 'sources',
       title: 'Sources',
-      content: '/proj/pages/gone.vue:2:1\nsomewhere in the build',
+      content: 'somewhere in the build\nbuild',
     })
   })
 
@@ -154,6 +174,30 @@ describe('diagnostic errors', () => {
     expect(source).toContain('title="Open original source in your editor"')
     expect(source).not.toContain('mb-snippet')
     expect(page).not.toContain('Source is unavailable')
+  })
+
+  it('leads with the file reference of a source ahead of a stack frame in app code', async () => {
+    const report = await createReport(diagnostic({
+      sources: ['/proj/pages/other.vue'],
+      stack: 'NUXT_E1001: The widget factory received an empty name.\n    at setup (/proj/pages/index.vue:2:16)',
+    }), {
+      cwd: '/proj',
+      loaders: [
+        {
+          name: 'memory',
+          read: (file: string) => file.startsWith('/proj/pages/')
+            ? SOURCE
+            : undefined,
+        },
+      ],
+    })
+    expect(report.frames[1]!.snippet).toBeDefined()
+    const html = renderPage(report, { cwd: '/proj' })
+    const page = html.slice(0, html.indexOf('<script type="application/json">'))
+    const lead = page.slice(page.indexOf('<div class="mb-ordered-stack">'), page.indexOf('<section class="mb-stack"'))
+    expect(lead).toContain('data-file-only')
+    expect(lead).toContain('>pages/other.vue</button>')
+    expect(lead).not.toContain('mb-snippet')
   })
 
   it('tells apart the same diagnostic at different files, lines and columns', async () => {
