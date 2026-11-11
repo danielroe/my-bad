@@ -68,6 +68,9 @@ function render(report: ErrorReport, options: MarkdownOptions, level: number): s
     }
     out.push('```', '')
   }
+  if (report.related?.length) {
+    out.push(`Also in: ${report.related.map(entry => `\`${loc(entry, options)}\``).join(', ')}`, '')
+  }
 
   for (const section of report.sections) {
     if (section.id === 'headers') {

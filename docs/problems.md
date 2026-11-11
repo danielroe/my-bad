@@ -61,6 +61,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | `line`, `column` | Position in `file`. |
 | `kind` | `error` or `warning`. Default `error`. |
 | `snippet` | A `Snippet`, or a code frame of `3 \| code` lines. A code frame can mark a line with `>`. |
+| `related` | Other files the problem concerns, as `{ file, line, column }`. Pages list them under **Also in**. |
 
 A report without a `file` or a `snippet` has no frames. As a second argument, `createProblemReport` takes `cwd`, `tokenizer`, `maxMessageLength`, and `maxSnippetLineLength`. Pass `codeSpans: true` too when the tool writes code in backticks, as the Vue compiler does, to show it as code. See [Code in messages](./reports.md#code-in-messages).
 

@@ -236,7 +236,10 @@ describe('createReport', () => {
         snippets: false,
       })
       expect(compiled.kind).toBe('compile')
-      expect(compiled.frames.map(frame => frame.file)).toEqual(['/proj/app.vue', '/proj/other.vue'])
+      expect(compiled.frames.map(frame => frame.file)).toEqual(['/proj/app.vue'])
+      expect(compiled.related).toEqual([
+        { file: '/proj/other.vue' },
+      ])
     }
   })
 
@@ -254,7 +257,10 @@ describe('createReport', () => {
       },
     ]
     const report = await createReport(input, { kind: 'warning', loaders })
-    expect(report.frames.map(frame => frame.file)).toEqual(['/proj/app.vue', '/proj/other.vue'])
+    expect(report.frames.map(frame => frame.file)).toEqual(['/proj/app.vue'])
+    expect(report.related).toEqual([
+      { file: '/proj/other.vue' },
+    ])
     const { sources: _, ...located } = input
     expect(report.id).toBe((await createReport(located, { kind: 'warning', loaders })).id)
   })

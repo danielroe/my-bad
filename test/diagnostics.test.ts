@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createProblemReport, createReport, renderAnsi, renderOverlay, renderPage, toMarkdown } from '../src'
+import { createProblemReport, createReport, renderAnsi, renderOverlay, renderPage, serializeReport, toMarkdown } from '../src'
 import { toHistoryEntry } from '../src/channel/protocol'
 import { renderIndex } from '../src/render/html/view'
 import { stripAnsi } from '../src/report/ansi'
@@ -69,20 +69,77 @@ describe('diagnostic errors', () => {
 
   it('reads sources with only a line, or only a file', async () => {
     const report = await createReport(diagnostic({
-      sources: ['/proj/pages/index.vue:3', '/proj/pages/index.vue'],
+      sources: ['/proj/pages/index.vue', '/proj/pages/index.vue:3'],
     }), { cwd: '/proj', loaders })
-    expect(report.frames.slice(0, 2)).toEqual([
-      expect.objectContaining({
-        file: '/proj/pages/index.vue',
-        line: 3,
-        type: 'app',
-        snippet: expect.objectContaining({
-          start: expect.any(Number),
-        }),
+    expect(report.frames[0]).toEqual({ file: '/proj/pages/index.vue', type: 'app' })
+    const lined = await createReport(diagnostic({
+      sources: ['/proj/pages/index.vue:3'],
+    }), { cwd: '/proj', loaders })
+    expect(lined.frames[0]).toEqual(expect.objectContaining({
+      file: '/proj/pages/index.vue',
+      line: 3,
+      type: 'app',
+      snippet: expect.objectContaining({
+        start: expect.any(Number),
       }),
-      { file: '/proj/pages/index.vue', type: 'app' },
-    ])
+    }))
     expect(report.sections.some(section => section.id === 'sources')).toBe(false)
+  })
+
+  it('lists the sources after the first as related locations, not frames', async () => {
+    const report = await createReport(diagnostic({
+      sources: ['/proj/pages/index.vue:2:16', '/proj/pages/other.vue', '/proj/pages/index.vue:3'],
+    }), {
+      cwd: '/proj',
+      loaders: [
+        {
+          name: 'memory',
+          read: (file: string) => file.startsWith('/proj/pages/')
+            ? SOURCE
+            : undefined,
+        },
+      ],
+    })
+    expect(report.frames.filter(frame => frame.type === 'app').map(frame => frame.file)).toEqual(['/proj/pages/index.vue'])
+    expect(report.related).toEqual([
+      { file: '/proj/pages/other.vue' },
+      { file: '/proj/pages/index.vue', line: 3 },
+    ])
+    expect(report.id).toBe((await createReport(diagnostic(), { cwd: '/proj', loaders })).id)
+
+    const html = renderPage(report, { cwd: '/proj' })
+    const related = /<section class="mb-related"[\s\S]*?<\/section>/.exec(html.slice(0, html.indexOf('<script type="application/json">')))![0]
+    expect(related).toContain('Also in')
+    expect(related).toContain('data-action="open" data-file="/proj/pages/other.vue" title="/proj/pages/other.vue">pages/other.vue</button>')
+    expect(related).toContain('data-file="/proj/pages/index.vue" data-line="3" title="/proj/pages/index.vue">pages/index.vue<span class="mb-pos">:3</span></button>')
+    expect(related.match(/data-action="copy-location"/g)).toHaveLength(2)
+    expect(html).not.toContain('Call stack <span class="mb-count">3')
+
+    const ansi = renderAnsi(report, { cwd: '/proj', colors: false, hyperlinks: false })
+    expect(ansi).toContain('  Also in:\n    pages/other.vue\n    pages/index.vue:3')
+    expect(toMarkdown(report, { cwd: '/proj' })).toContain('Also in: `./pages/other.vue`, `./pages/index.vue:3`')
+    expect(serializeReport(report, { cwd: '/proj' }).related).toEqual([
+      { file: './pages/other.vue' },
+      { file: './pages/index.vue', line: 3 },
+    ])
+  })
+
+  it('takes related locations for a problem', () => {
+    const problem = createProblemReport({
+      name: 'TS2322',
+      message: 'Type mismatch',
+      file: 'src/a.ts',
+      line: 2,
+      related: [
+        { file: 'src/types.ts', line: 4, column: 3 },
+        { file: '' },
+      ],
+    }, { cwd: '/proj' })
+    expect(problem.frames).toHaveLength(1)
+    expect(problem.related).toEqual([
+      { file: '/proj/src/types.ts', line: 4, column: 3 },
+    ])
+    expect(createProblemReport({ name: 'E', message: 'x', related: [] }).related).toBeUndefined()
   })
 
   it('renders a source without a line as a reference to the file', async () => {

@@ -1,4 +1,4 @@
-import type { CompiledMarker, CompileErrorInput, ErrorReport, Frame, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
+import type { CompiledMarker, CompileErrorInput, ErrorReport, Frame, Location, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
 import process from 'node:process'
 import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
@@ -128,6 +128,7 @@ function collapseDuplicateCauses(report: ErrorReport): ErrorReport {
     status: report.status ?? duplicate.status,
     trace: report.trace ?? duplicate.trace,
     frames,
+    ...((report.related ?? duplicate.related) && { related: report.related ?? duplicate.related }),
     rawStack: report.rawStack ?? duplicate.rawStack,
     sections: mergeSections(report.sections, duplicate.sections),
     causes: [
@@ -206,8 +207,8 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     : undefined)
   const frames = await buildFrames(located ?? input, error, ctx, kind)
 
-  const sources = await buildSourceFrames(error.sources, ctx)
-  frames.splice(located ? 1 : 0, 0, ...sources.frames)
+  const sources = await buildSourceFrames(error.sources, ctx, !located)
+  frames.unshift(...sources.frames)
 
   const sections: Section[] = []
   if (sources.unresolved.length) {
@@ -243,6 +244,7 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     ...(error.docsUrl && { docsUrl: error.docsUrl }),
     ...(error.status && { status: error.status }),
     frames,
+    ...(sources.related.length && { related: sources.related }),
     causes: [],
     sections,
     ...(error.stack && {
@@ -465,11 +467,13 @@ function isInside(file: string, dir: string): boolean {
 /**
  * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`,
  * `file:line` or a bare `file`.
- * Only entries that parse and can be read become frames; the rest are listed verbatim
- * so nothing the thrower reported is lost.
+ * Only entries that parse and can be read are kept; the rest are listed verbatim
+ * so nothing the thrower reported is lost. With `lead`, the first entry kept
+ * leads the frames, and the others are `related`.
  */
-async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContext): Promise<{ frames: Frame[], unresolved: string[] }> {
+async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContext, lead: boolean): Promise<{ frames: Frame[], related: Location[], unresolved: string[] }> {
   const frames: Frame[] = []
+  const related: Location[] = []
   const unresolved: string[] = []
   for (const source of sources ?? []) {
     const groups = SOURCE_RE.exec(source.trim())?.groups
@@ -483,7 +487,7 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
       unresolved.push(source)
       continue
     }
-    const frame: Frame = {
+    const location: Location = {
       file,
       ...(groups!.line && {
         line: Number(groups!.line),
@@ -491,15 +495,22 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
       ...(groups!.column && {
         column: Number(groups!.column),
       }),
-      type: 'app',
     }
+    if (!lead || frames.length) {
+      const displayFile = externalPackage(file, ctx.options.cwd)?.displayFile
+      related.push(displayFile
+        ? { ...location, displayFile }
+        : location)
+      continue
+    }
+    const frame: Frame = { ...location, type: 'app' }
     if (ctx.options.snippets && frame.line) {
       setSnippet(frame, await loadSnippet(file, frame.line, frame.column, ctx))
     }
     addDisplayPaths(frame, ctx.options.cwd)
     frames.push(frame)
   }
-  return { frames, unresolved }
+  return { frames, related, unresolved }
 }
 
 function isCompileInput(input: unknown): input is CompileErrorInput {

@@ -109,6 +109,8 @@ export interface ErrorReport {
   docsUrl?: string
   status?: number
   frames: Frame[]
+  /** Other files the report concerns, such as the further `sources` of a diagnostic. Not a stack. */
+  related?: Location[]
   causes: ErrorReport[]
   /** Populated for `AggregateError`. */
   errors?: ErrorReport[]

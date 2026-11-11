@@ -1,6 +1,6 @@
 import type { ProblemSummary } from '../../channel/protocol'
 import type { DisplayTarget } from '../../report/path'
-import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../types'
+import type { ErrorReport, Frame, HistoryEntry, Location, Section, Snippet } from '../../types'
 import type { BadgeFocus, DockedIndex, DockedState, PageState } from './state'
 import { plainText } from '../../report/code'
 import { clampMessage, splitHeadline } from '../../report/message'
@@ -348,7 +348,7 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
   ${chrome
     ? renderCauseNavigation(state, path)
     : ''}
-  ${renderFrames(report.frames, state, id)}
+  ${renderFrames(report.frames, report.related, state, id)}
   ${report.trace?.length
     ? `<details class="mb-disclosure"><summary>${ICONS.chevron}Component trace <span class="mb-count">${report.trace.length}</span></summary>${renderTrace(report, state)}</details>`
     : ''}
@@ -379,11 +379,19 @@ function renderTrace(report: ErrorReport, state: PageState): string {
   return `<ol class="mb-trace" data-trace aria-label="Component trace">${crumbs.join('')}</ol>`
 }
 
-function renderFrames(frames: Frame[], state: PageState, parent: string): string {
+function renderRelated(related: Location[] | undefined, state: PageState): string {
+  return related?.length
+    ? `<section class="mb-related" aria-label="Also in"><p class="mb-related-heading" aria-hidden="true">Also in</p><ul>${related.map(entry => `<li class="mb-empty-frame"><button type="button" class="mb-loc" data-loc data-action="open"${positionAttrs('data-', entry)}${attr('title', entry.file)}>${renderLocation(entry, entry.line, entry.column, state)}</button>${renderCopyLocation(entry, false)}</li>`).join('')}</ul></section>`
+    : ''
+}
+
+function renderFrames(frames: Frame[], related: Location[] | undefined, state: PageState, parent: string): string {
   if (!frames.length) {
     return `<p class="mb-unavailable">No stack trace was provided. The ${state.report.kind === 'warning'
       ? 'warning'
-      : 'error'} message and request context are still available to copy.</p>`
+      : 'error'} message and request context are still available to copy.</p>${related?.length
+      ? `<div class="mb-ordered-stack">${renderRelated(related, state)}</div>`
+      : ''}`
   }
   const origin = Math.max(0, frames.findIndex(frame => frame.type === 'app' && (frame.snippet || frame.compiled?.snippet)))
   const framework = frames.filter(frame => frame.type !== 'app').length
@@ -407,7 +415,7 @@ function renderFrames(frames: Frame[], state: PageState, parent: string): string
       ? ''
       : 's'}<span class="mb-framework-hidden"> hidden</span></span>${missing ? '<span class="mb-missing">Code not captured</span>' : ''}</div><ol class="mb-framework-frames">${group.map(({ frame, index }) => frameRow(frame, index)).join('')}</ol></li>`
   }).join('')
-  return `<div class="mb-ordered-stack">${renderSource(frames[origin]!, state)}${rows
+  return `<div class="mb-ordered-stack">${renderSource(frames[origin]!, state)}${renderRelated(related, state)}${rows
     ? `<section class="mb-stack" data-stack><div class="mb-stack-heading"><button type="button" data-action="stack" class="mb-stack-toggle" aria-expanded="false" aria-controls="${parent}-stack">${ICONS.chevron}Call stack <span class="mb-count">${frames.length}</span></button>${framework
       ? `<button type="button" class="mb-framework" role="switch" data-action="framework" aria-checked="false"><span class="mb-switch-track" aria-hidden="true"></span>Show framework frames <span class="mb-count">(${framework})</span></button>`
       : ''}</div><ol class="mb-frames" id="${parent}-stack" hidden>${rows}</ol></section>`
@@ -465,7 +473,7 @@ function positionAttrs(prefix: string, target: Pick<Frame, 'file' | 'line' | 'co
     : ''
 }
 
-function renderCopyLocation(frame: Frame, generated: boolean): string {
+function renderCopyLocation(frame: Pick<Frame, 'file' | 'line' | 'column' | 'compiled'>, generated: boolean): string {
   if (!frame.file && !(generated && frame.compiled?.file)) {
     return ''
   }

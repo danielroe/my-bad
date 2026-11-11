@@ -133,6 +133,12 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     out.push('')
     out.push(...renderFrames(report.frames, ctx, `${indent}  `))
   }
+  if (report.related?.length) {
+    out.push('', `${indent}  ${p.dim('Also in:')}`)
+    for (const entry of report.related) {
+      out.push(`${indent}    ${p.cyan(renderPath(entry, ctx, width - 4))}`)
+    }
+  }
 
   if (ctx.verbose && report.sections.length) {
     for (const section of report.sections) {
@@ -244,6 +250,25 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
   return `${indent}${dim
     ? p.dim(text)
     : text}`
+}
+
+function renderPath(target: Pick<Frame, 'file' | 'displayFile' | 'line' | 'column'>, ctx: Ctx, max: number): string {
+  const line = finite(target.line)
+  const column = finite(target.column)
+  const shown = truncateMiddle(clean(`${displayPath(target, ctx.cwd)}${line !== undefined
+    ? `:${line}${column !== undefined
+      ? `:${column}`
+      : ''}`
+    : ''}`), Math.max(20, max))
+  return target.file && isFilePath(target.file)
+    ? link(target.file, {
+        cwd: ctx.cwd,
+        line,
+        column,
+        enabled: ctx.hyperlinks,
+        formatter: () => shown,
+      })
+    : shown
 }
 
 function finite(value: unknown): number | undefined {

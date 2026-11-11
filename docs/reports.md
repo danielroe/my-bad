@@ -31,7 +31,7 @@ Each report has an `id`, a hash of its name, message, and the location of its fi
 | `code` | The report code. |
 | `fix` | The hint shown below the message. |
 | `docs`, `docsUrl` | A link to the documentation. |
-| `sources` | App frames from `file:line:column`, `file:line`, or `file` strings. |
+| `sources` | The leading frame and the `related` locations, from `file:line:column`, `file:line`, or `file` strings. |
 | `statusCode`, `status` | The HTTP status. |
 | `data` | A **Data** section. |
 | `compiled` | See [Compile errors](#compile-errors). |
@@ -52,7 +52,7 @@ class WidgetNameError extends Error {
 }
 ```
 
-Each entry of `sources` becomes an app frame, with a snippet when it names a line. An entry without a line shows as a reference to the file, without a snippet, since the error doesn't say where in the file the problem is. An entry that `my-bad` can't read goes into a **Sources** section instead.
+The first entry of `sources` leads the frames, with a snippet when it names a line. An entry without a line shows as a reference to the file, without a snippet, since the error doesn't say where in the file the problem is. Later entries go into the `related` locations of the report, which pages list under **Also in**, without snippets. When the error also has a `loc`, every entry is related. An entry that `my-bad` can't read goes into a **Sources** section instead.
 
 An error named after its own `code` describes itself. The heading shows the code once, and presets don't add a documentation link to it.
 

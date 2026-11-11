@@ -1,4 +1,4 @@
-import type { ErrorReport, Frame, ReportOptions, Snippet } from '../types'
+import type { ErrorReport, Frame, Location, ReportOptions, Snippet } from '../types'
 import { stripAnsi } from './ansi'
 import { defaultCwd, lineLength, reportId, resolveFile, truncate } from './create'
 import { langFromFile, normalizeSlashes } from './path'
@@ -19,6 +19,8 @@ export interface ProblemInput {
   column?: number
   /** Source around `line`: a `Snippet`, or a code frame of `3 | code` lines, which may mark a line with `>`. */
   snippet?: Snippet | string
+  /** Other files the problem concerns, absolute or relative to `cwd`. */
+  related?: Array<{ file: string, line?: number, column?: number }>
   /** Default `error`. */
   kind?: 'error' | 'warning'
 }
@@ -48,6 +50,11 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
         ...(snippet && { snippet }),
       }
     : undefined
+  const related = input.related?.filter(entry => entry.file).map((entry): Location => ({
+    file: resolveFile(normalizeSlashes(entry.file), cwd),
+    ...(entry.line !== undefined && { line: entry.line }),
+    ...(entry.column !== undefined && { column: entry.column }),
+  }))
   const report: ErrorReport = {
     id: '',
     kind: input.kind ?? 'error',
@@ -63,6 +70,7 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
     frames: frame
       ? [frame]
       : [],
+    ...(related?.length && { related }),
     causes: [],
     sections: [],
     timestamp: Date.now(),
