@@ -167,6 +167,8 @@ An error without a stack stays an `error`. To place it, pass the Vite error shap
 
 Vite plugins often append the code frame to the message they pass to `this.warn`, as `NN |  code` lines and a `^` line. When an input has an `id` or a `loc` but no `frame`, `createReport` splits a code frame like this off the end of the message, and uses it for the location and the snippet.
 
+When the `loc` and the caret of the code frame name different lines, the caret wins, since it lines up with the snippet that the page shows. One case is different: a caret past the end of its line marks the start of the next line, as the Vue compiler draws it. When the `loc` names that next line, the `loc` wins.
+
 ### Code frames from compiled code
 
 A bundler sometimes reports a position in the code it generated, but names the source file. For example, Rolldown can fail to parse a compiled Vue render function. `my-bad` then moves the position and code frame to `frame.compiled`, so the page labels the generated code as generated.

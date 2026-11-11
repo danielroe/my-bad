@@ -585,9 +585,15 @@ function compileLoc(input: CompileErrorInput): { file?: string, line: number, co
  * columns from zero when rendering a frame but compilers report them from one,
  * so the caret is a character to the right of the position the compiler named.
  * A declared column past the end of the caret line is an offset, not a column.
+ * A caret past the end of its line marks the start of the next one, as
+ * `generateCodeFrame` of `@vue/shared` draws it, so a declared loc on that next
+ * line wins.
  */
 function mergeFrameLoc(declared: { file?: string, line: number, column: number } | undefined, frameLoc: { line: number, column: number }, caretLine: string | undefined): { file?: string, line: number, column: number } {
   if (declared && declared.line === frameLoc.line && typeof declared.column === 'number' && (caretLine === undefined || declared.column <= caretLine.length + 1)) {
+    return declared
+  }
+  if (declared && declared.line === frameLoc.line + 1 && caretLine !== undefined && frameLoc.column > caretLine.length + 1) {
     return declared
   }
   return {

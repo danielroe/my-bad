@@ -310,6 +310,31 @@ describe('createReport', () => {
     }
   })
 
+  it('trusts a declared loc at the start of a line that the code frame marks at the end of the line before', async () => {
+    const frame = '1  |  <template>\n2  |    <div>\n   |          ^\n3  |      <input v-model="x">\n   |  ^^^^\n4  |    </div>'
+    const loaders = [
+      {
+        name: 'memory',
+        read: () => '<template>\n  <div>\n    <input v-model="x">\n  </div>\n</template>\n',
+      },
+    ]
+    const report = await createReport({
+      message: 'v-model cannot be used on a const binding.',
+      id: '/proj/app.vue',
+      loc: { file: '/proj/app.vue', line: 3, column: 1 },
+      frame,
+    }, { cwd: '/proj', kind: 'warning', loaders })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app.vue', line: 3, column: 1 })
+
+    const inside = await createReport({
+      message: 'Unexpected token',
+      id: '/proj/app.vue',
+      loc: { file: '/proj/app.vue', line: 3, column: 1 },
+      frame: '2  |    <div>\n   |        ^\n3  |      <input v-model="x">',
+    }, { cwd: '/proj', kind: 'warning', loaders })
+    expect(inside.frames[0]).toMatchObject({ line: 2, column: 7 })
+  })
+
   it('takes the snippet of a located warning from its message, and leaves the message of an unlocated one alone', async () => {
     const message = 'Broken\n1  |  a\n   |  ^'
     const unlocated = await createReport({ message }, { cwd: '/proj', loaders: [] })
