@@ -1,10 +1,12 @@
 import type { Browser, Page } from 'playwright'
+import type { ProblemSet } from '../src/channel/protocol'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { clientAssets, createReport, renderBadge, renderOverlay, renderPage } from '../src'
+import { clientAssets, createProblemReport, createReport, renderBadge, renderOverlay, renderPage } from '../src'
 import { nuxtTheme } from '../src/presets'
+import { renderDockedPage } from '../src/render/html'
 
 /**
  * WCAG 2.2 AA audit of every default theme state, following A11Y.md:
@@ -759,6 +761,159 @@ describe.each(themes)('warning panel, theme: $name', (theme) => {
       const rect = document.querySelector('#host-link')!.getBoundingClientRect()
       return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.id
     })).toBe('host-link')
+    await page.context().close()
+  }, 60_000)
+})
+
+describe.each(['light', 'dark'] as const)('docked view, %s', (scheme) => {
+  async function openDocked(problems: ProblemSet[]): Promise<Page> {
+    const context = await browser.newContext({
+      colorScheme: scheme,
+      reducedMotion: 'reduce',
+      viewport: { width: 1100, height: 800 },
+    })
+    const page = await context.newPage()
+    const summaries = problems.map(({ reports, ...set }) => ({
+      ...set,
+      errors: reports.filter(report => report.kind === 'error').length,
+      warnings: reports.filter(report => report.kind === 'warning').length,
+      info: reports.filter(report => report.kind === 'info').length,
+    }))
+    await page.route('http://a11y.test/**', (route) => {
+      const url = new URL(route.request().url())
+      if (url.pathname === '/__my-bad/events') {
+        return route.fulfill({
+          headers: { 'content-type': 'text/event-stream' },
+          body: `event: hello\ndata: ${JSON.stringify({
+            version: '0',
+            actions: [],
+            history: [],
+            problems: summaries,
+          })}\n\n`,
+        })
+      }
+      if (url.pathname === '/__my-bad/problems') {
+        return route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify(problems),
+        })
+      }
+      if (url.pathname === '/__my-bad/client.js') {
+        return route.fulfill({ contentType: 'text/javascript', body: clientAssets.script })
+      }
+      if (url.pathname === '/__my-bad/client.css') {
+        return route.fulfill({ contentType: 'text/css', body: clientAssets.styles })
+      }
+      return route.fulfill({
+        contentType: 'text/html',
+        body: renderDockedPage({ channel: '/__my-bad', embed: true }),
+      })
+    })
+    await page.goto('http://a11y.test/__my-bad/panel?embed')
+    return page
+  }
+
+  async function audit(page: Page): Promise<void> {
+    const failures = (await sampleContrast(page)).filter(sample => sample.role === 'text'
+      ? sample.ratio < (largeText(sample)
+        ? 3
+        : 4.5) || sample.fontSize < 12
+      : sample.ratio < 3)
+    expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
+    const targets = await page.evaluate(() => [
+      ...document.querySelectorAll<HTMLElement>('button, a, summary, input, [tabindex="0"]'),
+    ]
+      .filter(el => el.getClientRects().length && !el.closest('.mb-code, .mb-hint'))
+      .map(el => ({ selector: `${el.tagName.toLowerCase()}[${el.getAttribute('data-action') ?? el.className}]`, width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }))
+      .filter(target => target.width < 24 || target.height < 24))
+    expect(targets, JSON.stringify(targets)).toEqual([])
+    await page.addScriptTag({ content: axeSource })
+    const results = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (context: unknown, options: unknown) => Promise<{ violations: Array<{ id: string, impact: string, nodes: Array<{ target: string[] }> }> }> } }).axe
+      return axe.run(document, {
+        runOnly: {
+          type: 'tag',
+          values: [
+            'wcag2a',
+            'wcag2aa',
+            'wcag21a',
+            'wcag21aa',
+            'wcag22aa',
+            'best-practice',
+          ],
+        },
+      })
+    })
+    const serious = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')
+    expect(serious.map(v => ({
+      id: v.id,
+      nodes: v.nodes.map(n => n.target.join(' ')).slice(0, 5),
+    }))).toEqual([])
+  }
+
+  it('meets contrast and target size minimums in the list, with no serious axe violations', async () => {
+    const problem = (message: string, kind: 'error' | 'warning' | 'info') => createProblemReport({
+      name: 'Checker',
+      message,
+      kind,
+      file: '/proj/src/a.ts',
+      line: 2,
+      column: 3,
+      snippet: {
+        start: 1,
+        lines: ['const a = 1', 'const b: string = a'],
+      },
+    }, { cwd: '/proj' })
+    const page = await openDocked([
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        lastRun: { startedAt: 0, finishedAt: 1 },
+        reports: [
+          problem('Type mismatch', 'error'),
+          problem('Prefer const', 'info'),
+        ],
+      },
+      {
+        source: 'lint',
+        label: 'ESLint',
+        status: 'checking',
+        reports: [
+          problem('Unused variable', 'warning'),
+        ],
+      },
+      {
+        source: 'vue',
+        label: 'Vue',
+        status: 'failed',
+        error: 'crashed',
+        reports: [],
+      },
+    ])
+    await page.locator('.mb-message').waitFor()
+    await page.getByRole('button', { name: /^Warnings/ }).click()
+    await audit(page)
+    await page.context().close()
+  }, 60_000)
+
+  it('meets contrast and target size minimums while nothing is open', async () => {
+    const page = await openDocked([
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        lastRun: { startedAt: 0, finishedAt: 1 },
+        reports: [],
+      },
+      {
+        source: 'vue',
+        label: 'Vue',
+        status: 'failed',
+        error: 'crashed',
+        reports: [],
+      },
+    ])
+    await page.locator('.mb-docked-calm .mb-watched').waitFor()
+    await audit(page)
     await page.context().close()
   }, 60_000)
 })
