@@ -846,6 +846,109 @@ describe('docked view', () => {
     expect(html).toContain('data-group="file" aria-pressed="true"')
   })
 
+  it('shows a calm state with what each source is doing while nothing is open', () => {
+    const problems = [
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        errors: 0,
+        warnings: 0,
+        status: 'checking' as const,
+        lastRun: { startedAt: 0, finishedAt: 1000 },
+      },
+      {
+        source: 'lint',
+        label: 'ESLint',
+        errors: 0,
+        warnings: 0,
+        lastRun: { startedAt: 0, finishedAt: 1000 },
+      },
+      {
+        source: 'vue',
+        label: 'Vue',
+        errors: 0,
+        warnings: 0,
+        status: 'failed' as const,
+        error: 'crashed',
+      },
+      {
+        source: 'a11y',
+        label: 'Audit',
+        errors: 0,
+        warnings: 0,
+      },
+    ]
+    const rows = (html: string) => [
+      ...html.matchAll(/<li data-tone="(\w+)">.*?<span class="mb-watched-label">([^<]*)<\/span><span class="mb-watched-status">([^<]*)<\/span>/g),
+    ].map(match => match.slice(1).join(' | '))
+    const checking = renderDocked({
+      mode: 'docked',
+      version: '',
+      view: { now: 61_000 },
+    }, { history: [], problems })
+    expect(checking).toContain('<div class="mb-docked" data-calm-view="true">')
+    expect(checking).toContain('<div class="mb-docked-calm" data-calm data-failed="true">')
+    expect(checking).toContain('<p class="mb-docked-empty-title">A check failed</p>')
+    expect(checking).toContain('data-docked-count>1 check failed</span>')
+    expect(rows(checking)).toEqual([
+      'busy | TypeScript | Checking',
+      'ok | ESLint | No problems, checked 1m ago',
+      'error | Vue | Failed: crashed',
+      'ok | Audit | No problems',
+    ])
+    expect(checking).not.toContain('data-filter')
+    expect(checking).not.toContain('copy-listed')
+    expect(checking).not.toContain('data-index')
+    const unfailed = problems.filter(set => set.status !== 'failed')
+    const busy = renderDocked({ mode: 'docked', version: '' }, { history: [], problems: unfailed })
+    expect(busy).toContain('<div class="mb-docked-calm" data-calm>')
+    expect(busy).toContain('<p class="mb-docked-empty-title">Checking for problems</p>')
+    expect(busy).toContain('data-docked-count>Checking</span>')
+    const broken = renderDocked({ mode: 'docked', version: '' }, {
+      history: [],
+      problems: [
+        ...problems,
+        { ...problems[2]!, source: 'lint2' },
+      ],
+    })
+    expect(broken).toContain('<p class="mb-docked-empty-title">2 checks failed</p>')
+    expect(broken).toContain('data-docked-count>2 checks failed</span>')
+    const idle = renderDocked({ mode: 'docked', version: '' }, {
+      history: [],
+      problems: problems.slice(1, 2),
+    })
+    expect(idle).toContain('<p class="mb-docked-empty-title">No problems</p>')
+    expect(idle).toContain('data-docked-count>All clear</span>')
+    expect(renderDocked({ mode: 'docked', version: '' }, { history: [], problems: [] })).not.toContain('mb-watched')
+    const open = renderDocked({ mode: 'docked', version: '' }, {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning',
+          name: 'Vue warn',
+          message: 'x',
+          timestamp: 0,
+        },
+      ],
+      problems,
+    })
+    expect(open).not.toContain('data-calm-view')
+    expect(open).toContain('data-filter')
+    const failed = renderDocked({ mode: 'docked', version: '' }, {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning',
+          name: 'Vue warn',
+          message: 'x',
+          timestamp: 0,
+        },
+      ],
+      problems,
+    }, undefined, { source: 'vue' })
+    expect(failed).toContain('<div class="mb-docked-empty" data-unselected><p class="mb-docked-empty-title">Vue</p><p>Failed: crashed</p></div>')
+  })
+
   it('styles the dock after its host and the drawer after the page', () => {
     const dock = renderDockedPage({ channel: '/__my-bad', embed: true })
     expect(dock).toContain('<html lang="en" dir="ltr" data-host>')

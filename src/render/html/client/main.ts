@@ -4,11 +4,11 @@ import type { BadgeFocus, Dock, DockedIndex, DockedState, Level, PageState } fro
 import { plainText } from '../../../report/code'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
-import { listing } from '../problems'
+import { listing, nothingOpen } from '../problems'
 import { THEME_STORAGE_KEY } from '../state'
 import { firstLine } from '../summary'
 import { themeStyles } from '../theme'
-import { dockedSummary, ICONS, pagerIndex, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
+import { dockedSummary, ICONS, pagerIndex, renderCalm, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderToast, renderUnselected, renderView, reportEntries, warningCount, warningLabel } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -1184,6 +1184,23 @@ function toggleSource(m: Mount, d: Docked, source: string): void {
 
 function refreshIndex(m: Mount, d: Docked): void {
   const index = dockedIndex(d)
+  if (!!m.root.querySelector('[data-calm-view]') !== nothingOpen(index)) {
+    return rerender(m, d.report, undefined, { inPlace: true })
+  }
+  for (const [selector, html] of [
+    [
+      '[data-calm]',
+      () => renderCalm(d.state, index),
+    ],
+    [
+      '[data-unselected]',
+      () => renderUnselected(d.state, index, d.shown),
+    ],
+  ] as const) {
+    const stale = m.root.querySelector(selector)
+    stale?.insertAdjacentHTML('afterend', html())
+    stale?.remove()
+  }
   const nav = m.root.querySelector('[data-index]')
   const item = focusedItem(m)
   const scroll = nav?.scrollTop ?? 0

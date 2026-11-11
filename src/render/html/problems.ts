@@ -101,6 +101,20 @@ export function sourceStatus(set: ProblemSummary, now: number): string {
     : `Checked ${ago(set.lastRun.finishedAt, now)}`
 }
 
+/** What a source that has found nothing is doing, for example `No problems, checked 3s ago`. */
+export function calmStatus(set: ProblemSummary, now: number): string {
+  return set.status === 'failed' || set.status === 'checking'
+    ? sourceStatus(set, now)
+    : `No problems${set.lastRun?.finishedAt === undefined
+      ? ''
+      : `, checked ${ago(set.lastRun.finishedAt, now)}`}`
+}
+
+/** Whether nothing is open: no error, no warning, and no problem in any source. */
+export function nothingOpen(index: DockedIndex): boolean {
+  return !index.current && !index.history?.some(entry => entry.kind === 'warning') && index.problems.every(set => !(set.errors + set.warnings + (set.info ?? 0)))
+}
+
 function ago(time: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - time) / 1000))
   return seconds < 5

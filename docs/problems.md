@@ -74,7 +74,7 @@ The drawer and the DevTools dock list each problem under the `label` of its set,
 
 ## Browse problems in the drawer and the dock
 
-The drawer and the DevTools dock list the open error, the warnings, and every problem set. To narrow the list down:
+The drawer and the DevTools dock list the open error, the warnings, and every problem set. While nothing is open, they show **No problems**, or **Checking for problems** while a source is checking, with what each source is doing. When a source has failed, the heading says so instead, for example **A check failed**, and the header counts failed checks apart from errors. With nothing to count, the header reads **Checking** while a source is checking, and **All clear** otherwise. To narrow the list down:
 
 - Type in **Filter problems** to list only the entries whose name, message, code, or file contains the text. Press <kbd>Escape</kbd> to clear it.
 - Select the error, warning, or info count to hide or show that level.

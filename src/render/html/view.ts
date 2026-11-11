@@ -10,9 +10,9 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
-import { filtering, levelOf, LEVELS, listing, sourceStatus, sourceTone } from './problems'
+import { calmStatus, filtering, levelOf, LEVELS, listing, nothingOpen, sourceStatus, sourceTone } from './problems'
 import { DOCKED_TITLE } from './state'
-import { countsLabel, dockedCounts, firstLine, repeatsLabel, reportLocation, warningCount } from './summary'
+import { countsLabel, dockedCounts, firstLine, plural, repeatsLabel, reportLocation, warningCount } from './summary'
 
 export const ICONS = {
   file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6v20h12V6zM14 2v6h4M9 13h6m-6 4h6"/></svg>',
@@ -118,8 +118,16 @@ function failed(set: ProblemSummary): boolean {
   return set.status === 'failed'
 }
 
+/** Open errors and warnings, with failed sources counted apart. */
 export function dockedSummary(index: DockedIndex): string {
-  return countsLabel(dockedCounts(index)) || 'All clear'
+  const broken = index.problems.filter(failed).length
+  const counts = dockedCounts(index)
+  return [
+    countsLabel({ errors: counts.errors - broken, warnings: counts.warnings }),
+    broken && `${plural(broken, 'check')} failed`,
+  ].filter(Boolean).join(' · ') || (index.problems.some(set => set.status === 'checking')
+    ? 'Checking'
+    : 'All clear')
 }
 
 function renderIndexItem(entry: Pick<HistoryEntry, 'id' | 'kind' | 'name' | 'message' | 'codeSpans'>, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
@@ -272,6 +280,40 @@ export function renderIndex(state: DockedState, index: DockedIndex, shown?: Badg
       : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
 }
 
+/** What a docked view shows while nothing is open: a calm state, and what each source is doing. */
+export function renderCalm(state: DockedState, index: DockedIndex): string {
+  const now = state.view?.now ?? Date.now()
+  const broken = index.problems.filter(failed).length
+  const checking = index.problems.some(set => set.status === 'checking')
+  return `<div class="mb-docked-calm" data-calm${attr('data-failed', !!broken)}>${broken
+    ? ICONS.error
+    : checking
+      ? ICONS.checking
+      : ICONS.check}<p class="mb-docked-empty-title">${broken
+    ? broken === 1
+      ? 'A check failed'
+      : `${broken} checks failed`
+    : checking
+      ? 'Checking for problems'
+      : 'No problems'}</p><p>Errors, warnings and problems from the dev server show up here as they happen.</p>${index.problems.length
+    ? `<ul class="mb-watched" aria-label="Sources">${index.problems.map((set) => {
+      const tone = sourceTone(set)
+      return `<li data-tone="${tone}">${failed(set)
+        ? ICONS.close
+        : TONE_ICON[tone]}<span class="mb-watched-label">${escapeHtml(set.label ?? set.source)}</span><span class="mb-watched-status">${escapeHtml(calmStatus(set, now))}</span></li>`
+    }).join('')}</ul>`
+    : ''}</div>`
+}
+
+export function renderUnselected(state: DockedState, index: DockedIndex, shown: BadgeFocus | undefined): string {
+  const set = shown?.source === undefined
+    ? undefined
+    : index.problems.find(entry => entry.source === shown.source)
+  return set
+    ? `<div class="mb-docked-empty" data-unselected><p class="mb-docked-empty-title">${escapeHtml(set.label ?? set.source)}</p><p>${escapeHtml(calmStatus(set, state.view?.now ?? Date.now()))}</p></div>`
+    : '<div class="mb-docked-empty" data-unselected><p>Select an entry in the list to see it here.</p></div>'
+}
+
 /** A docked view: the index of everything open, and the report it has selected rendered as the overlay renders it. */
 export function renderDocked(state: DockedState, index: DockedIndex, report?: ErrorReport, shown?: BadgeFocus, selected = 'r'): string {
   const live = !!state.channel
@@ -280,16 +322,21 @@ export function renderDocked(state: DockedState, index: DockedIndex, report?: Er
     ? index.problems.find(entry => entry.source === shown.source)
     : undefined
   const list = safeUrl(set?.url)
+  const calm = nothingOpen(index)
   return `<header class="mb-header mb-corners">
   <div class="mb-brand-group"><p class="mb-docked-title">${escapeHtml(state.title || DOCKED_TITLE)}</p><span class="mb-header-count" data-docked-count>${escapeHtml(dockedSummary(index))}</span></div>
-  <nav class="mb-tools" aria-label="Tools"><ul><li><button class="mb-tool" type="button" data-action="copy-listed" title="Copy the problems listed as Markdown" aria-label="Copy the problems listed as Markdown">${ICONS.copy}</button></li>${state.drawer
+  <nav class="mb-tools" aria-label="Tools"><ul>${calm
+    ? ''
+    : `<li><button class="mb-tool" type="button" data-action="copy-listed" title="Copy the problems listed as Markdown" aria-label="Copy the problems listed as Markdown">${ICONS.copy}</button></li>`}${state.drawer
     ? `<li><button class="mb-tool" type="button" data-action="close-docked" title="Close" aria-label="Close">${ICONS.close}</button></li>`
     : ''}</ul></nav>
   ${live ? '<div class="mb-progress" data-progress hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Build progress"><div class="mb-progress-bar"></div><span class="mb-progress-label" data-progress-label></span></div>' : ''}
 </header>
 <div class="mb-sr-only" role="status" aria-live="polite" data-announce></div>
-<div class="mb-docked">
-<div class="mb-index-pane"><div class="mb-index-filter"><input type="search" data-filter placeholder="Filter problems" aria-label="Filter problems" autocomplete="off" spellcheck="false"${attr('value', state.view?.filter || undefined)}></div>${renderIndex(state, index, shown)}</div>
+<div class="mb-docked"${attr('data-calm-view', calm)}>
+${calm
+  ? ''
+  : `<div class="mb-index-pane"><div class="mb-index-filter"><input type="search" data-filter placeholder="Filter problems" aria-label="Filter problems" autocomplete="off" spellcheck="false"${attr('value', state.view?.filter || undefined)}></div>${renderIndex(state, index, shown)}</div>`}
 <main class="mb-main"${attr('data-report-id', report?.id)}${attr('data-list', !!list)} tabindex="-1">
   ${list
     ? `<p class="mb-docked-list-bar"><a href="${escapeHtml(list)}" target="_blank" rel="noreferrer">Open in a new tab${ICONS.open}</a></p><iframe class="mb-docked-list" src="${escapeHtml(list)}" title="${escapeHtml(`${set!.label ?? set!.source}: full list`)}"></iframe>`
@@ -298,7 +345,9 @@ export function renderDocked(state: DockedState, index: DockedIndex, report?: Er
   ${renderFallback(view, selected)}`
       : state.withheld && shown?.source && index.problems.some(entry => entry.source === shown.source && entry.errors + entry.warnings)
         ? '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Problems listed on the dev machine</p><p>The dev server only lists problems on its own machine. Open this page there to see them.</p></div>'
-        : '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Nothing to report</p><p>Errors, warnings and problems from the dev server show up here as they happen.</p></div>'}
+        : calm
+          ? renderCalm(state, index)
+          : renderUnselected(state, index, shown)}
   <div class="mb-secondary">${renderSecondaryTools(report, live)}</div>
 </main>
 </div>
