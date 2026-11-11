@@ -89,7 +89,8 @@
 .mb-code a { display: inline-flex; align-items: center; gap: 4px; }
 .mb-copy { display: flex; flex: none; }
 .mb-copy > button { border-color: var(--mb-line-strong); border-radius: 6px 0 0 6px; color: var(--mb-fg); }
-.mb-copy > button[aria-expanded='true'] { background: var(--mb-surface-2); }
+.mb-copy:has(> [aria-expanded='true']) > button { background: var(--mb-surface-2); border-color: var(--mb-accent-ink); color: var(--mb-accent-ink); }
+.mb-copy:has([data-copied]) > button { background: var(--mb-accent-soft); border-color: var(--mb-accent-ink); color: var(--mb-accent-ink); }
 .mb-copy > button + button { padding: 0; border-left: 0; border-radius: 0 6px 6px 0; }
 .mb-message:has(+ .mb-single-cause), .mb-message:has(+ .mb-causes), .mb-message-body:has(+ .mb-single-cause), .mb-message-body:has(+ .mb-causes) { margin-bottom: 12px; }
 .mb-message:has(+ .mb-message-body) { margin-bottom: 10px; }

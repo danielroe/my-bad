@@ -2043,6 +2043,35 @@ describe('copy formats', () => {
     await page.close()
   })
 
+  it('highlights both halves of the copy button while either is active', async () => {
+    channel.setError(await report('Copy both halves'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async () => {},
+        },
+      })
+    })
+    await page.goto(origin)
+    const halves = () => page.locator('.mb-copy > button').evaluateAll(buttons => buttons.map((button) => {
+      const style = getComputedStyle(button)
+      return `${style.borderTopColor} ${style.backgroundColor}`
+    }))
+    const [idle] = await halves()
+    await page.getByRole('button', { name: 'Copy error', exact: true }).click()
+    await waitFor(async () => (await halves())[0] !== idle, true)
+    const [copied, menu] = await halves()
+    expect(menu).toBe(copied)
+    await page.mouse.move(0, 0)
+    await waitFor(async () => (await halves()).join(), [idle, idle].join(), 4000)
+    await page.getByRole('button', { name: 'More copy formats' }).click()
+    const [button, open] = await halves()
+    expect(button).toBe(open)
+    expect(open).not.toBe(idle)
+    await page.close()
+  })
+
   it('falls back to execCommand when the async clipboard refuses', async () => {
     channel.setError(await report('Clipboard refused'))
     const page = await browser.newPage()
