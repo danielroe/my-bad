@@ -9,7 +9,7 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
-import { countsLabel, dockedCounts, firstLine, reportLocation, warningCount } from './summary'
+import { countsLabel, dockedCounts, firstLine, repeatsLabel, reportLocation, warningCount } from './summary'
 
 export const ICONS = {
   file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6v20h12V6zM14 2v6h4M9 13h6m-6 4h6"/></svg>',
@@ -105,7 +105,7 @@ export function dockedSummary(index: DockedIndex): string {
 function renderIndexItem(entry: Pick<HistoryEntry, 'id' | 'kind' | 'name' | 'message' | 'codeSpans'>, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
   const current = shown?.id === entry.id && shown.source === source
   const message = inlineHtml(firstLine(entry.message), entry.codeSpans)
-  const title = heading !== undefined && entry.name.toLowerCase() === heading.toLowerCase()
+  const title = repeatsLabel(entry.name, heading)
     ? message
     : `${escapeHtml(entry.name)}: ${message}`
   return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${entry.kind === 'warning'

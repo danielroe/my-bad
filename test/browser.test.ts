@@ -1441,7 +1441,8 @@ describe('badge', () => {
         line: 2,
       }),
     ], { label: 'ESLint' })
-    await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'ESLint: No hint here')
+    await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'No hint here')
+    await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'ESLint: Error: No hint here')
     expect(await peek.locator('.mb-peek-hint').isVisible()).toBe(false)
     channel.clearProblems()
     expect(errors).toEqual([])

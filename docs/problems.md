@@ -69,7 +69,7 @@ If you want `my-bad` to read the snippet from disk, use `createReport` instead. 
 
 ### Names in the problem list
 
-The drawer and the DevTools dock list each problem under the `label` of its set. A `name` that only repeats the label is left out of the row, ignoring case. Any other `name`, such as `TS2322`, shows before the message.
+The drawer and the DevTools dock list each problem under the `label` of its set, and the card names the set below the problem. A `name` that only repeats the label is left out of the row and the card, ignoring case. Any other `name`, such as `TS2322`, shows before the message.
 
 ## Report the lifecycle of a run
 

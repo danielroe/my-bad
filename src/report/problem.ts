@@ -6,7 +6,7 @@ import { cropSnippet, parseCodeFrame } from './snippet'
 import { tokenizeSnippet } from './tokenize'
 
 export interface ProblemInput {
-  /** Heads the report, and prefixes its message in problem lists unless it repeats the set's `label` (or `source`). */
+  /** Heads the report, and prefixes its message in problem lists and cards unless it repeats the set's `label` (or `source`). */
   name: string
   message: string
   /** How to fix the problem, shown below the message. */

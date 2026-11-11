@@ -37,6 +37,11 @@ export function reportLocation(report: ErrorReport): Frame | undefined {
   return report.frames.find(frame => frame.file && frame.type === 'app') ?? report.frames.find(frame => frame.file)
 }
 
+/** Whether a name only repeats the label of the problem set it is listed under, ignoring case. */
+export function repeatsLabel(name: string, label: string | undefined): boolean {
+  return label !== undefined && name.toLowerCase() === label.toLowerCase()
+}
+
 export function firstLine(text: string): string {
   return splitHeadline(text).headline
 }
