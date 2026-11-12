@@ -118,12 +118,18 @@ function failed(set: ProblemSummary): boolean {
   return set.status === 'failed'
 }
 
-/** Open errors and warnings, with failed sources counted apart. */
+/** Open errors, warnings and info, with failed sources counted apart. */
 export function dockedSummary(index: DockedIndex): string {
   const broken = index.problems.filter(failed).length
   const counts = dockedCounts(index)
   return [
-    countsLabel({ errors: counts.errors - broken, warnings: counts.warnings }),
+    countsLabel({
+      errors: counts.errors - broken,
+      warnings: counts.warnings,
+      info: index.problems.reduce((total, set) => total + (failed(set)
+        ? 0
+        : set.info ?? 0), 0),
+    }),
     broken && `${plural(broken, 'check')} failed`,
   ].filter(Boolean).join(' · ') || (index.problems.some(set => set.status === 'checking')
     ? 'Checking'

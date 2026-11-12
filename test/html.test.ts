@@ -571,7 +571,7 @@ describe('docked view', () => {
     expect(renderDocked({ mode: 'docked', version: '', title: 'Nuxt <errors>' }, index)).toContain('<p class="mb-docked-title">Nuxt &lt;errors&gt;</p>')
   })
 
-  it('lists info problems with their own icon and count, apart from the totals', () => {
+  it('lists info problems with their own icon and count', () => {
     const info = {
       ...createProblemReport({ name: 'Checker', message: 'Consider a type annotation', kind: 'info' }),
       id: 'i',
@@ -592,7 +592,7 @@ describe('docked view', () => {
     const html = renderDocked({ mode: 'docked', version: '' }, index)
     expect(html).toContain('<span class="mb-count">1 info</span>')
     expect(html).toContain(`data-kind="info" data-id="i" data-source="checker" aria-current="false">${ICONS.info}`)
-    expect(html).toContain('data-docked-count>All clear</span>')
+    expect(html).toContain('data-docked-count>1 info</span>')
     const page = renderPage(info)
     expect(page).toContain('<span data-kind-label>Info</span>')
     expect(page).toContain('Copy problem')
