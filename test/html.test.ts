@@ -620,6 +620,9 @@ describe('docked view', () => {
     const lines = problem({ endLine: 3, endColumn: 4 })
     expect(lines).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
     expect(lines.match(/class="mb-line mb-line-range"/g)).toHaveLength(1)
+    const toLineEnd = problem({ endLine: 3, endColumn: 1 })
+    expect(toLineEnd).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
+    expect(toLineEnd).not.toContain('class="mb-line mb-line-range"')
     expect(problem({})).not.toContain('class="mb-line mb-line-range"')
 
     const ansi = renderAnsi(createProblemReport({

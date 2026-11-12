@@ -672,8 +672,11 @@ export function renderSnippet(snippet: Snippet, line: number, column?: number, l
   const more = line >= snippet.start && line < snippet.start + snippet.lines.length && (snippet.start < line - 3 || snippet.start + snippet.lines.length - 1 > line + 3)
   const gutter = String(snippet.start + snippet.lines.length - 1).length
   const offset = snippet.offset ?? 0
-  const endLine = end?.endLine !== undefined && end.endLine > line
-    ? end.endLine
+  const multiline = end?.endLine !== undefined && end.endLine > line
+  const endLine = multiline
+    ? end!.endLine! - (end!.endColumn === 1
+      ? 1
+      : 0)
     : line
   let rows = ''
   for (const [index, text] of snippet.lines.entries()) {
@@ -685,7 +688,7 @@ export function renderSnippet(snippet: Snippet, line: number, column?: number, l
       : column - offset
     const width = start === undefined
       ? 1
-      : endLine > line
+      : multiline
         ? text.length - start + 1
         : end?.endColumn === undefined
           ? 1
