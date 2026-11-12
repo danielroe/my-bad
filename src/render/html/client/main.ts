@@ -1,14 +1,14 @@
 import type { BuildProgress, ChannelEvent, ProblemSet, ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
-import type { BadgeFocus, Dock, DockedIndex, DockedState, Level, PageState } from '../state'
+import type { BadgeFocus, Dock, DockedIndex, DockedState, PageState } from '../state'
 import { plainText } from '../../../report/code'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
-import { listing, nothingOpen } from '../problems'
+import { listing, nothingOpen, setFacet, suggest } from '../problems'
 import { THEME_STORAGE_KEY } from '../state'
 import { firstLine } from '../summary'
 import { themeStyles } from '../theme'
-import { dockedSummary, ICONS, pagerIndex, renderCalm, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderToast, renderUnselected, renderView, reportEntries, warningCount, warningLabel } from '../view'
+import { dockedSummary, ICONS, pagerIndex, renderCalm, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderSuggestions, renderToast, renderUnselected, renderView, reportEntries, warningCount, warningLabel } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -372,7 +372,10 @@ function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFail
     button.title = label
   }
   else {
-    button.textContent = label
+    const done = stackLabels(button)
+    done.textContent = label
+    done.removeAttribute('aria-hidden')
+    done.previousElementSibling?.setAttribute('aria-hidden', 'true')
   }
   button.dataset[flag] = ''
   const restore = () => {
@@ -380,16 +383,47 @@ function setLabel(button: HTMLElement, label: string, flag: 'copied' | 'copyFail
       return
     }
     labelRestores.delete(button)
-    button.innerHTML = original
     if (iconOnly) {
+      button.innerHTML = original
       restoreAttribute(button, 'aria-label', name)
       restoreAttribute(button, 'title', title)
+    }
+    else {
+      button.querySelector('[data-done]')?.setAttribute('aria-hidden', 'true')
+      button.querySelector('[data-idle]')?.removeAttribute('aria-hidden')
     }
     delete button.dataset.copied
     delete button.dataset.copyFailed
   }
   labelRestores.set(button, restore)
   return restore
+}
+
+/**
+ * Give a labelled button its idle and done labels, and its idle and check icons, stacked in one cell each, once.
+ * Feedback then only flips `data-copied`, so the content never swaps out: no blank frame, and the width of the longer label.
+ */
+function stackLabels(button: HTMLElement): HTMLElement {
+  const existing = button.querySelector<HTMLElement>(':scope > .mb-flash > [data-done]')
+  if (existing) {
+    return existing
+  }
+  const icon = button.querySelector(':scope > svg')
+  const idle = document.createElement('span')
+  idle.dataset.idle = ''
+  idle.textContent = button.textContent.trim()
+  const done = document.createElement('span')
+  done.dataset.done = ''
+  done.setAttribute('aria-hidden', 'true')
+  const labels = document.createElement('span')
+  labels.className = 'mb-flash'
+  labels.append(idle, done)
+  button.replaceChildren(...icon
+    ? [
+        Object.assign(document.createElement('span'), { className: 'mb-flash-icon', innerHTML: `${icon.outerHTML}${ICONS.check}` }),
+      ]
+    : [], labels)
+  return done
 }
 
 function restoreAttribute(el: HTMLElement, name: string, value: string | null): void {
@@ -1111,7 +1145,6 @@ function refocusItem(m: Mount, item: DOMStringMap | undefined): void {
     'id',
     'source',
     'level',
-    'group',
   ].map(key => item[key] === undefined
     ? key === 'source'
       ? ':not([data-source])'
@@ -1120,16 +1153,83 @@ function refocusItem(m: Mount, item: DOMStringMap | undefined): void {
   m.root.querySelector<HTMLElement>(`[data-index] ${selector}`)?.focus({ preventScroll: true })
 }
 
-function toggleLevel(m: Mount, d: Docked, level: Level): void {
-  const hidden = new Set(d.state.view?.hiddenLevels)
-  if (!hidden.delete(level)) {
-    hidden.add(level)
+/** The option of the filter suggestions the keyboard is on, -1 for none, and what they were offered for. */
+let suggestActive = -1
+let suggestResult: ReturnType<typeof suggest> | undefined
+
+function suggestionOptions(m: Mount): HTMLElement[] {
+  return [
+    ...m.root.querySelectorAll<HTMLElement>('[data-suggest] [role="option"]'),
+  ]
+}
+
+function hideSuggestions(m: Mount): void {
+  const box = m.root.querySelector<HTMLElement>('[data-suggest]')
+  const input = m.root.querySelector<HTMLInputElement>('[data-filter]')
+  suggestActive = -1
+  suggestResult = undefined
+  if (box) {
+    box.hidden = true
+    box.replaceChildren()
   }
-  d.state.view = {
-    ...d.state.view,
-    hiddenLevels: [...hidden],
+  input?.setAttribute('aria-expanded', 'false')
+  input?.removeAttribute('aria-activedescendant')
+}
+
+/** Offer the filters that fit the query as typed, while the field has focus. */
+function updateSuggestions(m: Mount, d: Docked): void {
+  const box = m.root.querySelector<HTMLElement>('[data-suggest]')
+  const input = m.root.querySelector<HTMLInputElement>('[data-filter]')
+  if (!box || !input || (input.getRootNode() as Document | ShadowRoot).activeElement !== input) {
+    return hideSuggestions(m)
   }
-  refreshIndex(m, d)
+  const result = suggest(dockedIndex(d), d.state.view ?? {}, d.state.cwd, input.value)
+  const count = result.groups.reduce((sum, group) => sum + group.items.length, 0)
+  if (!count) {
+    return hideSuggestions(m)
+  }
+  suggestResult = result
+  suggestActive = Math.min(suggestActive, count - 1)
+  box.innerHTML = renderSuggestions(result, suggestActive)
+  box.hidden = false
+  input.setAttribute('aria-expanded', 'true')
+  if (suggestActive >= 0) {
+    input.setAttribute('aria-activedescendant', `mb-suggest-${suggestActive}`)
+    box.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }
+  else {
+    input.removeAttribute('aria-activedescendant')
+  }
+}
+
+function moveSuggestion(m: Mount, d: Docked, by: number): void {
+  const count = suggestionOptions(m).length
+  suggestActive = suggestActive < 0 && by < 0
+    ? count - 1
+    : (suggestActive + by + count) % count
+  updateSuggestions(m, d)
+}
+
+/** Put a suggested token in place of the word being typed, and keep typing after it. */
+function applySuggestion(m: Mount, d: Docked, token: string): void {
+  const base = suggestResult?.base ?? d.state.view?.filter ?? ''
+  suggestActive = -1
+  setQuery(m, d, `${base}${token} `)
+}
+
+/** A level tab sets the `is:` token, All clears it. */
+function pickLevel(m: Mount, d: Docked, level: string): void {
+  setQuery(m, d, setFacet(d.state.view?.filter ?? '', 'is', level === 'all'
+    ? undefined
+    : level))
+}
+
+function setQuery(m: Mount, d: Docked, text: string): void {
+  const input = m.root.querySelector<HTMLInputElement>('[data-filter]')
+  if (input) {
+    input.value = text
+  }
+  filterIndex(m, d, text)
 }
 
 function showAll(m: Mount, d: Docked): void {
@@ -1142,12 +1242,12 @@ function showAll(m: Mount, d: Docked): void {
   filter?.focus()
 }
 
-function groupIndex(m: Mount, d: Docked, group: string | undefined): void {
-  const by = group === 'file'
-    ? 'file'
-    : 'source'
-  storage(STORAGE.group, by)
-  d.state.view = { ...d.state.view, group: by }
+function toggleGroup(m: Mount, d: Docked): void {
+  const group = d.state.view?.group === 'file'
+    ? 'source'
+    : 'file'
+  storage(STORAGE.group, group)
+  d.state.view = { ...d.state.view, group }
   refreshIndex(m, d)
 }
 
@@ -1167,18 +1267,6 @@ async function copyListed(m: Mount, d: Docked, button: HTMLElement): Promise<voi
 
 function filterIndex(m: Mount, d: Docked, text: string): void {
   d.state.view = { ...d.state.view, filter: text }
-  refreshIndex(m, d)
-}
-
-function toggleSource(m: Mount, d: Docked, source: string): void {
-  const hidden = new Set(d.state.view?.hiddenSources)
-  if (!hidden.delete(source)) {
-    hidden.add(source)
-  }
-  d.state.view = {
-    ...d.state.view,
-    hiddenSources: [...hidden],
-  }
   refreshIndex(m, d)
 }
 
@@ -1211,6 +1299,10 @@ function refreshIndex(m: Mount, d: Docked): void {
     next.scrollTop = scroll
   }
   refocusItem(m, item)
+  // New problems or a changed query refresh an open list; a closed one opens again when the user types or focuses.
+  if (!m.root.querySelector<HTMLElement>('[data-suggest]')?.hidden) {
+    updateSuggestions(m, d)
+  }
   const count = m.root.querySelector('[data-docked-count]')
   if (count) {
     count.textContent = dockedSummary(index)
@@ -1834,8 +1926,15 @@ function bind(m: Mount): void {
         return
       }
       case 'copy': {
+        const menu = target.closest('[data-menu]')
+        const primary = menu?.querySelector<HTMLElement>(':scope > [data-action="copy"]')
+        if (primary && primary !== target) {
+          closeMenus(m, { focusFrom: target })
+          void copy(m, target.dataset.copy ?? 'markdown', primary)
+          announce(m, `Copied: ${target.textContent.trim().replace(/^Copy /, '')}`)
+          return
+        }
         void copy(m, target.dataset.copy ?? 'markdown', target)
-        setTimeout(closeMenus, 1200, m)
         return
       }
       case 'copy-location':
@@ -1934,21 +2033,21 @@ function bind(m: Mount): void {
         return void navigateHistory(m, Number(target.dataset.dir))
       case 'select':
         return void selectDocked(m, { id: target.dataset.id, source: target.dataset.source })
-      case 'toggle-source':
-        return m.docked && target.dataset.source !== undefined
-          ? toggleSource(m, m.docked, target.dataset.source)
-          : undefined
       case 'level':
         return m.docked && target.dataset.level
-          ? toggleLevel(m, m.docked, target.dataset.level as Level)
+          ? pickLevel(m, m.docked, target.dataset.level)
           : undefined
       case 'show-all':
         return m.docked
           ? showAll(m, m.docked)
           : undefined
+      case 'suggest':
+        return m.docked && target.dataset.token
+          ? applySuggestion(m, m.docked, target.dataset.token)
+          : undefined
       case 'group':
         return m.docked
-          ? groupIndex(m, m.docked, target.dataset.group)
+          ? toggleGroup(m, m.docked)
           : undefined
       case 'copy-listed':
         return void (m.docked && copyListed(m, m.docked, target))
@@ -2007,7 +2106,54 @@ function bind(m: Mount): void {
   container.addEventListener('input', (event) => {
     const target = event.target
     if (m.docked && target instanceof HTMLInputElement && target.matches('[data-filter]')) {
+      suggestActive = /\S$/.test(target.value)
+        ? 0
+        : -1
       filterIndex(m, m.docked, target.value)
+      updateSuggestions(m, m.docked)
+    }
+  })
+  container.addEventListener('focusin', (event) => {
+    if (m.docked && (event.target as HTMLElement).matches?.('[data-filter]')) {
+      suggestActive = -1
+      updateSuggestions(m, m.docked)
+    }
+  })
+  container.addEventListener('focusout', (event) => {
+    if ((event.target as HTMLElement).matches?.('[data-filter]')) {
+      hideSuggestions(m)
+    }
+  })
+  // Picking a suggestion with the pointer keeps the focus, and so the list, in the field.
+  container.addEventListener('mousedown', (event) => {
+    if ((event.target as HTMLElement).closest?.('[data-suggest]')) {
+      event.preventDefault()
+    }
+  })
+  container.addEventListener('keydown', (event) => {
+    const key = (event as KeyboardEvent).key
+    const field = event.target
+    if (!m.docked || !(field instanceof HTMLInputElement) || !field.matches('[data-filter]') || m.root.querySelector<HTMLElement>('[data-suggest]')?.hidden !== false) {
+      return
+    }
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      event.preventDefault()
+      moveSuggestion(m, m.docked, key === 'ArrowDown'
+        ? 1
+        : -1)
+    }
+    else if (key === 'Enter' && suggestActive >= 0) {
+      event.preventDefault()
+      const token = suggestionOptions(m)[suggestActive]?.dataset.token
+      if (token) {
+        applySuggestion(m, m.docked, token)
+      }
+    }
+    else if (key === 'Escape') {
+      // The first Escape closes the list, the next one clears the field.
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      hideSuggestions(m)
     }
   })
   container.addEventListener('keydown', (event) => {
