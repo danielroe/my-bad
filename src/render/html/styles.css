@@ -368,11 +368,12 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-docked-calm p { margin: 0 0 6px; }
 .mb-docked-calm[data-failed] > svg, .mb-docked-calm[data-failed] .mb-docked-empty-title { color: var(--mb-error); }
 .mb-watched { margin: 24px 0 0; padding: 0; list-style: none; text-align: left; border: 1px solid var(--mb-line); border-radius: 8px; }
-.mb-watched li { display: grid; grid-template-columns: 14px auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 12px; font-size: 13px; }
+.mb-watched li { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: 13px; }
 .mb-watched li + li { border-top: 1px solid var(--mb-line); }
 .mb-watched svg { width: 13px; height: 13px; }
-.mb-watched-label { color: var(--mb-fg); font-weight: 500; }
-.mb-watched-status { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.mb-watched li > svg { flex: none; }
+.mb-watched-label { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; color: var(--mb-fg); font-weight: 500; }
+.mb-watched-status { flex: 1 0 40%; min-width: 0; overflow-wrap: anywhere; text-align: right; }
 .mb-watched [data-tone='error'] svg, .mb-watched [data-tone='error'] .mb-watched-status { color: var(--mb-error); }
 .mb-docked-empty-title { margin: 0 0 6px; color: var(--mb-fg); font: 600 20px/1.3 var(--mb-font-display); }
 .mb-docked-empty p { margin: 0 0 6px; }
