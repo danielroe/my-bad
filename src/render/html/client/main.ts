@@ -503,14 +503,15 @@ function copyShortcut() {
     : 'Ctrl+C'
 }
 
-async function copy(m: Mount, what: string, button: HTMLElement): Promise<void> {
+/** `format` names what a menu item copied, for the live region: its button only shows the generic outcome. */
+async function copy(m: Mount, what: string, button: HTMLElement, format?: string): Promise<void> {
   const report = reportEntries(m.state.report).find(entry => entry.path === m.selected)?.report ?? m.state.report
   const text = what === 'json'
     ? JSON.stringify(report, null, 2)
     : `${what === 'prompt'
       ? 'Help diagnose this error. Trace the root cause in the source, explain the failure, and propose the smallest appropriate fix. Verify the fix against the relevant behaviour.\n\n'
       : ''}${toMarkdown(report, { cwd: m.state.cwd })}`
-  return copyText(m, text, button)
+  return copyText(m, text, button, undefined, format)
 }
 
 function copyLocation(m: Mount, button: HTMLElement): Promise<void> | undefined {
@@ -531,7 +532,7 @@ function copyLocation(m: Mount, button: HTMLElement): Promise<void> | undefined 
 }
 
 /** `what` marks an icon-only button, whose feedback goes into its accessible name and the live region. */
-async function copyText(m: Mount, text: string, button: HTMLElement, what?: string): Promise<void> {
+async function copyText(m: Mount, text: string, button: HTMLElement, what?: string, format?: string): Promise<void> {
   const iconOnly = what !== undefined
   const done = () => {
     flash(button, iconOnly
@@ -539,6 +540,9 @@ async function copyText(m: Mount, text: string, button: HTMLElement, what?: stri
       : 'Copied', iconOnly)
     if (iconOnly) {
       announce(m, `Copied ${what}: ${text}`)
+    }
+    else if (format) {
+      announce(m, `Copied ${format}`)
     }
   }
   try {
@@ -554,8 +558,8 @@ async function copyText(m: Mount, text: string, button: HTMLElement, what?: stri
   const restore = setLabel(button, iconOnly
     ? `${prompt} to copy the ${what}`
     : prompt, 'copyFailed', iconOnly)
-  if (iconOnly) {
-    announce(m, `${prompt} to copy the ${what}`)
+  if (iconOnly || format) {
+    announce(m, `${prompt} to copy the ${what ?? format}`)
   }
   await offerManualCopy(text)
   restore()
@@ -1930,8 +1934,7 @@ function bind(m: Mount): void {
         const primary = menu?.querySelector<HTMLElement>(':scope > [data-action="copy"]')
         if (primary && primary !== target) {
           closeMenus(m, { focusFrom: target })
-          void copy(m, target.dataset.copy ?? 'markdown', primary)
-          announce(m, `Copied: ${target.textContent.trim().replace(/^Copy /, '')}`)
+          void copy(m, target.dataset.copy ?? 'markdown', primary, target.textContent.trim().replace(/^Copy /, ''))
           return
         }
         void copy(m, target.dataset.copy ?? 'markdown', target)

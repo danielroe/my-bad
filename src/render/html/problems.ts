@@ -123,7 +123,7 @@ export function matchesQuery(entry: Listed, query: Query, cwd: string | undefine
 
 /** Replace the `key:` token of a query with `key:value`, or drop it without a value, leaving the rest as typed. */
 export function setFacet(text: string, key: QueryKey, value?: string): string {
-  const parts = text.trim().split(/\s+/).filter(part => part && !part.toLowerCase().startsWith(`${key}:`))
+  const parts = text.trim().split(/\s+/).filter(part => part && !part.toLowerCase().replace(/^-/, '').startsWith(`${key}:`))
   if (value) {
     parts.push(`${key}:${value}`)
   }
@@ -211,9 +211,15 @@ const SUGGESTED_FILES = 5
  * word offers the values it appears in. Counts are what each suggestion would list given the rest of the query.
  */
 export function suggest(index: DockedIndex, view: IndexView, cwd: string | undefined, text: string): { base: string, negate: boolean, groups: Array<{ key: QueryKey, items: Suggestion[] }> } {
-  const typing = /\S$/.test(text)
-    ? text.slice(text.search(/\S+$/))
-    : ''
+  // Inside an unclosed quote, the word being typed starts with the token that opened it.
+  const quoted = (text.match(/"/g)?.length ?? 0) % 2
+    ? text.slice(0, text.lastIndexOf('"')).search(/\S*$/)
+    : -1
+  const typing = quoted >= 0
+    ? text.slice(quoted)
+    : /\S$/.test(text)
+      ? text.slice(text.search(/\S+$/))
+      : ''
   const base = text.slice(0, text.length - typing.length)
   const query = parseQuery(base)
   const { levels, sources } = facets(index, { ...view, filter: base }, cwd)
@@ -255,7 +261,7 @@ export function suggest(index: DockedIndex, view: IndexView, cwd: string | undef
     })),
   }
   const picked = (item: Suggestion) => query[item.key].include.includes(item.value.toLowerCase())
-  const word = typing.replace(/^-/, '').toLowerCase()
+  const word = typing.replace(/^-/, '').replace(/^([a-z]+:)?"/, '$1').toLowerCase()
   const [, typedKey, typedValue = ''] = /^([a-z]+):(.*)$/.exec(word) ?? []
   const groups = KEYS.map((key) => {
     let items = all[key].filter(item => !picked(item))

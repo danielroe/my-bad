@@ -160,3 +160,39 @@ describe('filter suggestions', () => {
     })
   })
 })
+
+describe('review fixes', () => {
+  it('replaces a negated level too when a tab sets the level', () => {
+    expect(setFacet('-is:error nme', 'is', 'error')).toBe('nme is:error ')
+    expect(setFacet('-is:error', 'is')).toBe('')
+  })
+
+  it('completes a quoted facet as one token, in place of what was typed', () => {
+    const index = {
+      history: [],
+      problems: [
+        {
+          source: 'ts',
+          errors: 1,
+          warnings: 0,
+          reports: [
+            {
+              ...createProblemReport({
+                name: 'TS',
+                message: 'Bad',
+                file: '/proj/src/my component.ts',
+                line: 1,
+              }, { cwd: '/proj' }),
+              id: 'a',
+            },
+          ],
+        },
+      ],
+    }
+    const result = suggest(index, {}, '/proj', 'bad file:"src/my co')
+    expect(result.base).toBe('bad ')
+    expect(result.groups.map(({ items }) => items.map(item => item.token))).toEqual([
+      ['file:"src/my component.ts"'],
+    ])
+  })
+})

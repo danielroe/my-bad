@@ -363,9 +363,9 @@ button.mb-loc:hover { text-decoration: underline; text-underline-offset: 3px; }
 .mb-tab[data-level='warning'] { --mb-dot: var(--mb-warning); }
 .mb-tab[data-level='info'] { --mb-dot: var(--mb-info); }
 .mb-tab-count { font-weight: 400; color: var(--mb-fg-muted); font-variant-numeric: tabular-nums; }
-.mb-index-group:only-of-type h2 .mb-count:not(.mb-status) { display: none; }
+.mb-index:has(.mb-tab-list) .mb-index-group:only-of-type h2 .mb-count:not(.mb-status) { display: none; }
 /* The tabs carry the counts while the list is shown. */
-:root:has(.mb-index-pane) [data-docked-count] { display: none; }
+:root:has(.mb-tab-list) [data-docked-count] { display: none; }
 .mb-index { flex: 1; min-height: 0; overflow: auto; padding: 4px 0 16px; font-size: 13px; }
 .mb-index-group[data-index-file] h2 { letter-spacing: 0; text-transform: none; }
 .mb-index-group[data-index-file] .mb-index-label { direction: rtl; text-align: left; }
