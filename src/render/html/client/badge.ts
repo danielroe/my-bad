@@ -25,22 +25,40 @@ const TYPES: Array<ChannelEvent['type']> = [
 ]
 
 const ICONS = {
+  error: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>',
   warning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></svg>',
-  error: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>',
-  checking: '<svg class="mb-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
+  failed: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
 }
+
+const LEVELS = ['error', 'warning', 'failed'] as const
+
+const DOT = '<svg class="mb-dot" viewBox="0 0 6 6" aria-hidden="true"><circle cx="3" cy="3" r="3"/></svg>'
 
 /** How long a new report is shown in full before the badge collapses back. */
 const PEEK_MS = 6000
+
+/** How long the badge says all is clear before it steps away. */
+const CLEAR_MS = 1400
+
+const EASE = 'cubic-bezier(.32, .72, 0, 1)'
 
 interface Badge {
   host: HTMLElement
   dock: HTMLElement
   button: HTMLButtonElement
-  problems: HTMLElement
-  count: HTMLElement
+  lamp: HTMLElement
+  list: HTMLElement
   peek: HTMLButtonElement
   status: HTMLElement
+}
+
+/** Somewhere the badge can take you: the open error and warnings of the page, or a problem set, or a group of them. */
+type Place = { page: true } | { page?: undefined, sets: ProblemSummary[] }
+
+interface Totals {
+  error: number
+  warning: number
+  failed: number
 }
 
 interface Peek {
@@ -122,6 +140,14 @@ function start(state: BadgeState, nonce: string | undefined): void {
   let loading = false
   let pending: ErrorReport | undefined
   let badge: Badge | undefined
+  let listOpen = false
+  /** Whether the badge last showed anything, so the moment everything clears can be told apart from a quiet page. */
+  let showing = false
+  let clearTimer: ReturnType<typeof setTimeout> | undefined
+  let shownPlaces: Place[] = []
+  let shownTotals: Totals = { error: 0, warning: 0, failed: 0 }
+  /** The totals last shown, so a new error can make the light ping. */
+  let previous: Totals | undefined
   let drawer: { root: HTMLElement, frame: HTMLIFrameElement, source?: string } | undefined
   const send = focusSender(() => drawer?.frame.contentWindow)
   let host: MyBadSharedSource['host']
@@ -532,14 +558,10 @@ function start(state: BadgeState, nonce: string | undefined): void {
     if (!drawer) {
       return
     }
-    const { root, source } = drawer
+    const { root } = drawer
     drawer = undefined
     root.remove()
-    const pill = [
-      ...badge?.problems.querySelectorAll<HTMLElement>('[data-source]') ?? [],
-    ].find(entry => entry.dataset.source === source)
-    const next = pill ?? badge?.button
-    next?.focus()
+    badge?.button.focus()
   }
 
   addEventListener('message', (event) => {
@@ -548,8 +570,19 @@ function start(state: BadgeState, nonce: string | undefined): void {
     }
   })
   addEventListener('keydown', (event) => {
-    if (drawer && event.key === 'Escape') {
+    if (event.key !== 'Escape') {
+      return
+    }
+    if (drawer) {
       closeDrawer()
+    }
+    else if (listOpen) {
+      toggleList(false)
+    }
+  })
+  addEventListener('pointerdown', (event) => {
+    if (listOpen && badge && !event.composedPath().includes(badge.dock)) {
+      toggleList(false)
     }
   })
 
@@ -574,24 +607,27 @@ function start(state: BadgeState, nonce: string | undefined): void {
     const dock = document.createElement('div')
     dock.className = 'mb-dock'
     dock.lang = 'en'
-    dock.innerHTML = '<span class="mb-problems"><span></span><span class="mb-problems-count"></span></span><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span></button><button type="button" class="mb-peek" hidden><span class="mb-peek-inner"><span></span><span class="mb-peek-message"></span><span class="mb-peek-hint"></span><span class="mb-peek-meta"></span></span></button>'
-    const [problems, button, card] = dock.children as unknown as [HTMLElement, HTMLButtonElement, HTMLButtonElement]
-    button.addEventListener('click', () => void expand())
+    const slots = LEVELS.map(level => `<span class="mb-slot" data-level="${level}"><span><span class="mb-fold mb-slot-icon"><span>${ICONS[level]}</span></span><span class="mb-slot-num"></span><span class="mb-fold mb-slot-word"><span>${level === 'failed'
+      ? ' failed'
+      : ''}</span></span></span></span>`).join('')
+    dock.innerHTML = `<div class="mb-list" id="mb-list" role="group" aria-label="Problems" hidden><div class="mb-list-inner"></div></div><button type="button" class="mb-peek" hidden><span class="mb-peek-inner">${DOT}<span class="mb-peek-message"></span><span class="mb-peek-hint"></span><span class="mb-peek-meta"></span></span></button><button type="button" class="mb-badge"><span class="mb-badge-title" aria-hidden="true">Problems</span><span class="mb-lamp"></span><span class="mb-sr-only"></span>${slots}<span class="mb-slot" data-level="clear"><span>All clear</span></span><span class="mb-sr-only"></span></button>`
+    const [list, card, button] = dock.children as unknown as [HTMLElement, HTMLButtonElement, HTMLButtonElement]
+    button.addEventListener('click', event => select(event.detail === 0))
     card.addEventListener('click', openPeek)
     const release = () => peek && holdPeek()
     card.addEventListener('pointerleave', release)
     card.addEventListener('blur', release)
+    list.addEventListener('keydown', event => moveInList(event))
     const status = document.createElement('div')
     status.className = 'mb-sr-only'
     status.setAttribute('role', 'status')
     shadow.append(style, dock, status)
-    const [, count] = button.children as unknown as HTMLElement[]
     return {
       host,
       dock,
       button,
-      problems,
-      count: count!,
+      lamp: button.querySelector('.mb-lamp')!,
+      list,
       peek: card,
       status,
     }
@@ -623,7 +659,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
     if (peek === drawn) {
       return
     }
-    if (peek && !drawn && document.hasFocus() && host.shadowRoot!.activeElement) {
+    if (peek && !drawn && (listOpen || (document.hasFocus() && host.shadowRoot!.activeElement))) {
       peek = undefined
       return
     }
@@ -634,14 +670,14 @@ function start(state: BadgeState, nonce: string | undefined): void {
       card.hidden = false
       dock.dataset.peek = ''
       if (!from) {
-        void morph(card, pillOf(peek), true)
+        void morph(card, badge!.button, true)
       }
       return
     }
     if (!reducedMotion()) {
       delete dock.dataset.peek
     }
-    void morph(card, pillOf(from!), false).then(() => {
+    void morph(card, badge!.button, false).then(() => {
       if (!drawn) {
         card.hidden = true
         delete dock.dataset.peek
@@ -662,12 +698,6 @@ function start(state: BadgeState, nonce: string | undefined): void {
     }
   }
 
-  function pillOf(shown: Peek): HTMLElement {
-    return shown.source === undefined
-      ? badge!.button
-      : badge!.problems
-  }
-
   function fillPeek(card: HTMLElement, shown: Peek): void {
     const { report, more, source } = shown
     const set = source === undefined
@@ -677,9 +707,8 @@ function start(state: BadgeState, nonce: string | undefined): void {
       ? 'warning'
       : 'error'
     const frame = reportLocation(report)
-    const [icon, message, hint, meta] = card.firstElementChild!.children as unknown as HTMLElement[]
+    const [, message, hint, meta] = card.firstElementChild!.children as unknown as HTMLElement[]
     card.dataset.kind = kind
-    icon!.outerHTML = ICONS[kind]
     message!.innerHTML = `${set && repeatsLabel(report.name, set.label ?? set.source)
       ? ''
       : `${escapeHtml(report.name)}: `}${inlineHtml(firstLine(report.message), report.codeSpans)}`
@@ -709,6 +738,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
       width: `${from.width}px`,
       height: `${from.height}px`,
       borderRadius: `${from.height / 2}px`,
+      padding: '0px',
       transform: `translate(${side.endsWith('left')
         ? from.left - to.left
         : from.right - to.right}px, ${side.startsWith('top')
@@ -719,6 +749,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
       width: `${to.width}px`,
       height: `${to.height}px`,
       borderRadius: getComputedStyle(card).borderRadius,
+      padding: getComputedStyle(card).padding,
       transform: 'none',
     }
     const frames: Keyframe[] = reduced
@@ -762,7 +793,9 @@ function start(state: BadgeState, nonce: string | undefined): void {
             { opacity: 0, offset: 0.4 },
             { opacity: 0 },
           ]
-      for (const line of [...inner.children].slice(1)) {
+      for (const line of [...inner.children].slice(card === badge!.peek
+        ? 1
+        : 0)) {
         line.animate(text, timing)
       }
     }
@@ -778,48 +811,6 @@ function start(state: BadgeState, nonce: string | undefined): void {
     const view = document.querySelector(tag)
     const dialog = view?.shadowRoot?.querySelector('[data-overlay]')
     return !!view && (!dialog || !dialog.hasAttribute('data-hidden'))
-  }
-
-  function renderProblems(pill: HTMLElement, listed: ProblemSummary[]): void {
-    const kind = listed.some(set => set.errors || failed(set))
-      ? 'error'
-      : 'warning'
-    const checking = [
-      ...problems.values(),
-    ].some(set => set.status === 'checking')
-    pill.dataset.kind = kind
-    pill.firstElementChild!.outerHTML = ICONS[checking
-      ? 'checking'
-      : kind]
-    const entries = groupProblems(listed).map((sets) => {
-      const broken = sets.filter(failed).length
-      const count = sets.reduce((total, set) => failed(set)
-        ? total
-        : total + set.errors + set.warnings, 0)
-      const focus = { source: sets[0]!.source }
-      const entry = document.createElement('button')
-      entry.type = 'button'
-      entry.dataset.source = focus.source
-      entry.addEventListener('click', () => openProblems(focus))
-      entry.textContent = `${sets[0]!.group ?? sets[0]!.label ?? sets[0]!.source} ${broken === sets.length
-        ? 'failed'
-        : broken
-          ? `${count}, ${broken} failed`
-          : count}`
-      entry.title = `${sets.map(set => `${set.group
-        ? `${set.group} `
-        : ''}${set.label ?? set.source}: ${failed(set)
-        ? `failed${set.error
-          ? `: ${set.error}`
-          : ''}`
-        : counts(set.errors, set.warnings)}${set.status === 'checking'
-        ? ' (checking)'
-        : ''}`).join('; ')}`
-      return entry
-    })
-    pill.lastElementChild!.replaceChildren(...entries.flatMap((entry, index) => index
-      ? [' · ', entry]
-      : [entry]))
   }
 
   function listedProblems(): ProblemSummary[] {
@@ -842,17 +833,378 @@ function start(state: BadgeState, nonce: string | undefined): void {
     ]
   }
 
+  /** Every place with something to show, the page first. */
+  function placesOf(showPage: boolean, listed: ProblemSummary[]): Place[] {
+    return [
+      ...showPage
+        ? [
+            { page: true } as const,
+          ]
+        : [],
+      ...groupProblems(listed).map(sets => ({ sets })),
+    ]
+  }
+
+  function totalsOf(showPage: boolean, listed: ProblemSummary[]): Totals {
+    const sum: Totals = {
+      error: showPage && current
+        ? 1
+        : 0,
+      warning: showPage
+        ? warnings().length
+        : 0,
+      failed: 0,
+    }
+    for (const set of listed) {
+      if (failed(set)) {
+        sum.failed++
+      }
+      else {
+        sum.error += set.errors
+        sum.warning += set.warnings
+      }
+    }
+    return sum
+  }
+
+  function describe(sum: Totals): string {
+    return [
+      counts(sum.error, sum.warning),
+      sum.failed && plural(sum.failed, 'failed check'),
+    ].filter(Boolean).join(', ')
+  }
+
+  /** The pill takes you straight to the only place with problems, and lists them when there is a choice. */
+  function select(byKeyboard: boolean): void {
+    if (listOpen || shownPlaces.length > 1) {
+      toggleList(!listOpen, byKeyboard)
+      return
+    }
+    const [place] = shownPlaces
+    if (place) {
+      peek = undefined
+      clearTimeout(peekTimer)
+      render()
+      go(place)
+    }
+  }
+
+  function go(place: Place): void {
+    if (place.page) {
+      void expand()
+    }
+    else {
+      openProblems({ source: place.sets[0]!.source })
+    }
+  }
+
+  function toggleList(open: boolean, byKeyboard = false): void {
+    if (!badge || open === listOpen) {
+      return
+    }
+    const { dock, list, button, host } = badge
+    listOpen = open
+    button.setAttribute('aria-expanded', String(open))
+    if (open) {
+      clearTimeout(peekTimer)
+      hidePeek()
+      fillList()
+      list.hidden = false
+      dock.dataset.open = ''
+      void morph(list, button, true)
+      if (byKeyboard) {
+        list.querySelector<HTMLElement>('.mb-row')?.focus()
+      }
+      return
+    }
+    const active = host.shadowRoot!.activeElement
+    delete dock.dataset.open
+    if (active && list.contains(active)) {
+      button.focus()
+    }
+    void morph(list, button, false).then(() => {
+      if (!listOpen) {
+        list.hidden = true
+      }
+    })
+  }
+
+  function moveInList(event: KeyboardEvent): void {
+    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+    if (!badge || !keys.includes(event.key)) {
+      return
+    }
+    const rows = [
+      ...badge.list.querySelectorAll<HTMLElement>('.mb-row'),
+    ]
+    const at = rows.indexOf(badge.host.shadowRoot!.activeElement as HTMLElement)
+    const next = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? rows.length - 1
+        : (at + (event.key === 'ArrowDown'
+            ? 1
+            : -1) + rows.length) % rows.length
+    event.preventDefault()
+    rows[next]?.focus()
+  }
+
+  function dot(kind: string): Element {
+    const holder = document.createElement('span')
+    holder.innerHTML = DOT
+    const el = holder.firstElementChild!
+    el.setAttribute('data-kind', kind)
+    return el
+  }
+
+  function span(className: string, text = ''): HTMLElement {
+    const el = document.createElement('span')
+    el.className = className
+    el.textContent = text
+    return el
+  }
+
+  /** The count columns of the list match the counts the open pill shows, so each number sits under its level. */
+  function fillList(): void {
+    const { list, host } = badge!
+    const columns = LEVELS.filter(level => shownTotals[level])
+    list.style.setProperty('--mb-cols', `6px minmax(0, 1fr)${columns.map(level => level === 'failed'
+      ? ' var(--mb-col-failed)'
+      : ' var(--mb-col)').join('')}`)
+    const rows: HTMLElement[] = []
+    shownPlaces.forEach((place, index) => {
+      if (index === 1 && shownPlaces[0]!.page) {
+        const section = document.createElement('div')
+        section.className = 'mb-list-section'
+        section.textContent = 'Checks'
+        rows.push(section)
+      }
+      rows.push(listRow(place, columns))
+    })
+    const focused = (host.shadowRoot!.activeElement as HTMLElement | null)?.dataset.place
+    list.firstElementChild!.replaceChildren(...rows)
+    if (focused) {
+      rows.find(row => row.dataset.place === focused)?.focus()
+    }
+  }
+
+  function listRow(place: Place, columns: Array<typeof LEVELS[number]>): HTMLElement {
+    const entry = document.createElement('button')
+    entry.type = 'button'
+    entry.className = 'mb-row'
+    const cells: Totals = { error: 0, warning: 0, failed: 0 }
+    let name: string
+    let detail = ''
+    let checking = false
+    let broken = false
+    if (place.page) {
+      name = 'This page'
+      cells.error = current ? 1 : 0
+      cells.warning = warnings().length
+      detail = current
+        ? `${current.name}: ${plainText(firstLine(current.message), current.codeSpans)}`
+        : ''
+      entry.dataset.place = 'page'
+    }
+    else {
+      const { sets } = place
+      const first = sets[0]!
+      const failures = sets.filter(failed)
+      broken = failures.length === sets.length
+      checking = sets.some(set => set.status === 'checking')
+      for (const set of sets) {
+        if (!failed(set)) {
+          cells.error += set.errors
+          cells.warning += set.warnings
+        }
+      }
+      cells.failed = broken ? 0 : failures.length
+      name = first.group ?? first.label ?? first.source
+      detail = broken
+        ? failures.map(set => set.error).filter(Boolean).join('; ')
+        : checking
+          ? 'Checking…'
+          : first.group
+            ? sets.map(set => set.label ?? set.source).join(', ')
+            : ''
+      entry.title = sets.map(set => `${set.group
+        ? `${set.group} `
+        : ''}${set.label ?? set.source}: ${failed(set)
+        ? `failed${set.error
+          ? `: ${set.error}`
+          : ''}`
+        : counts(set.errors, set.warnings)}${set.status === 'checking'
+        ? ' (checking)'
+        : ''}`).join('; ')
+      entry.dataset.place = entry.dataset.source = first.source
+    }
+    const level = broken || cells.error
+      ? 'error'
+      : cells.warning
+        ? 'warning'
+        : 'idle'
+    // the row is named by what it shows, like "TypeScript: 2 errors, 1 warning", with the joining words for screen readers only
+    const said = (text: string) => span('mb-sr-only', text)
+    const values = columns.filter(column => cells[column])
+    const title = span('mb-row-name')
+    title.append(span('', name), said(': '))
+    if (detail) {
+      const line = span('mb-row-detail', detail)
+      if (broken) {
+        line.dataset.wrap = ''
+      }
+      if (checking && !broken) {
+        line.prepend(span('mb-spinner'))
+      }
+      if (broken || values.length) {
+        line.append(said(', '))
+      }
+      title.append(line)
+    }
+    entry.append(dot(level), title)
+    if (broken) {
+      entry.append(span('mb-row-failed', 'Failed'))
+    }
+    else {
+      for (const column of columns) {
+        const value = cells[column]
+        const cell = span('mb-row-count')
+        cell.dataset.level = column === 'failed'
+          ? 'error'
+          : column
+        if (value) {
+          cell.append(values.indexOf(column)
+            ? said(', ')
+            : '', span('', String(value)), said(column === 'failed'
+            ? ' failed'
+            : ` ${value === 1
+              ? column
+              : `${column}s`}`))
+        }
+        entry.append(cell)
+      }
+    }
+    entry.addEventListener('click', () => {
+      toggleList(false)
+      go(place)
+    })
+    return entry
+  }
+
+  /** A count rolls to its new value, up when it grows and down when it shrinks. */
+  function setCount(el: HTMLElement, value: number): void {
+    const text = String(value)
+    if (el.dataset.value === text) {
+      return
+    }
+    const from = Number(el.dataset.value)
+    el.dataset.value = text
+    const old = el.lastElementChild
+    old?.setAttribute('aria-hidden', 'true')
+    el.append(span('', text))
+    if (!old) {
+      return
+    }
+    if (reducedMotion() || !badge!.host.isConnected) {
+      old.remove()
+      return
+    }
+    const shift = value > from
+      ? 70
+      : -70
+    const timing = { duration: 260, easing: EASE }
+    old.animate([
+      { transform: 'none', opacity: 1 },
+      { transform: `translateY(${-shift}%)`, opacity: 0 },
+    ], timing).finished.then(() => old.remove(), () => old.remove())
+    el.lastElementChild!.animate([
+      { transform: `translateY(${shift}%)`, opacity: 0 },
+      { transform: 'none', opacity: 1 },
+    ], timing)
+  }
+
+  function drawSummary(sum: Totals, clear: boolean): void {
+    for (const slot of badge!.button.querySelectorAll<HTMLElement>('.mb-slot')) {
+      const level = slot.dataset.level as typeof LEVELS[number] | 'clear'
+      const value = level === 'clear'
+        ? Number(clear)
+        : sum[level]
+      slot.toggleAttribute('data-on', !!value)
+      slot.setAttribute('aria-hidden', String(!value))
+      if (level === 'clear' || !value) {
+        continue
+      }
+      setCount(slot.querySelector('.mb-slot-num')!, value)
+      if (level !== 'failed') {
+        slot.querySelector('.mb-slot-word > span')!.textContent = ` ${value === 1
+          ? level
+          : `${level}s`}`
+      }
+    }
+  }
+
+  /** The pill is named by what it shows, with words around the counts for screen readers only. */
+  function speak(before: string, after: string): void {
+    const [intro, outro] = badge!.button.querySelectorAll<HTMLElement>(':scope > .mb-sr-only')
+    intro!.textContent = before
+    outro!.textContent = after
+  }
+
+  /** Everything the badge showed is fixed: it says so for a moment, then steps away. */
+  function sayClear(): void {
+    const { dock, button, lamp, status } = badge!
+    showing = false
+    previous = undefined
+    dock.dataset.clear = ''
+    drawSummary({ error: 0, warning: 0, failed: 0 }, true)
+    lamp.dataset.level = 'ok'
+    delete lamp.dataset.checking
+    button.removeAttribute('aria-expanded')
+    button.removeAttribute('aria-controls')
+    button.title = 'All clear'
+    speak('', '')
+    setTimeout(() => (status.textContent = 'All clear'), 50)
+    clearTimeout(clearTimer)
+    clearTimer = setTimeout(() => {
+      const done = () => {
+        if (dock.dataset.clear !== undefined) {
+          dock.hidden = true
+          delete dock.dataset.clear
+        }
+      }
+      if (reducedMotion()) {
+        done()
+        return
+      }
+      dock.animate([
+        { opacity: 1 },
+        { opacity: 0, transform: 'translateY(4px) scale(.97)' },
+      ], { duration: 200, easing: EASE }).finished.then(done, done)
+    }, CLEAR_MS)
+  }
+
   function render(): void {
-    const count = warnings().length
     const shown = overlayShown()
     const listed = listedProblems()
-    const showErrors = !!(current || count) && !shown
+    const showPage = !!(current || warnings().length) && !shown
     const showProblems = !!listed.length && !shown
-    if (!(showErrors || showProblems) || !document.body) {
+    if (!(showPage || showProblems) || !document.body) {
+      shownPlaces = []
       announcement = ''
       hidePeek()
+      toggleList(false)
+      if (badge && !shown && document.body && (showing || badge.dock.dataset.clear !== undefined)) {
+        if (badge.dock.dataset.clear === undefined) {
+          sayClear()
+        }
+        return
+      }
+      showing = false
+      previous = undefined
+      clearTimeout(clearTimer)
       if (badge) {
         badge.dock.hidden = true
+        delete badge.dock.dataset.clear
       }
       return
     }
@@ -860,22 +1212,64 @@ function start(state: BadgeState, nonce: string | undefined): void {
     if (!badge.host.isConnected) {
       document.body.append(badge.host)
     }
-    const { button, dock } = badge
+    const { button, dock, lamp } = badge
+    clearTimeout(clearTimer)
+    delete dock.dataset.clear
+    for (const animation of dock.getAnimations()) {
+      animation.cancel()
+    }
+    showing = true
     dock.hidden = false
     dock.dataset.dock = storage('my-bad:overlay:dock') ?? overlay.dock ?? 'bottom-right'
-    badge.problems.hidden = !showProblems
-    if (showProblems) {
-      renderProblems(badge.problems, listed)
-    }
     badge.host.setAttribute('data-theme', scheme())
-    button.hidden = !showErrors
-    if (showErrors) {
-      const kind = current ? 'error' : 'warning'
-      const summary = counts(current ? 1 : 0, count)
-      button.dataset.kind = kind
-      button.firstElementChild!.outerHTML = ICONS[kind]
-      badge.count.textContent = summary
-      button.title = `Show ${summary}`
+    const sets = showProblems
+      ? listed
+      : []
+    shownPlaces = placesOf(showPage, sets)
+    shownTotals = totalsOf(showPage, sets)
+    drawSummary(shownTotals, false)
+    const kind = shownTotals.error || shownTotals.failed
+      ? 'error'
+      : 'warning'
+    const checking = [
+      ...problems.values(),
+    ].some(set => set.status === 'checking')
+    button.dataset.kind = lamp.dataset.level = kind
+    lamp.toggleAttribute('data-checking', checking)
+    const worse = (sum: Totals) => sum.error + sum.failed
+    if (previous && worse(shownTotals) > worse(previous) && !reducedMotion()) {
+      lamp.animate([
+        { boxShadow: '0 0 0 0 currentColor' },
+        { boxShadow: '0 0 0 7px transparent' },
+      ], { duration: 900, easing: EASE })
+    }
+    previous = shownTotals
+    const summary = `${describe(shownTotals)}${checking ? ', checking' : ''}`
+    const [only] = shownPlaces
+    const label = shownPlaces.length > 1
+      ? `Problems: ${summary}`
+      : only?.page
+        ? `Show ${summary}`
+        : `${only!.sets[0]!.group ?? only!.sets[0]!.label ?? only!.sets[0]!.source}: ${summary}`
+    button.title = label
+    speak(shownPlaces.length > 1
+      ? 'Problems: '
+      : only?.page
+        ? 'Show '
+        : `${only!.sets[0]!.group ?? only!.sets[0]!.label ?? only!.sets[0]!.source}: `, checking
+      ? ', checking'
+      : '')
+    if (shownPlaces.length > 1) {
+      button.setAttribute('aria-expanded', String(listOpen))
+      button.setAttribute('aria-controls', 'mb-list')
+    }
+    else {
+      toggleList(false)
+      button.removeAttribute('aria-expanded')
+      button.removeAttribute('aria-controls')
+    }
+    if (listOpen) {
+      fillList()
     }
     if (peek && !stillOpen(peek)) {
       peek = undefined
