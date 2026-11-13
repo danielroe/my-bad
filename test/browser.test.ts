@@ -27,6 +27,19 @@ const channel = createChannel({
 const assets = { script: '/client.js', styles: '/client.css' }
 const CSP_NONCE = 'n0nce+/='
 
+/** Opens the list of the badge and reads each row as its text, which names it, and its title, then closes it again. */
+async function badgeRows(page: import('playwright').Page, tag = 'my-bad-overlay'): Promise<string[][]> {
+  const list = page.locator(`${tag}-badge .mb-list`)
+  if (!await list.isVisible()) {
+    await page.locator(`${tag}-badge .mb-badge`).click()
+  }
+  await list.waitFor()
+  const rows = await list.locator('.mb-row').evaluateAll(items => items.map(item => [item.textContent!, (item as HTMLElement).title]))
+  await page.keyboard.press('Escape')
+  await list.waitFor({ state: 'hidden' })
+  return rows
+}
+
 async function waitFor<T>(fn: () => Promise<T> | T, expected: T, timeout = 5000): Promise<void> {
   const start = Date.now()
   let last: T
@@ -797,13 +810,14 @@ describe('badge', () => {
     const peek = page.locator('my-bad-overlay-badge .mb-peek')
     await waitFor(() => peek.isVisible(), true)
     expect(await peek.textContent()).toBe('Error: careful nowsrc/handler.ts:2')
-    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+    expect(await badge.getAttribute('title')).toBe('Show 1 warning')
     expect(await badge.getAttribute('title')).toBe('Show 1 warning')
     await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'Warning: Error: careful now')
 
     channel.clearWarning(careful.id)
     await waitFor(() => peek.isVisible(), false)
-    expect(await badge.isVisible()).toBe(false)
+    await waitFor(() => badge.getAttribute('title'), 'All clear')
+    await waitFor(() => badge.isVisible(), false)
     expect(errors).toEqual([])
     await page.close()
   }, 30_000)
@@ -817,7 +831,7 @@ describe('badge', () => {
     const badge = page.locator('my-bad-overlay-badge .mb-badge')
     const overlay = page.locator('my-bad-overlay')
     await waitFor(() => badge.isVisible(), true)
-    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+    expect(await badge.getAttribute('title')).toBe('Show 1 warning')
     expect(await page.locator('my-bad-overlay-badge .mb-peek').isVisible()).toBe(false)
 
     await badge.click()
@@ -834,7 +848,7 @@ describe('badge', () => {
     await page.keyboard.press('Escape')
     await overlay.locator('[data-action="hide"]').click()
     await waitFor(() => badge.isVisible(), true)
-    expect(await badge.locator('.mb-badge-count').textContent()).toBe('2 warnings')
+    expect(await badge.getAttribute('title')).toBe('Show 2 warnings')
 
     await badge.click()
     await waitFor(() => overlay.locator('[data-message]').first().textContent(), 'second warning')
@@ -985,7 +999,7 @@ describe('badge', () => {
     channel.warn({ ...careful, message: 'careful, moved' })
     await page.waitForTimeout(300)
     expect(await status.textContent()).toBe('')
-    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+    expect(await badge.getAttribute('title')).toBe('Show 1 warning')
 
     channel.setError(await report('with a toast'))
     const overlay = page.locator('my-bad-overlay')
@@ -1030,7 +1044,7 @@ describe('badge', () => {
 
     await overlay.locator('[data-action="hide"]').click()
     await waitFor(() => badge.isVisible(), true)
-    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 error, 1 warning')
+    expect(await badge.getAttribute('title')).toBe('Show 1 error, 1 warning')
     expect(await overlay.locator('[data-action="restore"]').isVisible()).toBe(false)
     await badge.click()
     await waitFor(() => overlay.locator('[data-overlay]').getAttribute('data-minimized'), null)
@@ -1040,7 +1054,7 @@ describe('badge', () => {
     channel.clearError(broken.id)
     await waitFor(() => overlay.count(), 0)
     await waitFor(() => badge.getAttribute('data-kind'), 'warning')
-    expect(await badge.locator('.mb-badge-count').textContent()).toBe('1 warning')
+    expect(await badge.getAttribute('title')).toBe('Show 1 warning')
     expect(await page.evaluate(() => (window as unknown as { cleared: unknown[] }).cleared)).toEqual([broken.id])
     expect(await streams()).toEqual({ opened: 1, closed: 0 })
     channel.clearWarning()
@@ -1268,7 +1282,7 @@ describe('badge', () => {
     channel.warn(await warning('another warning'))
 
     await setHidden(page, false)
-    await waitFor(() => badge.locator('.mb-badge-count').textContent(), '2 warnings')
+    await waitFor(() => badge.getAttribute('title'), 'Show 2 warnings')
     expect((await streams()).opened).toBe(2)
     channel.clearWarning()
     expect(errors).toEqual([])
@@ -1293,7 +1307,7 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
-  it('counts problem sets beside the warnings', async () => {
+  it('sums up problem sets with the page, and lists each place once there is a choice', async () => {
     channel.clearWarning()
     channel.clearError()
     channel.clearProblems()
@@ -1301,15 +1315,13 @@ describe('badge', () => {
     channel.setProblems('ts', [typeError], { label: 'TypeScript', status: 'idle', url: '/__typecheck/' })
     channel.setProblems('lint', [], { label: 'ESLint', status: 'checking' })
     const { page, errors } = await open('/badge')
-    const problems = page.locator('my-bad-overlay-badge .mb-problems')
-    const entries = problems.locator('.mb-problems-count > *')
     const badge = page.locator('my-bad-overlay-badge .mb-badge')
-    await waitFor(() => problems.isVisible(), true)
-    expect(await badge.isVisible()).toBe(false)
-    expect(await problems.textContent()).toBe('TypeScript 1')
-    expect(await problems.getByRole('button', { name: 'TypeScript 1' }).getAttribute('title')).toBe('TypeScript: 1 error')
-    expect(await problems.locator('.mb-spin').count()).toBe(1)
-    const spinning = () => problems.locator('.mb-spin').evaluate(icon => icon.getAnimations().length)
+    const lamp = badge.locator('.mb-lamp')
+    await waitFor(() => badge.isVisible(), true)
+    expect(await badge.getAttribute('title')).toBe('TypeScript: 1 error, checking')
+    expect(await badge.getAttribute('aria-expanded')).toBeNull()
+    expect(await lamp.getAttribute('data-checking')).toBe('')
+    const spinning = () => lamp.evaluate(el => el.getAnimations({ subtree: true }).filter(animation => animation instanceof CSSAnimation).length)
     expect(await spinning()).toBe(1)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     expect(await spinning()).toBe(0)
@@ -1321,25 +1333,22 @@ describe('badge', () => {
         kind: 'warning',
       },
     ], { label: 'ESLint', status: 'idle', url: '/__lint/' })
-    await waitFor(() => problems.textContent(), 'TypeScript 1 · ESLint 1')
-    expect(await entries.evaluateAll(items => items.map(item => [
-      item.textContent,
-      (item as HTMLElement).title,
-    ]))).toEqual([
-      ['TypeScript 1', 'TypeScript: 1 error'],
-      ['ESLint 1', 'ESLint: 1 warning'],
+    await waitFor(() => badge.getAttribute('title'), 'Problems: 1 error, 1 warning')
+    expect(await badge.getAttribute('aria-expanded')).toBe('false')
+    expect(await badgeRows(page)).toEqual([
+      ['TypeScript: 1 error', 'TypeScript: 1 error'],
+      ['ESLint: 1 warning', 'ESLint: 1 warning'],
     ])
-    expect(await problems.locator('.mb-spin').count()).toBe(0)
-    expect(await problems.getAttribute('data-kind')).toBe('error')
+    expect(await lamp.getAttribute('data-checking')).toBeNull()
+    expect(await badge.getAttribute('data-kind')).toBe('error')
 
     channel.warn(await warning('careful'))
-    await waitFor(() => badge.isVisible(), true, 10_000)
-    const [pill, link] = await Promise.all([
-      badge.boundingBox(),
-      problems.boundingBox(),
+    await waitFor(() => badge.getAttribute('title'), 'Problems: 1 error, 2 warnings', 10_000)
+    expect(await badgeRows(page)).toEqual([
+      ['This page: 1 warning', ''],
+      ['TypeScript: 1 error', 'TypeScript: 1 error'],
+      ['ESLint: 1 warning', 'ESLint: 1 warning'],
     ])
-    expect(link!.x + link!.width).toBeLessThan(pill!.x)
-    expect(link!.y).toBe(pill!.y)
 
     channel.setProblems('lint', [
       {
@@ -1348,16 +1357,86 @@ describe('badge', () => {
       },
     ], { label: 'ESLint', status: 'checking' })
     channel.clearProblems('ts')
-    await waitFor(() => problems.textContent(), 'ESLint 1')
-    expect(await entries.evaluateAll(items => items.map(item => [item.tagName, (item as HTMLElement).title]))).toEqual([
-      ['BUTTON', 'ESLint: 1 warning (checking)'],
+    await waitFor(() => badge.getAttribute('title'), 'Problems: 2 warnings, checking')
+    expect(await badgeRows(page)).toEqual([
+      ['This page: 1 warning', ''],
+      ['ESLint: Checking…, 1 warning', 'ESLint: 1 warning (checking)'],
     ])
-    expect(await problems.getAttribute('data-kind')).toBe('warning')
+    expect(await badge.getAttribute('data-kind')).toBe('warning')
     channel.clearProblems()
-    await waitFor(() => problems.isVisible(), false)
-    expect(await badge.isVisible()).toBe(true)
+    await waitFor(() => badge.getAttribute('title'), 'Show 1 warning')
     channel.clearWarning()
     await waitFor(() => badge.isVisible(), false)
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('opens the list from the keyboard, moves through it with the arrow keys, and closes it with Escape', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    channel.setProblems('lint', [], { label: 'ESLint', status: 'failed', error: 'Cannot find module \'eslint\'' })
+    const { page, errors } = await open('/badge')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    const list = page.locator('my-bad-overlay-badge .mb-list')
+    const focused = () => badge.evaluate((el) => {
+      const active = (el.getRootNode() as ShadowRoot).activeElement
+      return active === el
+        ? (el as HTMLElement).title
+        : active?.textContent
+    })
+    await waitFor(() => badge.getAttribute('title'), 'Problems: 1 error, 1 failed check')
+    await badge.focus()
+    await page.keyboard.press('Enter')
+    await list.waitFor()
+    expect(await badge.getAttribute('aria-expanded')).toBe('true')
+    expect(await focused()).toBe('TypeScript: 1 error')
+    await page.keyboard.press('ArrowDown')
+    expect(await focused()).toBe('ESLint: Cannot find module \'eslint\', Failed')
+    expect(await list.locator('.mb-row-failed').textContent()).toBe('Failed')
+    expect(await list.locator('.mb-row-detail').textContent()).toBe('Cannot find module \'eslint\', ')
+    await page.keyboard.press('ArrowDown')
+    expect(await focused()).toBe('TypeScript: 1 error')
+    await page.keyboard.press('End')
+    expect(await focused()).toBe('ESLint: Cannot find module \'eslint\', Failed')
+    await page.keyboard.press('Escape')
+    await list.waitFor({ state: 'hidden' })
+    expect(await badge.getAttribute('aria-expanded')).toBe('false')
+    expect(await focused()).toBe('Problems: 1 error, 1 failed check')
+
+    await badge.click()
+    await list.waitFor()
+    await page.mouse.click(10, 10)
+    await list.waitFor({ state: 'hidden' })
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('says all is clear once everything it showed is fixed, then steps away', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    const { page, errors } = await open('/badge')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => badge.getAttribute('title'), 'TypeScript: 1 error')
+    channel.clearProblems()
+    await waitFor(() => badge.getAttribute('title'), 'All clear')
+    expect(await badge.isVisible()).toBe(true)
+    await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'All clear')
+    await waitFor(() => badge.isVisible(), false)
+
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    await waitFor(() => badge.getAttribute('title'), 'TypeScript: 1 error')
+    channel.clearProblems()
+    await waitFor(() => badge.getAttribute('title'), 'All clear')
+    channel.setProblems('ts', [await report('Back again')], { label: 'TypeScript' })
+    await waitFor(() => badge.getAttribute('title'), 'TypeScript: 1 error')
+    await page.waitForTimeout(2000)
+    expect(await badge.isVisible()).toBe(true)
+    channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
   }, 30_000)
@@ -1369,17 +1448,17 @@ describe('badge', () => {
     const mismatch = await report('Type mismatch')
     channel.setProblems('ts', [mismatch], { label: 'TypeScript' })
     const { page, errors } = await open('/badge', page => page.clock.install())
-    const problems = page.locator('my-bad-overlay-badge .mb-problems')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
     const peek = page.locator('my-bad-overlay-badge .mb-peek')
     await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
-    expect(await problems.isVisible()).toBe(true)
+    expect(await badge.isVisible()).toBe(true)
     expect(await peek.isVisible()).toBe(false)
 
     channel.setProblems('ts', [mismatch, await report('Another mismatch'), await report('Third mismatch')], { label: 'TypeScript' })
     await waitFor(() => peek.isVisible(), true)
     expect(await peek.locator('.mb-peek-message').textContent()).toBe('Error: Another mismatch')
     expect(await peek.locator('.mb-peek-meta').textContent()).toBe('TypeScript · src/handler.ts:2 · and 1 more')
-    await waitFor(() => problems.isVisible(), false)
+    expect(await badge.isVisible()).toBe(true)
     await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'TypeScript: Error: Error: Another mismatch, and 1 more')
 
     await peek.hover()
@@ -1389,8 +1468,7 @@ describe('badge', () => {
     await page.mouse.move(10, 10)
     await page.clock.fastForward(7000)
     await waitFor(() => peek.isVisible(), false)
-    expect(await problems.isVisible()).toBe(true)
-    expect(await problems.textContent()).toBe('TypeScript 3')
+    expect(await badge.getAttribute('title')).toBe('TypeScript: 3 errors')
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
@@ -1406,7 +1484,7 @@ describe('badge', () => {
     const peek = page.locator('my-bad-overlay-badge .mb-peek')
     await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
     channel.clearProblems('ts')
-    await waitFor(() => page.locator('my-bad-overlay-badge .mb-problems').isVisible(), false)
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').getAttribute('title'), 'All clear')
     expect(await peek.isVisible()).toBe(false)
     channel.setProblems('ts', [mismatch], { label: 'TypeScript' })
     await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'Error: Returning mismatch')
@@ -1474,7 +1552,7 @@ describe('badge', () => {
     const { page, errors } = await open('/badge')
     const peek = page.locator('my-bad-overlay-badge .mb-peek')
     await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
-    expect(await page.locator('my-bad-overlay-badge .mb-problems').isVisible()).toBe(false)
+    expect(await page.locator('my-bad-overlay-badge').count()).toBe(0)
 
     channel.setProblems('checker', [
       info('Consider a type annotation'),
@@ -1484,7 +1562,7 @@ describe('badge', () => {
     await waitFor(() => peek.isVisible(), true)
     expect(await peek.locator('.mb-peek-message').textContent()).toBe('Type mismatch')
     expect(await peek.locator('.mb-peek-meta').textContent()).toBe('Checker')
-    expect(await page.locator('my-bad-overlay-badge .mb-problems').textContent()).toBe('Checker 1')
+    expect(await page.locator('my-bad-overlay-badge .mb-badge').getAttribute('title')).toBe('Checker: 1 error')
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
@@ -1539,7 +1617,7 @@ describe('badge', () => {
     channel.setProblems('ts', [mismatch, late], { label: 'TypeScript' })
     await waitFor(() => requested, true)
     channel.clearProblems('ts')
-    await waitFor(() => page.locator('my-bad-overlay-badge .mb-problems').isVisible(), false)
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').getAttribute('title'), 'All clear')
     const received = page.evaluate(() => new Promise(resolve => window.__MY_BAD_SOURCE__!.addEventListener('reports', resolve, { once: true })))
     release()
     await received
@@ -1574,7 +1652,7 @@ describe('badge', () => {
     channel.setProblems('ts', [mismatch, await report('Second mismatch'), await report('Third mismatch')], { label: 'TypeScript' })
     await waitFor(() => requested, true)
     channel.setProblems('lint', [unused, await report('Unused import')], { label: 'ESLint' })
-    await waitFor(() => page.locator('my-bad-overlay-badge .mb-problems').textContent(), 'TypeScript 3 · ESLint 2')
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').getAttribute('title'), 'Problems: 5 errors')
     release()
     await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'Error: Second mismatch')
     expect(await peek.locator('.mb-peek-meta').textContent()).toBe('TypeScript · src/handler.ts:2 · and 1 more')
@@ -1633,7 +1711,7 @@ describe('badge', () => {
       expect(start!.height).toBe(end!.height)
     }
     else {
-      expect(start!.width).toBeCloseTo(pill.width, 0)
+      expect(start!.width).toBeLessThan(end!.width)
       expect(start!.height).toBeCloseTo(pill.height, 0)
       expect(middle!.width).toBeGreaterThan(start!.width)
       expect(end!.width).toBeGreaterThan(middle!.width)
@@ -1693,7 +1771,7 @@ describe('badge', () => {
     channel.setProblems('ts', [mismatch], { label: 'TypeScript', url: '/__typecheck/' })
     const { page, errors } = await open('/badge')
     await page.route('**/__typecheck/', route => route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html lang="en"><title>Type check</title><h1>Type check</h1></html>' }))
-    const pill = page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' })
+    const pill = page.locator('my-bad-overlay-badge .mb-badge')
     const drawer = page.locator('my-bad-overlay-badge .mb-drawer')
     const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
     const focused = () => pill.evaluate(el => (el.getRootNode() as ShadowRoot).activeElement === el)
@@ -1736,7 +1814,7 @@ describe('badge', () => {
     channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
     const { page, errors } = await open('/nested/badge-relative')
     await page.evaluate(() => history.pushState(null, '', '/elsewhere/deeper/page'))
-    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
     expect(await page.locator('my-bad-overlay-badge .mb-drawer iframe').getAttribute('src')).toBe(`${origin}/__my-bad/panel?embed&drawer`)
     await waitFor(() => page.frameLocator('my-bad-overlay-badge .mb-drawer iframe').locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
     channel.clearProblems()
@@ -1751,7 +1829,7 @@ describe('badge', () => {
     channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
     const { page, errors } = await open('/badge')
     await page.route('**/__my-bad/problems', route => route.fulfill({ status: 403 }))
-    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
     const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
     await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Problems listed on the dev machine')
     expect(await panel.locator('[data-index-source="ts"] .mb-count').textContent()).toBe('1 error')
@@ -1767,12 +1845,12 @@ describe('badge', () => {
     channel.clearProblems()
     channel.setProblems('ts', [await report('stale')], { label: 'TypeScript' })
     const { page, errors } = await open('/badge')
-    const problems = page.locator('my-bad-overlay-badge .mb-problems')
-    await waitFor(() => problems.isVisible(), true)
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => badge.isVisible(), true)
     await setHidden(page, true)
     channel.setProblems('ts', [], { label: 'TypeScript' })
     await setHidden(page, false)
-    await waitFor(() => problems.isVisible(), false)
+    await waitFor(() => badge.isVisible(), false)
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
@@ -1785,16 +1863,18 @@ describe('badge', () => {
     channel.setProblems('ts', [await report('stale')], { label: 'TypeScript', status: 'failed', error: 'Cannot find module \'typescript\'' })
     channel.setProblems('lint', [], { label: 'ESLint', status: 'failed' })
     const { page, errors } = await open('/badge')
-    const problems = page.locator('my-bad-overlay-badge .mb-problems')
-    await waitFor(() => problems.isVisible(), true)
-    expect(await problems.textContent()).toBe('TypeScript failed · ESLint failed')
-    expect(await problems.locator('.mb-problems-count > *').evaluateAll(items => items.map(item => (item as HTMLElement).title))).toEqual(['TypeScript: failed: Cannot find module \'typescript\'', 'ESLint: failed'])
-    expect(await problems.getAttribute('data-kind')).toBe('error')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => badge.getAttribute('title'), 'Problems: 2 failed checks')
+    expect(await badgeRows(page)).toEqual([
+      ['TypeScript: Cannot find module \'typescript\', Failed', 'TypeScript: failed: Cannot find module \'typescript\''],
+      ['ESLint: Failed', 'ESLint: failed'],
+    ])
+    expect(await badge.getAttribute('data-kind')).toBe('error')
 
     channel.setProblems('ts', [], { label: 'TypeScript', status: 'idle' })
-    await waitFor(() => problems.textContent(), 'ESLint failed')
+    await waitFor(() => badge.getAttribute('title'), 'ESLint: 1 failed check')
     channel.clearProblems()
-    await waitFor(() => problems.isVisible(), false)
+    await waitFor(() => badge.isVisible(), false)
     expect(errors).toEqual([])
     await page.close()
   }, 30_000)
@@ -1811,10 +1891,12 @@ describe('badge', () => {
     channel.setProblems('nuxt:imports', [await warned('Duplicated imports'), await warned('Overrides a built-in')], { label: 'Imports', group: 'Nuxt' })
     channel.setProblems('vue:compiler', [await warned('<p> cannot be child of <p>')], { label: 'Vue' })
     const { page, errors } = await open('/badge')
-    const problems = page.locator('my-bad-overlay-badge .mb-problems')
-    await waitFor(() => problems.isVisible(), true)
-    expect(await problems.textContent()).toBe('Nuxt 3 · Vue 1')
-    expect(await problems.locator('.mb-problems-count > *').evaluateAll(items => items.map(item => (item as HTMLElement).title))).toEqual(['Nuxt Components: 1 warning; Nuxt Imports: 2 warnings', 'Vue: 1 warning'])
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    await waitFor(() => badge.getAttribute('title'), 'Problems: 4 warnings')
+    expect(await badgeRows(page)).toEqual([
+      ['Nuxt: Components, Imports, 3 warnings', 'Nuxt Components: 1 warning; Nuxt Imports: 2 warnings'],
+      ['Vue: 1 warning', 'Vue: 1 warning'],
+    ])
 
     channel.setProblems('nuxt:pages', [await warned('Duplicate route name')], {
       label: 'Pages',
@@ -1822,8 +1904,12 @@ describe('badge', () => {
       status: 'failed',
       error: 'Could not scan pages',
     })
-    await waitFor(() => problems.textContent(), 'Nuxt 3, 1 failed · Vue 1')
-    expect(await problems.getAttribute('data-kind')).toBe('error')
+    await waitFor(() => badge.getAttribute('title'), 'Problems: 4 warnings, 1 failed check')
+    expect(await badgeRows(page)).toEqual([
+      ['Nuxt: Components, Imports, Pages, 3 warnings, 1 failed', 'Nuxt Components: 1 warning; Nuxt Imports: 2 warnings; Nuxt Pages: failed: Could not scan pages'],
+      ['Vue: 1 warning', 'Vue: 1 warning'],
+    ])
+    expect(await badge.getAttribute('data-kind')).toBe('error')
     channel.clearProblems()
     expect(errors).toEqual([])
     await page.close()
@@ -1833,9 +1919,9 @@ describe('badge', () => {
     channel.clearProblems()
     channel.setProblems('ts', [await report('x')], { label: 'TypeScript', url: 'javascript:alert(1)' })
     const { page } = await open('/badge')
-    const problems = page.locator('my-bad-overlay-badge .mb-problems')
-    await waitFor(() => problems.isVisible(), true)
-    expect(await problems.locator('a').count()).toBe(0)
+    const dock = page.locator('my-bad-overlay-badge .mb-dock')
+    await waitFor(() => dock.isVisible(), true)
+    expect(await dock.locator('a').count()).toBe(0)
     channel.clearProblems()
     await page.close()
   }, 30_000)
@@ -2353,7 +2439,7 @@ describe('devtools dock', () => {
       ],
     ])
 
-    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
     expect((await calls()).switched).toEqual(['my-bad'])
     const panel = page.frameLocator('iframe')
     const current = panel.locator('.mb-index-item[aria-current="true"]')
@@ -2440,13 +2526,16 @@ describe('devtools dock', () => {
       params: { source: 'lint', list: true },
     })
 
-    const pills = page.locator('my-bad-overlay-badge .mb-problems')
+    const badge = page.locator('my-bad-overlay-badge .mb-badge')
+    const row = (source: string) => page.locator(`my-bad-overlay-badge .mb-row[data-source="${source}"]`)
     const panel = page.frameLocator('iframe')
-    await pills.getByRole('button', { name: 'TypeScript 1' }).click()
+    await badge.click()
+    await row('ts').click()
     await waitFor(async () => (await calls()).switched.join(), 'my-bad')
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
 
-    await pills.getByRole('button', { name: 'ESLint 1' }).click()
+    await badge.click()
+    await row('lint').click()
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Unused variable')
     await panel.locator('[data-index-source="ts"]').getByRole('button', { name: 'Show the full list' }).click()
     await waitFor(async () => (await calls()).switched.at(-1), 'checker')
@@ -2481,7 +2570,7 @@ describe('devtools dock', () => {
     await waitFor(async () => (await calls()).badges.at(-1)?.badge, '2')
     await waitFor(async () => !!(await calls()).messages['my-bad:problems:lint'], true)
     expect(Object.keys((await calls()).messages)).toEqual(['my-bad:problems:lint'])
-    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'vue-tsc 1' }).waitFor()
+    await waitFor(() => page.locator('my-bad-overlay-badge .mb-badge').getAttribute('title'), 'Problems: 2 errors')
 
     channel.setProblems('vue-tsc', [], {
       label: 'vue-tsc',
@@ -2582,7 +2671,7 @@ describe('devtools dock', () => {
     channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
     const page = await browser.newPage()
     await page.goto(`${origin}/badge`)
-    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
     const drawer = page.locator('my-bad-overlay-badge .mb-drawer')
     const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
     const filter = panel.getByRole('searchbox', { name: 'Filter problems' })
@@ -2960,7 +3049,7 @@ describe('devtools dock', () => {
     channel.setProblems('ts', [], { label: 'TypeScript', status: 'failed', error: 'Checker crashed' })
     const { page, errors, calls } = await open('/devtools-host')
     await waitFor(async () => (await calls()).badges.at(-1)?.badgeVariant, 'danger')
-    await page.locator('my-bad-overlay-badge .mb-problems button').first().click()
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
     const panel = page.frameLocator('iframe')
     await waitFor(() => panel.locator('[data-docked-count]').textContent().catch(() => ''), '1 check failed')
     expect(await panel.locator('.mb-docked-empty-title').textContent()).toBe('A check failed')
@@ -3124,7 +3213,7 @@ describe('content security policy', () => {
     channel.clearProblems()
     channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
     const { page, errors, violations } = await load('/csp-drawer?nonce')
-    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    await page.locator('my-bad-overlay-badge .mb-badge').click()
     const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
     await waitFor(() => panel.locator('html').evaluate(el => getComputedStyle(el).getPropertyValue('--mb-csp')), 'adopted')

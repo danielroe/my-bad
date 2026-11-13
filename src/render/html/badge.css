@@ -1,62 +1,156 @@
 @import './tokens.css';
 
+/*
+ * One pill sums up the page and every problem set. New problems grow it into a card, and selecting it opens a list
+ * of each place with problems. The card and the list sit behind the pill, which stays put as their footer, so the
+ * three read as one surface.
+ */
 .mb-dock {
+  --mb-ease: cubic-bezier(.32, .72, 0, 1);
+  --mb-ok: #34c47c;
+  --mb-pill: 32px;
+  --mb-panel: min(380px, calc(100vw - 32px));
+  --mb-fold: 300ms;
+  /* the widths of the count columns, shared by the open pill and the rows of the list */
+  --mb-col: 40px;
+  --mb-col-failed: 64px;
   position: fixed; right: 16px; bottom: 16px; z-index: 2147483000;
-  display: flex; gap: 8px; justify-content: flex-end;
+  display: flex; justify-content: flex-end;
   max-width: calc(100vw - 32px);
+  color: var(--mb-fg);
+  font: 500 12px/1 var(--mb-font-sans); font-variant-numeric: tabular-nums;
   direction: ltr;
 }
-.mb-dock[data-dock$='left'] { right: auto; left: 16px; flex-direction: row-reverse; }
+:host([data-theme='light']) .mb-dock { --mb-ok: #1a7f4b; }
+.mb-dock[data-dock$='left'] { right: auto; left: 16px; justify-content: flex-start; }
 .mb-dock[data-dock^='top'] { bottom: auto; top: 16px; }
 .mb-dock[hidden], .mb-dock [hidden] { display: none; }
-.mb-badge, .mb-problems {
-  box-sizing: border-box;
-  display: inline-flex; align-items: center; gap: 8px;
-  min-width: 0; max-width: 440px; height: 30px; margin: 0; padding: 0 12px;
-  color: var(--mb-fg); background: var(--mb-bg);
+.mb-dock svg { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* the pill */
+.mb-badge {
+  position: relative; z-index: 1;
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: flex-end;
+  min-width: 0; height: var(--mb-pill); margin: 0; padding: 0 12px;
+  color: inherit; background: var(--mb-bg);
   border: 1px solid var(--mb-line-strong); border-radius: 999px;
   box-shadow: var(--mb-shadow);
-  font: 500 12px/1.4 var(--mb-font-sans); text-align: left; text-decoration: none;
-  cursor: pointer;
+  font: inherit; white-space: nowrap; cursor: pointer;
+  transition: background-color .15s, border-color .12s, box-shadow .12s, transform .16s var(--mb-ease), min-width var(--mb-fold) var(--mb-ease);
 }
-.mb-problems { cursor: default; }
-.mb-problems button { display: inline-flex; align-items: center; min-height: 24px; margin: 0; padding: 0 3px; color: inherit; background: none; border: 0; font: inherit; text-decoration: none; border-radius: 4px; cursor: pointer; }
-.mb-problems button:hover { text-decoration: underline; text-underline-offset: 3px; }
-.mb-badge:hover { background: var(--mb-surface-2); }
-.mb-badge:focus-visible, .mb-problems button:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; }
-.mb-problems button:focus-visible { outline-offset: -2px; }
-.mb-dock svg { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--mb-warning); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mb-dock [data-kind='error'] svg { stroke: var(--mb-error); }
-.mb-dock .mb-spin { animation: mb-spin 1s linear infinite; }
+@media (hover: hover) and (pointer: fine) {
+  .mb-dock:not([data-open], [data-peek]) .mb-badge:hover { background: var(--mb-surface-2); }
+}
+.mb-badge:active { transform: scale(.97); }
+.mb-badge:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; }
+/* once the card or list opens behind it, the pill becomes their footer: as wide as they are, with their edge */
+.mb-dock:is([data-open], [data-peek]) .mb-badge { min-width: var(--mb-panel); border-color: transparent; box-shadow: none; transition-delay: 60ms, 60ms, 60ms, 0s, 0s; }
+.mb-badge-title { position: absolute; left: 13px; color: var(--mb-fg-muted); opacity: 0; transition: opacity .16s; }
+.mb-dock[data-open] .mb-badge-title { opacity: 1; transition-delay: 80ms; }
+.mb-dock:is([data-open], [data-peek]) .mb-badge:active { transform: none; }
+.mb-dock:is([data-open], [data-peek]) .mb-badge:focus-visible { outline-offset: -3px; }
+
+/* the status light: the worst level, with a ring while a source is checking */
+.mb-lamp {
+  position: relative; flex: none; width: 6px; height: 6px; margin-right: 10px; border-radius: 50%;
+  color: var(--mb-error); background: currentColor;
+  box-shadow: 0 0 6px 1px color-mix(in oklab, currentColor 50%, transparent);
+  transition: color .3s, width var(--mb-fold) var(--mb-ease), margin var(--mb-fold) var(--mb-ease), opacity .16s;
+}
+.mb-lamp[data-level='warning'] { color: var(--mb-warning); }
+.mb-lamp[data-level='ok'] { color: var(--mb-ok); }
+.mb-lamp::after {
+  content: ''; position: absolute; inset: -3.5px; border-radius: 50%;
+  border: 1.25px solid transparent; border-top-color: var(--mb-fg-muted);
+  opacity: 0; transition: opacity .2s;
+}
+.mb-lamp[data-checking]::after { opacity: 1; animation: mb-spin .7s linear infinite; }
+.mb-dock:is([data-open], [data-peek]) .mb-lamp { width: 0; margin-right: 0; opacity: 0; }
 @keyframes mb-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .mb-dock .mb-spin { animation: none; }
-}
-.mb-badge-count { flex: none; }
-.mb-problems-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mb-dock > .mb-badge, .mb-dock > .mb-problems { transition: opacity .15s, visibility 0s; }
-.mb-dock[data-peek] > .mb-badge, .mb-dock[data-peek] > .mb-problems { opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
-.mb-peek {
+
+/*
+ * Each level folds to nothing when it has no count, so the pill eases between widths. Words show on the pill; once
+ * it opens, they fold into icons that head the list's columns.
+ */
+.mb-slot, .mb-fold { display: grid; grid-template-columns: 0fr; opacity: 0; transition: grid-template-columns var(--mb-fold) var(--mb-ease), opacity .18s, min-width var(--mb-fold) var(--mb-ease); }
+.mb-slot > span, .mb-fold > span { display: flex; align-items: center; justify-content: flex-end; min-width: 0; overflow: hidden; }
+.mb-slot[data-on] { grid-template-columns: 1fr; opacity: 1; }
+.mb-slot[data-on] ~ .mb-slot[data-on] { margin-left: 12px; }
+.mb-slot-num { display: inline-grid; overflow: hidden; height: 16px; line-height: 16px; font-weight: 600; }
+.mb-slot-num > span { grid-area: 1 / 1; text-align: right; }
+.mb-fold svg { margin-right: 5px; }
+.mb-slot-word { color: var(--mb-fg-muted); }
+.mb-slot-word > span { white-space: pre; }
+.mb-slot-word { grid-template-columns: 1fr; opacity: 1; }
+.mb-slot[data-level='error'] svg, .mb-slot[data-level='failed'] svg { color: var(--mb-error); }
+.mb-slot[data-level='warning'] svg { color: var(--mb-warning); }
+.mb-slot[data-level='clear'] { color: var(--mb-fg-muted); }
+.mb-dock:is([data-open], [data-peek]) .mb-slot-icon { grid-template-columns: 1fr; opacity: 1; }
+.mb-dock:is([data-open], [data-peek]) .mb-slot:not([data-level='failed']) .mb-slot-word { grid-template-columns: 0fr; opacity: 0; }
+/* open, each count takes the width of its column in the list, so the numbers stand under one another */
+.mb-dock[data-open] .mb-slot:is([data-level='error'], [data-level='warning'])[data-on] { min-width: var(--mb-col); }
+.mb-dock[data-open] .mb-slot[data-level='failed'][data-on] { min-width: var(--mb-col-failed); }
+
+/* the card and the list grow out of the pill, which stays their footer */
+.mb-peek, .mb-list {
   position: absolute; right: 0; bottom: 0;
   box-sizing: border-box; display: block;
-  width: min(380px, calc(100vw - 32px)); margin: 0; padding: 6px 12px 9px;
+  width: var(--mb-panel); margin: 0; padding: 6px 6px calc(var(--mb-pill) + 4px);
   overflow: hidden;
   color: var(--mb-fg); background: var(--mb-bg);
-  border: 1px solid var(--mb-line-strong); border-radius: 12px;
+  border: 1px solid var(--mb-line-strong); border-radius: 14px;
   box-shadow: var(--mb-shadow);
-  font: 500 12px/1.4 var(--mb-font-sans); text-align: left;
-  cursor: pointer;
+  font: inherit; text-align: left;
 }
-.mb-dock[data-dock$='left'] .mb-peek { right: auto; left: 0; }
-.mb-dock[data-dock^='top'] .mb-peek { bottom: auto; top: 0; }
-.mb-peek:hover { background: var(--mb-surface-2); }
+.mb-peek::after, .mb-list::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: var(--mb-pill); height: 1px; background: var(--mb-line); }
+.mb-dock[data-dock$='left'] :is(.mb-peek, .mb-list) { right: auto; left: 0; }
+.mb-dock[data-dock^='top'] :is(.mb-peek, .mb-list) { bottom: auto; top: 0; padding: calc(var(--mb-pill) + 4px) 6px 6px; }
+.mb-dock[data-dock^='top'] :is(.mb-peek, .mb-list)::after { bottom: auto; top: var(--mb-pill); }
+
+.mb-peek { cursor: pointer; }
+.mb-peek-inner { display: grid; grid-template-columns: 6px minmax(0, 1fr); gap: 3px 10px; align-items: start; padding: 8px 10px 9px; border-radius: 8px; transition: background-color .12s; }
+@media (hover: hover) and (pointer: fine) {
+  .mb-peek:hover .mb-peek-inner { background: var(--mb-surface-2); }
+}
 .mb-peek:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; }
-.mb-peek-inner { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 2px 8px; align-items: start; }
-.mb-peek-inner svg { margin-top: 1px; }
-.mb-peek-message { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.mb-peek-hint { grid-column: 2; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--mb-fg-muted); font-weight: 400; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.mb-peek code { font-family: var(--mb-font-mono); font-size: max(12px, .9em); }
+.mb-dock .mb-dot { width: 6px; height: 6px; margin-top: 5px; color: var(--mb-error); fill: currentColor; stroke: none; }
+.mb-dock [data-kind='warning'] .mb-dot, .mb-dock .mb-dot[data-kind='warning'] { color: var(--mb-warning); }
+.mb-dock .mb-dot[data-kind='idle'] { color: var(--mb-fg-muted); }
+.mb-peek-message { line-height: 16px; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mb-peek-hint { grid-column: 2; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--mb-fg-muted); font-weight: 400; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mb-dock code { font-family: var(--mb-font-mono); font-size: max(12px, .9em); }
 .mb-peek-meta { grid-column: 2; min-width: 0; overflow: hidden; color: var(--mb-fg-muted); font: 12px/1.4 var(--mb-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+
+/* the list: a quiet table whose count columns sit under the pill's counts */
+.mb-list-section { padding: 8px 10px 3px; color: var(--mb-fg-muted); }
+.mb-row {
+  box-sizing: border-box; display: grid; grid-template-columns: var(--mb-cols, 6px minmax(0, 1fr)); column-gap: 12px; align-items: start;
+  width: 100%; min-height: 32px; margin: 0; padding: 8px 6px 8px 10px;
+  color: inherit; background: none; border: 0; border-radius: 8px;
+  font: inherit; line-height: 16px; text-align: left; cursor: pointer;
+  transition: background-color .12s;
+}
+.mb-row:has(.mb-row-detail) { padding-block: 6px; }
+@media (hover: hover) and (pointer: fine) {
+  .mb-row:hover { background: var(--mb-surface-2); }
+}
+.mb-row:focus-visible { background: var(--mb-surface-2); outline: 2px solid var(--mb-accent-ink); outline-offset: -2px; }
+.mb-row-name { display: grid; gap: 1px; min-width: 0; }
+.mb-row-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-row-detail { color: var(--mb-fg-muted); font-weight: 400; }
+.mb-row-detail[data-wrap] { display: -webkit-box; overflow: hidden; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mb-row-detail .mb-spinner { display: inline-block; width: 7px; height: 7px; margin-right: 5px; vertical-align: -.5px; border: 1.25px solid var(--mb-line-strong); border-top-color: var(--mb-fg-muted); border-radius: 50%; animation: mb-spin .7s linear infinite; }
+.mb-row-count { text-align: right; font-weight: 600; }
+.mb-row-count[data-level='error'], .mb-row-failed { color: var(--mb-error); }
+.mb-row-count[data-level='warning'] { color: var(--mb-warning); }
+.mb-row-failed { grid-column: 3 / -1; justify-self: end; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mb-dock { --mb-fold: 1ms; }
+  .mb-lamp[data-checking]::after, .mb-row-detail .mb-spinner { animation: none; }
+  .mb-badge:active { transform: none; }
+}
+
 .mb-drawer {
   position: fixed; top: 16px; right: 16px; bottom: 58px; z-index: 2147482999;
   width: min(960px, calc(100vw - 32px));

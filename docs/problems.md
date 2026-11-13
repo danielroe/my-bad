@@ -10,8 +10,8 @@ An error takes over the page until it's fixed. Problems don't interrupt you, so 
 
 - Problem sets stay out of the history, and don't count towards the warning limit.
 - They raise no toasts, and never take over a page.
-- Every page shows a count for each source, in a pill beside the badge.
-- Selecting an entry in the pill opens its problems in a drawer beside the page.
+- Every page counts them in the pill of the badge, with the open error and warnings of the page.
+- Selecting the pill opens the problems of a source in a drawer beside the page. With more than one place to go, it lists each of them first.
 - New problems grow the pill into a card for a few seconds. The card shows the first new problem with its hint, and how many more arrived with it.
 
 The card shows only on pages that the channel sends reports to. See [Trusted and untrusted callers](./channel.md#trusted-and-untrusted-callers).
@@ -21,7 +21,7 @@ The card shows only on pages that the channel sends reports to. See [Trusted and
   <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/drawer-light.png" alt="The problems drawer beside a page, listing a warning, three TypeScript errors and two ESLint warnings, with the first TypeScript error and its source snippet shown beside them">
 </picture>
 
-The pill shows problems only on pages that render the badge. See [Badge](./rendering.md#badge).
+The badge shows problems only on pages that render it. See [Badge](./rendering.md#badge).
 
 ## Publish a problem set
 
@@ -60,7 +60,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | `file` | Absolute, or relative to `cwd`. |
 | `line`, `column` | Position in `file`. |
 | `endLine`, `endColumn` | End of the range in `file`. The snippet marks the range. `endColumn` is the column just past it. |
-| `kind` | `error`, `warning`, or `info`. Default `error`. The drawer and the dock list `info` problems, but the pill, the card, and the DevTools icon leave them out. |
+| `kind` | `error`, `warning`, or `info`. Default `error`. The drawer and the dock list `info` problems, but the badge, the card, and the DevTools icon leave them out. |
 | `snippet` | A `Snippet`, or a code frame of `3 \| code` lines. A code frame can mark a line with `>`. |
 | `related` | Other files the problem concerns, as `{ file, line, column }`. Pages list them under **Also in**. |
 
@@ -126,13 +126,13 @@ linter.on('close', () => {
 
 In this example, `linter` stands for the tool you integrate. The same approach fits any tool with a run lifecycle, such as an accessibility audit or the `api.subscribe` server API of vite-plugin-checker.
 
-The pill shows each status like this:
+The badge shows each status like this:
 
-- **`checking`**: a spinner. While a run with no problems is checking, the pill stays hidden.
+- **`checking`**: a ring around the light of the pill, and **Checking…** under the source in its list. While a run with no problems is checking, the source stays out of the badge.
 - **`idle`**: the count of errors and warnings. A source without a status is idle.
-- **`failed`**: `failed` in place of the count, with the `error` reason in the title of the pill.
+- **`failed`**: counted as `1 failed` in the pill. Its row in the list reads **Failed**, with the `error` reason beneath the name.
 
-An empty set shows nothing in the pill unless it failed. The drawer lists its problems only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
+An empty set shows nothing in the badge unless it failed. The drawer lists its problems only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
 
 The drawer and the dock show a status pill for every source, empty sets included. The title of each pill tells whether the source is starting, checking, or failed, or when it last finished a run. Selecting a pill hides or shows the problems of that source.
 
@@ -152,7 +152,7 @@ The third argument of `setProblems` describes the source:
 
 ### Count several sources together
 
-Sources with the same `group` share one entry in the pill, for example `Nuxt 3`. When one of them fails, the entry reads `Nuxt 2, 1 failed`. The title lists each source, and the entry opens the first of them.
+Sources with the same `group` share one row in the list of the badge, for example **Nuxt**, with the labels of its sources beneath the name and their counts added up. A source of the group that fails counts in its own column. The title of the row lists each source, and the row opens the first of them.
 
 ### Share one page between sources
 
