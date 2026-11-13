@@ -142,6 +142,24 @@ describe('diagnostic errors', () => {
       { file: './pages/other.vue' },
       { file: './pages/index.vue', line: 3 },
     ])
+    const withSnippet = {
+      ...report,
+      related: [
+        {
+          file: '/proj/pages/other.vue',
+          line: 1,
+          snippet: {
+            start: 1,
+            lines: ['secret'],
+          },
+        },
+      ],
+    }
+    expect(JSON.stringify(serializeReport(withSnippet, { snippets: false }))).not.toContain('secret')
+    expect(serializeReport(withSnippet).related![0]!.snippet).toEqual({
+      start: 1,
+      lines: ['secret'],
+    })
   })
 
   it('takes related locations for a problem', () => {

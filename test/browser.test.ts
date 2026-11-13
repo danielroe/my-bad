@@ -2768,6 +2768,24 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('wraps a long source name so its status stays readable', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('long', [], {
+      label: 'x'.repeat(200),
+      status: 'failed',
+      error: 'The checker crashed while starting up',
+    })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const status = page.frameLocator('iframe').locator('.mb-watched-status')
+    await status.waitFor({ state: 'attached' })
+    expect((await status.boundingBox())!.width).toBeGreaterThan(150)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
   it('marks the selected row in its severity colour, not the accent', async () => {
     channel.clearError()
     channel.clearProblems()

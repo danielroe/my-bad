@@ -571,7 +571,7 @@ describe('docked view', () => {
     expect(renderDocked({ mode: 'docked', version: '', title: 'Nuxt <errors>' }, index)).toContain('<p class="mb-docked-title">Nuxt &lt;errors&gt;</p>')
   })
 
-  it('lists info problems with their own icon and count, apart from the totals', () => {
+  it('lists info problems with their own icon and count', () => {
     const info = {
       ...createProblemReport({ name: 'Checker', message: 'Consider a type annotation', kind: 'info' }),
       id: 'i',
@@ -592,7 +592,7 @@ describe('docked view', () => {
     const html = renderDocked({ mode: 'docked', version: '' }, index)
     expect(html).toContain('<span class="mb-index-label">Checker</span><span class="mb-count">1</span>')
     expect(html).toContain(`data-kind="info" data-id="i" data-source="checker" aria-current="false">${ICONS.info}`)
-    expect(html).toContain('data-docked-count>All clear</span>')
+    expect(html).toContain('data-docked-count>1 info</span>')
     const page = renderPage(info)
     expect(page).toContain('<span data-kind-label>Info</span>')
     expect(page).toContain('Copy problem')
@@ -620,6 +620,9 @@ describe('docked view', () => {
     const lines = problem({ endLine: 3, endColumn: 4 })
     expect(lines).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
     expect(lines.match(/class="mb-line mb-line-range"/g)).toHaveLength(1)
+    const toLineEnd = problem({ endLine: 3, endColumn: 1 })
+    expect(toLineEnd).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
+    expect(toLineEnd).not.toContain('class="mb-line mb-line-range"')
     expect(problem({})).not.toContain('class="mb-line mb-line-range"')
 
     const ansi = renderAnsi(createProblemReport({
