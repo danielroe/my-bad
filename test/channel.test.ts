@@ -684,6 +684,17 @@ describe('client assets', () => {
     channel.close()
   })
 
+  it('heads the docked page with the title it is asked for, or `Problems`', async () => {
+    const channel = createChannel()
+    const page = async (query: string) => (await channel.fetchHandler(new Request(`http://localhost/__my-bad/panel?embed${query}`)))!.text()
+    expect(await page('')).toContain('<title>Problems</title>')
+    const titled = await page('&title=Nuxt%20%3Cerrors%3E')
+    expect(titled).toContain('<title>Nuxt &lt;errors&gt;</title>')
+    expect(titled).toContain('"title":"Nuxt \\u003cerrors>"')
+    expect(titled).not.toContain('my-bad</')
+    channel.close()
+  })
+
   it('stamps the docked page with the nonce the caller passes', async () => {
     const channel = createChannel()
     const tags = async (nonce?: string) => {
@@ -1445,7 +1456,7 @@ describe('problem sets', () => {
     return JSON.parse(/^data: (.+)$/m.exec(new TextDecoder().decode(value))![1]!)
   }
 
-  async function problem(message: string, kind: 'error' | 'warning' = 'error') {
+  async function problem(message: string, kind: 'error' | 'warning' | 'info' = 'error') {
     return {
       ...await createReport(new Error(message), { loaders: [], snippets: false }),
       kind,
@@ -1485,6 +1496,55 @@ describe('problem sets', () => {
     expect(sunk.filter(event => event.type === 'problems').map(event => event.payload.devtoolsDock)).toEqual(['checker', 'other', undefined])
     expect((await hello(channel)).problems).toEqual([
       { source: 'ts', errors: 0, warnings: 0 },
+    ])
+    channel.close()
+  })
+
+  it('keeps the last run of a source, and republishes the set when it changes', async () => {
+    const sunk: any[] = []
+    const channel = createChannel({
+      sink: event => void sunk.push(event),
+    })
+    const reports = [await problem('a')]
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 1, finishedAt: 2 },
+    })
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 1, finishedAt: 2 },
+    })
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 3 },
+    })
+    channel.setProblems('ts', reports, {
+      lastRun: { startedAt: 3, finishedAt: 4, extra: true } as never,
+    })
+    expect(sunk.filter(event => event.type === 'problems').map(event => event.payload.lastRun)).toEqual([
+      { startedAt: 1, finishedAt: 2 },
+      { startedAt: 3 },
+      { startedAt: 3, finishedAt: 4 },
+    ])
+    expect((await hello(channel)).problems[0].lastRun).toEqual({ startedAt: 3, finishedAt: 4 })
+    channel.close()
+  })
+
+  it('counts info problems apart from errors and warnings', async () => {
+    const channel = createChannel()
+    channel.setProblems('ts', [await problem('a'), await problem('b', 'info'), await problem('c', 'info')], { label: 'TypeScript' })
+    channel.setProblems('lint', [await problem('d', 'warning')], { label: 'ESLint' })
+    expect((await hello(channel)).problems).toEqual([
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        errors: 1,
+        warnings: 0,
+        info: 2,
+      },
+      {
+        source: 'lint',
+        label: 'ESLint',
+        errors: 0,
+        warnings: 1,
+      },
     ])
     channel.close()
   })

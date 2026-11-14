@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
-import { clientAssets, createReport, renderBadge, renderOverlay, renderPage } from '../src'
+import { clientAssets, createProblemReport, createReport, renderBadge, renderOverlay, renderPage } from '../src'
 import { createChannel } from '../src/channel'
 import { badgeState } from '../src/render/html'
 import { assetUrls } from '../src/render/html/assets'
@@ -109,6 +109,20 @@ beforeAll(async () => {
     if (req.url === '/badge.js') {
       res.setHeader('content-type', 'text/javascript')
       res.end(clientAssets.badge)
+      return
+    }
+    if (req.url === '/devtools-panel') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><body><div id="host" class="devframes-color-root dark" style="--devframe-primary-DEFAULT:#ff7a00"><div style="background:rgba(17, 17, 17, 0.8);color:rgb(244, 244, 245);font-family:Georgia"><iframe src="/__my-bad/panel?embed" style="width:900px;height:600px"></iframe></div></div></body></html>`)
+      return
+    }
+    if (req.url === '/devtools-panel-themed') {
+      res.setHeader('content-type', 'text/html')
+      res.end(`<!DOCTYPE html><html><head>${renderBadge({
+        cwd: proj,
+        channel: '/__my-bad',
+        theme: { accent: '#00ff00', css: '.mb-root{font-family:monospace!important}' },
+      })}</head><body><div class="devframes-color-root dark"><div style="background:#111;color:#eee;font-family:Georgia"><iframe src="/__my-bad/panel?embed"></iframe></div></div></body></html>`)
       return
     }
     if (req.url === '/devtools-host') {
@@ -1401,6 +1415,108 @@ describe('badge', () => {
     await page.close()
   }, 30_000)
 
+  it('shows the hint of a problem in its card', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const first = createProblemReport({
+      name: 'ESLint',
+      message: 'Unused variable',
+      file: `${proj}/src/handler.ts`,
+      line: 2,
+    })
+    channel.setProblems('lint', [first], { label: 'ESLint' })
+    const { page, errors } = await open('/badge', page => page.clock.install())
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
+
+    channel.setProblems('lint', [
+      first,
+      createProblemReport({
+        name: 'ESLint',
+        message: 'Missing return type',
+        hint: 'Annotate the return type.',
+        file: `${proj}/src/handler.ts`,
+        line: 2,
+      }),
+    ], { label: 'ESLint' })
+    await waitFor(() => peek.isVisible(), true)
+    expect(await peek.locator('.mb-peek-hint').textContent()).toBe('Annotate the return type.')
+    expect(await peek.locator('.mb-peek-hint').isVisible()).toBe(true)
+    await page.clock.fastForward(7000)
+    await waitFor(() => peek.isVisible(), false)
+
+    channel.setProblems('lint', [
+      first,
+      createProblemReport({
+        name: 'ESLint',
+        message: 'No hint here',
+        file: `${proj}/src/handler.ts`,
+        line: 2,
+      }),
+    ], { label: 'ESLint' })
+    await waitFor(() => peek.locator('.mb-peek-message').textContent(), 'No hint here')
+    await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'ESLint: Error: No hint here')
+    expect(await peek.locator('.mb-peek-hint').isVisible()).toBe(false)
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('leaves info problems out of the pill and the card', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const info = (message: string) => createProblemReport({ name: 'Checker', message, kind: 'info' })
+    channel.setProblems('checker', [
+      info('Consider a type annotation'),
+    ], { label: 'Checker' })
+    const { page, errors } = await open('/badge')
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
+    expect(await page.locator('my-bad-overlay-badge .mb-problems').isVisible()).toBe(false)
+
+    channel.setProblems('checker', [
+      info('Consider a type annotation'),
+      info('Prefer a const'),
+      createProblemReport({ name: 'Checker', message: 'Type mismatch' }),
+    ], { label: 'Checker' })
+    await waitFor(() => peek.isVisible(), true)
+    expect(await peek.locator('.mb-peek-message').textContent()).toBe('Type mismatch')
+    expect(await peek.locator('.mb-peek-meta').textContent()).toBe('Checker')
+    expect(await page.locator('my-bad-overlay-badge .mb-problems').textContent()).toBe('Checker 1')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('renders code spans in the card of a report that uses them', async () => {
+    channel.clearWarning()
+    channel.clearError()
+    channel.clearProblems()
+    const first = createProblemReport({ name: 'SFC', message: 'Unused `ref`' })
+    channel.setProblems('vue', [first], { label: 'Vue' })
+    const { page, errors } = await open('/badge')
+    const peek = page.locator('my-bad-overlay-badge .mb-peek')
+    await waitFor(() => page.evaluate(() => window.__MY_BAD_SOURCE__?.snapshot?.().problems[0]?.reports?.length), 1)
+
+    channel.setProblems('vue', [
+      first,
+      createProblemReport({
+        name: 'SFC',
+        message: '`<defineProps>` is a compiler macro',
+        hint: 'Remove the `import`.',
+      }, { codeSpans: true }),
+    ], { label: 'Vue' })
+    await waitFor(() => peek.isVisible(), true)
+    expect(await peek.locator('.mb-peek-message').innerHTML()).toBe('SFC: <code>&lt;defineProps&gt;</code> is a compiler macro')
+    expect(await peek.locator('.mb-peek-hint').innerHTML()).toBe('Remove the <code>import</code>.')
+    await waitFor(() => page.locator('my-bad-overlay-badge [role="status"]').textContent(), 'Vue: Error: SFC: <defineProps> is a compiler macro')
+    channel.clearProblems()
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
   it('ignores reports fetched for a source cleared while the fetch was in flight', async () => {
     channel.clearWarning()
     channel.clearError()
@@ -1640,7 +1756,7 @@ describe('badge', () => {
     await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Problems listed on the dev machine')
     expect(await panel.locator('[data-index-source="ts"] .mb-count').textContent()).toBe('1 error')
     channel.clearProblems()
-    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'No problems')
     expect(errors.filter(error => !error.includes('403'))).toEqual([])
     await page.close()
   }, 30_000)
@@ -1722,6 +1838,30 @@ describe('badge', () => {
     expect(await problems.locator('a').count()).toBe(0)
     channel.clearProblems()
     await page.close()
+  }, 30_000)
+})
+
+describe('multi-line messages', () => {
+  it('heads the overlay with the first line and expands the rest of the body', async () => {
+    channel.clearError()
+    const current = await report('Two components are named Widget:')
+    current.message = `Two components are named Widget:\n - ~/a.vue\n${' - ~/b.vue\n'.repeat(200)}`
+    channel.setError(current)
+    const page = await browser.newPage()
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${origin}/overlay`)
+    const root = page.locator('[data-my-bad-root]')
+    await waitFor(() => root.locator('h1').textContent(), 'Two components are named Widget:')
+    const body = root.locator('[data-message-body]')
+    expect(await body.isVisible()).toBe(true)
+    expect((await body.textContent())!.startsWith(' - ~/a.vue\n - ~/b.vue')).toBe(true)
+    expect(await body.locator('[data-message-rest]').isVisible()).toBe(false)
+    await body.getByRole('button', { name: /Show full message/ }).click()
+    expect(await body.locator('[data-message-rest]').isVisible()).toBe(true)
+    expect(errors).toEqual([])
+    await page.close()
+    channel.clearError()
   }, 30_000)
 })
 
@@ -1903,6 +2043,35 @@ describe('copy formats', () => {
     await page.close()
   })
 
+  it('highlights both halves of the copy button while either is active', async () => {
+    channel.setError(await report('Copy both halves'))
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async () => {},
+        },
+      })
+    })
+    await page.goto(origin)
+    const halves = () => page.locator('.mb-copy > button').evaluateAll(buttons => buttons.map((button) => {
+      const style = getComputedStyle(button)
+      return `${style.borderTopColor} ${style.backgroundColor}`
+    }))
+    const [idle] = await halves()
+    await page.getByRole('button', { name: 'Copy error', exact: true }).click()
+    await waitFor(async () => (await halves())[0] !== idle, true)
+    const [copied, menu] = await halves()
+    expect(menu).toBe(copied)
+    await page.mouse.move(0, 0)
+    await waitFor(async () => (await halves()).join(), [idle, idle].join(), 4000)
+    await page.getByRole('button', { name: 'More copy formats' }).click()
+    const [button, open] = await halves()
+    expect(button).toBe(open)
+    expect(open).not.toBe(idle)
+    await page.close()
+  })
+
   it('falls back to execCommand when the async clipboard refuses', async () => {
     channel.setError(await report('Clipboard refused'))
     const page = await browser.newPage()
@@ -2021,6 +2190,36 @@ describe('copy location', () => {
     await page.close()
   })
 
+  it('copies and opens a location that names only a file', async () => {
+    const current = await report('Named only a file')
+    current.frames = [
+      { file: `${proj}/caller.ts`, type: 'app' },
+    ]
+    channel.setError(current)
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.assign(window, { testClipboard: '' })
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => Object.assign(window, { testClipboard: text }),
+        },
+      })
+    })
+    await page.goto(origin)
+    const copied = () => page.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
+    const source = page.locator('.mb-source[data-file-only]')
+    await waitFor(() => source.count(), 1)
+    expect(await source.locator('[data-loc]').textContent()).toBe('caller.ts')
+    expect(await page.locator('.mb-unavailable').count()).toBe(0)
+    await source.getByRole('button', { name: 'Copy location', exact: true }).click()
+    await waitFor(copied, `${proj}/caller.ts`)
+    const requests = openRequests.length
+    await source.getByRole('button', { name: 'Open original source in your editor', exact: true }).click()
+    await waitFor(() => openRequests.length, requests + 1)
+    expect(openRequests.at(-1)).toEqual({ file: `${proj}/caller.ts` })
+    await page.close()
+  })
+
   it('keeps the icon button compact while offering a keyboard copy', async () => {
     channel.setError(await compiledReport('Copy a location by hand'))
     const page = await browser.newPage()
@@ -2104,7 +2303,7 @@ describe('devtools dock', () => {
   interface Calls {
     switched: string[]
     badges: Array<{ badge?: string, badgeVariant?: string, title?: string }>
-    messages: Record<string, { message: string, level: string, status?: string, notify?: boolean, filePosition?: unknown, actions?: Array<{ id: string, activate: { dockId: string, params?: Record<string, unknown> } }> }>
+    messages: Record<string, { message: string, description?: string, level: string, status?: string, notify?: boolean, filePosition?: unknown, actions?: Array<{ id: string, activate: { dockId: string, params?: Record<string, unknown> } }> }>
     added: string[]
     removed: string[]
   }
@@ -2188,7 +2387,7 @@ describe('devtools dock', () => {
     channel.clearProblems()
     await waitFor(async () => Object.keys((await calls()).messages).length, 0)
     expect((await calls()).badges.at(-1)).toEqual({ badge: undefined, badgeVariant: 'warning', title: 'my-bad' })
-    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'No problems')
     expect(errors).toEqual([])
     await page.close()
   }, 30_000)
@@ -2299,6 +2498,334 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
+  it('takes the colour scheme, colours and font of the DevTools panel it is docked in', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const page = await browser.newPage()
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    await panel.locator('.mb-docked-title').waitFor()
+    const root = () => panel.locator('html').evaluate((html) => {
+      const style = getComputedStyle(html)
+      return [
+        html.dataset.theme,
+        style.getPropertyValue('--mb-bg'),
+        style.getPropertyValue('--mb-fg'),
+        style.getPropertyValue('--mb-accent'),
+        getComputedStyle(document.querySelector('.mb-root')!).fontFamily,
+      ].join(' | ')
+    })
+    await waitFor(root, 'dark | rgb(17, 17, 17) | rgb(244, 244, 245) | #ff7a00 | Georgia')
+    expect(await panel.locator('.mb-docked-title').textContent()).toBe('Problems')
+    expect(await panel.locator('.mb-brand').count()).toBe(0)
+    await page.evaluate(() => document.getElementById('host')!.classList.replace('dark', 'light'))
+    await waitFor(async () => (await root()).split(' | ')[0], 'light')
+    expect(errors).toEqual([])
+    await page.close()
+  }, 30_000)
+
+  it('keeps the theme of the embedding page out of the DevTools dock', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [], { label: 'TypeScript' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel-themed`)
+    const panel = page.frameLocator('iframe')
+    await panel.locator('.mb-docked-title').waitFor()
+    await waitFor(() => panel.locator('.mb-root').evaluate(el => getComputedStyle(el).fontFamily), 'Georgia')
+    expect(await panel.locator('html').evaluate(el => getComputedStyle(el).getPropertyValue('--mb-accent').trim())).not.toBe('#00ff00')
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('hides and shows the problems of a source from its pill', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], {
+      label: 'ESLint',
+      lastRun: {
+        startedAt: Date.now() - 1000,
+        finishedAt: Date.now(),
+      },
+    })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const pill = panel.getByRole('button', { name: 'ESLint 1' })
+    await pill.waitFor()
+    expect(await pill.getAttribute('title')).toBe('Checked just now. Hide ESLint problems.')
+    await pill.click()
+    await waitFor(() => panel.locator('[data-index-source="lint"]').count(), 0)
+    expect(await pill.getAttribute('aria-pressed')).toBe('false')
+    expect(await pill.evaluate(button => button === document.activeElement)).toBe(true)
+    expect(await panel.locator('[data-index-source="ts"]').count()).toBe(1)
+    await page.keyboard.press('Enter')
+    await waitFor(() => panel.locator('[data-index-source="lint"]').count(), 1)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('clears the filter of the drawer with Escape before closing the drawer', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/badge`)
+    await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 1' }).click()
+    const drawer = page.locator('my-bad-overlay-badge .mb-drawer')
+    const panel = page.frameLocator('my-bad-overlay-badge .mb-drawer iframe')
+    const filter = panel.getByRole('searchbox', { name: 'Filter problems' })
+    await filter.fill('no match')
+    await panel.getByText('No problems match the current filters').waitFor()
+    await filter.press('Escape')
+    expect(await filter.inputValue()).toBe('')
+    await waitFor(() => panel.locator('.mb-index-title').count(), 1)
+    expect(await drawer.count()).toBe(1)
+    await filter.press('Escape')
+    await waitFor(() => drawer.count(), 0)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('filters the list as you type, by level, and shows all again', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch'), await report('Missing property')], { label: 'TypeScript' })
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], { label: 'ESLint' })
+    const page = await browser.newPage()
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const titles = () => panel.locator('.mb-index-title').allTextContents()
+    await waitFor(async () => (await titles()).length, 3)
+    const filter = panel.getByRole('searchbox', { name: 'Filter problems' })
+    await filter.pressSequentially('mis')
+    await waitFor(async () => (await titles()).join(), 'Error: Type mismatch,Error: Missing property')
+    channel.setError(await report('Render mismatch'))
+    await waitFor(async () => (await titles()).join(), 'Error: Render mismatch,Error: Type mismatch,Error: Missing property')
+    expect(await filter.evaluate(input => input === document.activeElement)).toBe(true)
+    await filter.pressSequentially('sing')
+    await waitFor(async () => (await titles()).join(), 'Error: Missing property')
+    await page.keyboard.press('Escape')
+    expect(await filter.inputValue()).toBe('')
+    await waitFor(async () => (await titles()).length, 4)
+
+    await panel.getByRole('button', { name: 'Errors 3' }).click()
+    await waitFor(async () => (await titles()).join(), 'Error: Unused variable')
+    await panel.getByRole('button', { name: 'Warnings 1' }).click()
+    await panel.getByText('No problems match the current filters').waitFor()
+    await panel.getByRole('button', { name: 'Show all' }).click()
+    await waitFor(async () => (await titles()).length, 4)
+    expect(await panel.getByRole('button', { name: 'Errors 3' }).getAttribute('aria-pressed')).toBe('true')
+    expect(errors).toEqual([])
+    channel.clearError()
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('groups the list by file, and remembers the choice', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], { label: 'ESLint' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const headings = () => panel.locator('.mb-index-group h2 .mb-index-label').allTextContents()
+    await waitFor(async () => (await headings()).join(), 'TypeScript,ESLint')
+    await panel.getByRole('group', { name: 'Group by' }).getByRole('button', { name: 'File' }).click()
+    await waitFor(async () => (await headings()).join(), `${proj}/src/handler.ts`)
+    expect(await panel.locator('.mb-index-loc').allTextContents()).toEqual(['TypeScript · 2:3', 'ESLint · 2:3'])
+    expect(await panel.locator(':focus').textContent()).toBe('File')
+    await page.reload()
+    await waitFor(async () => (await headings()).join(), `${proj}/src/handler.ts`)
+    await panel.getByRole('group', { name: 'Group by' }).getByRole('button', { name: 'Source' }).click()
+    await waitFor(async () => (await headings()).join(), 'TypeScript,ESLint')
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('copies the problems listed as Markdown', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.warn({
+      ...await report('Deprecated option'),
+      kind: 'warning',
+    })
+    channel.setProblems('ts', [await report('Type mismatch'), await report('Missing property')], { label: 'TypeScript' })
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => Object.assign(window, { testClipboard: text }),
+        },
+      })
+    })
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const copied = () => page.frames().find(frame => frame.url().includes('/panel'))!.evaluate(() => (window as Window & { testClipboard?: string }).testClipboard ?? '')
+    await waitFor(async () => (await panel.locator('.mb-index-title').allTextContents()).length, 3)
+    await panel.getByRole('button', { name: 'Copy the problems listed as Markdown' }).click()
+    await waitFor(async () => (await copied()).match(/^## /gm)?.length, 3)
+    expect(await copied()).toContain('## Warning: Error\n\n```\nDeprecated option\n```')
+    await panel.getByRole('searchbox', { name: 'Filter problems' }).fill('missing')
+    await waitFor(async () => (await panel.locator('.mb-index-title').allTextContents()).length, 1)
+    await panel.getByRole('button', { name: /Copy the problems listed as Markdown|Copied problems/ }).click()
+    await waitFor(async () => (await copied()).match(/^## /gm)?.length, 1)
+    expect(await copied()).toContain('Missing property')
+    channel.clearWarning()
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('follows what each source is doing while nothing is open, and lists problems once they arrive', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [], { label: 'TypeScript', status: 'checking' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const title = () => panel.locator('.mb-docked-empty-title').textContent().catch(() => '')
+    const status = () => panel.locator('.mb-watched-status').allTextContents()
+    await waitFor(title, 'Checking for problems')
+    expect(await status()).toEqual(['Starting'])
+    channel.setProblems('ts', [], {
+      label: 'TypeScript',
+      lastRun: {
+        startedAt: Date.now() - 2000,
+        finishedAt: Date.now(),
+      },
+    })
+    await waitFor(title, 'No problems')
+    expect(await status()).toEqual(['No problems, checked just now'])
+    expect(await panel.locator('[data-filter]').count()).toBe(0)
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    expect(await panel.locator('[data-filter]').count()).toBe(1)
+    channel.setProblems('ts', [], { label: 'TypeScript', status: 'failed', error: 'Checker crashed' })
+    await waitFor(async () => (await status()).join(), 'Failed: Checker crashed')
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('follows the status of the source in focus while it has nothing to show', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
+    channel.setProblems('vue', [], { label: 'Vue', status: 'failed', error: 'Checker crashed' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    await panel.locator('.mb-message').waitFor()
+    await page.evaluate(() => document.querySelector('iframe')!.contentWindow!.postMessage({ type: 'my-bad:select', source: 'vue' }, location.origin))
+    const status = () => panel.locator('[data-unselected]').textContent().catch(() => '')
+    await waitFor(status, 'VueFailed: Checker crashed')
+    channel.setProblems('vue', [], { label: 'Vue' })
+    await waitFor(status, 'VueNo problems')
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('wraps a long source name so its status stays readable', async () => {
+    channel.clearError()
+    channel.clearWarning()
+    channel.clearProblems()
+    channel.setProblems('long', [], {
+      label: 'x'.repeat(200),
+      status: 'failed',
+      error: 'The checker crashed while starting up',
+    })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const status = page.frameLocator('iframe').locator('.mb-watched-status')
+    await status.waitFor({ state: 'attached' })
+    expect((await status.boundingBox())!.width).toBeGreaterThan(150)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('marks the selected row in its severity colour, not the accent', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    channel.setProblems('lint', [
+      {
+        ...await report('Unused variable'),
+        kind: 'warning',
+      },
+    ], { label: 'ESLint' })
+    const page = await browser.newPage()
+    await page.goto(`${origin}/devtools-panel`)
+    const panel = page.frameLocator('iframe')
+    const selected = panel.locator('.mb-index-item[aria-current="true"]')
+    await selected.waitFor()
+    const colours = await selected.evaluate((item) => {
+      const style = getComputedStyle(item)
+      const probe = document.createElement('span')
+      item.append(probe)
+      probe.style.backgroundColor = 'var(--mb-accent-soft)'
+      const accent = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return {
+        bar: style.boxShadow,
+        icon: getComputedStyle(item.querySelector('svg')!).color,
+        background: style.backgroundColor,
+        accent,
+      }
+    })
+    expect(colours.bar).toContain(colours.icon)
+    expect(colours.background).not.toBe(colours.accent)
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
+  it('heads DevTools messages with the first line, without the backticks of code spans', async () => {
+    channel.clearError()
+    channel.clearProblems()
+    const current = {
+      ...await report('Use `Widget`'),
+      message: '\nUse `Widget`\n\n - `props` is unused',
+      hint: 'Remove the `import`.',
+      codeSpans: true,
+    }
+    channel.setError(current)
+    channel.setProblems('vue', [current], { label: 'Vue' })
+    const { page, errors, calls } = await open('/devtools-host')
+    await waitFor(async () => (await calls()).messages[`my-bad:error:${current.id}`]?.message, 'Error: Use Widget')
+    expect((await calls()).messages[`my-bad:error:${current.id}`]?.description).toBe(' - props is unused\n\nRemove the import.')
+    await waitFor(async () => (await calls()).messages['my-bad:problems:vue']?.description, 'src/handler.ts:2  Use Widget')
+    expect(errors).toEqual([])
+    channel.clearError()
+    channel.clearProblems()
+    await page.close()
+  }, 30_000)
+
   it('marks a problem set message as loading while it is checked', async () => {
     channel.clearError()
     channel.clearProblems()
@@ -2360,7 +2887,7 @@ describe('devtools dock', () => {
     await waitFor(() => panel.locator('.mb-message').textContent(), 'Latest warning')
     await waitFor(() => panel.locator('[data-docked-count]').textContent(), '1 warning')
     channel.clearWarning(latest.id)
-    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'No problems')
     expect(await page.locator('my-bad-overlay').count()).toBe(0)
     expect(errors).toEqual([])
     await page.close()
@@ -2435,12 +2962,13 @@ describe('devtools dock', () => {
     await waitFor(async () => (await calls()).badges.at(-1)?.badgeVariant, 'danger')
     await page.locator('my-bad-overlay-badge .mb-problems button').first().click()
     const panel = page.frameLocator('iframe')
-    await waitFor(() => panel.locator('[data-docked-count]').textContent().catch(() => ''), '1 error')
+    await waitFor(() => panel.locator('[data-docked-count]').textContent().catch(() => ''), '1 check failed')
+    expect(await panel.locator('.mb-docked-empty-title').textContent()).toBe('A check failed')
     await waitFor(() => panel.locator('.mb-message').count(), 0)
     channel.setProblems('ts', [await report('Type mismatch')], { label: 'TypeScript' })
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
     channel.setProblems('ts', [], { label: 'TypeScript', status: 'idle' })
-    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'Nothing to report')
+    await waitFor(() => panel.locator('.mb-docked-empty-title').textContent().catch(() => ''), 'No problems')
     await waitFor(async () => Object.keys((await calls()).messages).length, 0)
     expect(errors).toEqual([])
     await page.close()

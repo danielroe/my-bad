@@ -1,14 +1,18 @@
 import type { ProblemSummary } from '../../channel/protocol'
 import type { DisplayTarget } from '../../report/path'
-import type { ErrorReport, Frame, HistoryEntry, Section, Snippet } from '../../types'
-import type { BadgeFocus, DockedIndex, DockedState, PageState } from './state'
-import { clampMessage } from '../../report/message'
+import type { ErrorReport, Frame, HistoryEntry, Location, Section, Snippet } from '../../types'
+import type { Listed } from './problems'
+import type { BadgeFocus, DockedIndex, DockedState, IndexView, PageState } from './state'
+import { plainText } from '../../report/code'
+import { clampMessage, splitHeadline } from '../../report/message'
 import { displayPath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
-import { attr, escapeHtml, safeUrl } from './escape'
+import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
-import { countsLabel, dockedCounts, firstLine, reportLocation, warningCount } from './summary'
+import { calmStatus, filtering, levelOf, LEVELS, listing, nothingOpen, sourceStatus, sourceTone } from './problems'
+import { DOCKED_TITLE } from './state'
+import { countsLabel, dockedCounts, firstLine, plural, repeatsLabel, reportLocation, warningCount } from './summary'
 
 export const ICONS = {
   file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6v20h12V6zM14 2v6h4M9 13h6m-6 4h6"/></svg>',
@@ -32,7 +36,24 @@ export const ICONS = {
   checking: '<svg class="mb-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
 }
 
-const KIND_LABEL = { error: 'Error', warning: 'Warning', compile: 'Compile error' }
+const KIND_LABEL = {
+  error: 'Error',
+  warning: 'Warning',
+  compile: 'Compile error',
+  info: 'Info',
+}
+const KIND_NOUN = {
+  error: 'error',
+  warning: 'warning',
+  compile: 'error',
+  info: 'problem',
+}
+const KIND_ICON = {
+  error: ICONS.error,
+  warning: ICONS.warning,
+  compile: ICONS.error,
+  info: ICONS.info,
+}
 
 function headerCount(report: ErrorReport): string {
   if (report.kind !== 'error') {
@@ -97,18 +118,31 @@ function failed(set: ProblemSummary): boolean {
   return set.status === 'failed'
 }
 
+/** Open errors, warnings and info, with failed sources counted apart. */
 export function dockedSummary(index: DockedIndex): string {
-  return countsLabel(dockedCounts(index)) || 'All clear'
+  const broken = index.problems.filter(failed).length
+  const counts = dockedCounts(index)
+  return [
+    countsLabel({
+      errors: counts.errors - broken,
+      warnings: counts.warnings,
+      info: index.problems.reduce((total, set) => total + (failed(set)
+        ? 0
+        : set.info ?? 0), 0),
+    }),
+    broken && `${plural(broken, 'check')} failed`,
+  ].filter(Boolean).join(' · ') || (index.problems.some(set => set.status === 'checking')
+    ? 'Checking'
+    : 'All clear')
 }
 
-function renderIndexItem(entry: { id: string, kind: string, name: string, message: string }, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
+function renderIndexItem(entry: Pick<HistoryEntry, 'id' | 'kind' | 'name' | 'message' | 'codeSpans'>, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
   const current = shown?.id === entry.id && shown.source === source
-  const title = heading !== undefined && entry.name.toLowerCase() === heading.toLowerCase()
-    ? firstLine(entry.message)
-    : `${entry.name}: ${firstLine(entry.message)}`
-  return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${entry.kind === 'warning'
-    ? ICONS.warning
-    : ICONS.error}<span class="mb-index-title">${escapeHtml(title)}</span>${location
+  const message = inlineHtml(firstLine(entry.message), entry.codeSpans)
+  const title = repeatsLabel(entry.name, heading)
+    ? message
+    : `${escapeHtml(entry.name)}: ${message}`
+  return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${KIND_ICON[entry.kind]}<span class="mb-index-title">${title}</span>${location
     ? `<span class="mb-index-loc">${escapeHtml(location)}</span>`
     : ''}</button></li>`
 }
@@ -144,40 +178,171 @@ function renderIndexSet(set: DockedIndex['problems'][number], state: DockedState
     : ''}</section>`
 }
 
+const TONE_ICON = {
+  busy: ICONS.checking,
+  error: ICONS.error,
+  warning: ICONS.warning,
+  ok: ICONS.check,
+}
+
+function renderSources(sets: DockedIndex['problems'], view: IndexView): string {
+  const now = view.now ?? Date.now()
+  return sets.length
+    ? `<ul class="mb-index-sources" aria-label="Sources">${sets.map((set) => {
+      const label = set.label ?? set.source
+      const shown = !view.hiddenSources?.includes(set.source)
+      const total = set.errors + set.warnings + (set.info ?? 0)
+      const tone = sourceTone(set)
+      return `<li><button type="button" class="mb-pill" data-action="toggle-source" data-source="${escapeHtml(set.source)}" data-tone="${tone}" aria-pressed="${shown}" title="${escapeHtml(`${sourceStatus(set, now)}. ${shown ? 'Hide' : 'Show'} ${label} problems.`)}">${failed(set)
+        ? ICONS.close
+        : TONE_ICON[tone]}<span class="mb-pill-label">${escapeHtml(label)}</span>${failed(set)
+        ? '<span class="mb-pill-count">failed</span>'
+        : total
+          ? `<span class="mb-pill-count">${total}</span>`
+          : ''}</button></li>`
+    }).join('')}</ul>`
+    : ''
+}
+
+interface FileEntry {
+  entry: Listed
+  source?: string
+  label: string
+}
+
+function renderByFile(entries: FileEntry[], state: DockedState, shown: BadgeFocus | undefined): string[] {
+  const files = new Map<string, Array<FileEntry & { frame?: Frame }>>()
+  for (const item of entries) {
+    const frame = 'frames' in item.entry
+      ? reportLocation(item.entry)
+      : undefined
+    const key = frame?.file ?? ''
+    files.set(key, [
+      ...files.get(key) ?? [],
+      { ...item, frame },
+    ])
+  }
+  return [...files].map(([file, items]) => ({
+    file,
+    path: items[0]!.frame?.file
+      ? displayPath(items[0]!.frame, state.cwd)
+      : '',
+    items,
+  })).sort((a, b) => !a.file === !b.file
+    ? a.path.localeCompare(b.path)
+    : a.file
+      ? -1
+      : 1).map(({ file, path, items }) => {
+    const rows = items
+      .sort((a, b) => (a.frame?.line ?? 0) - (b.frame?.line ?? 0) || (a.frame?.column ?? 0) - (b.frame?.column ?? 0))
+      .map(({ entry, source, label, frame }) => renderIndexItem(entry, `${label}${frame?.line === undefined
+        ? ''
+        : ` · ${frame.line}${frame.column === undefined
+          ? ''
+          : `:${frame.column}`}`}`, shown, source, source && label))
+    return `<section class="mb-index-group" data-index-file="${escapeHtml(file)}"><h2><span class="mb-index-label"${attr('title', path || undefined)}>${escapeHtml(path || 'No file')}</span><span class="mb-count">${items.length}</span></h2><ul>${rows.join('')}</ul></section>`
+  })
+}
+
+const LEVEL_LABEL = { error: 'Errors', warning: 'Warnings', info: 'Info' }
+
+function renderLevels(entries: Listed[], view: IndexView): string {
+  const levels = LEVELS.map(level => ({ level, count: entries.filter(entry => levelOf(entry.kind) === level).length, hidden: !!view.hiddenLevels?.includes(level) }))
+    .filter(({ count, hidden }) => count || hidden)
+  return levels.length
+    ? `<div class="mb-index-levels" role="group" aria-label="Levels">${levels.map(({ level, count, hidden }) => `<button type="button" class="mb-level" data-action="level" data-level="${level}" aria-pressed="${!hidden}" title="${hidden ? 'Show' : 'Hide'} ${LEVEL_LABEL[level].toLowerCase()}">${KIND_ICON[level]}<span class="mb-sr-only">${LEVEL_LABEL[level]} </span>${count}</button>`).join('')}</div>`
+    : ''
+}
+
 /** The list beside a docked view, of the open error, the warnings and every problem set. */
 export function renderIndex(state: DockedState, index: DockedIndex, shown?: BadgeFocus): string {
-  const warnings = (index.history ?? []).filter(entry => entry.kind === 'warning').reverse()
-  const sets = index.problems.filter(set => set.errors + set.warnings || failed(set) || set.status === 'checking')
+  const view = state.view ?? {}
+  const { all, current, warnings: shownWarnings, sets: listedSets } = listing(index, view, state.cwd)
   const groups = [
-    index.current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(index.current, indexLocation(index.current, state), shown)}</ul></section>`,
-    warnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${warnings.length}</span></h2><ul>${warnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
-    ...sets.map(set => renderIndexSet(set, state, shown)),
+    current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(current, indexLocation(current, state), shown)}</ul></section>`,
+    shownWarnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${shownWarnings.length}</span></h2><ul>${shownWarnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
+    ...listedSets.map(set => renderIndexSet(set, state, shown)),
   ].filter(Boolean)
-  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${groups.length
+  if (view.group === 'file') {
+    groups.splice(0, groups.length, ...renderByFile([
+      ...current
+        ? [
+            { entry: current as Listed, label: 'Error' },
+          ]
+        : [],
+      ...shownWarnings.map(entry => ({ entry, label: 'Warning' })),
+      ...listedSets.flatMap(set => (set.reports ?? []).map(entry => ({ entry, source: set.source, label: set.label ?? set.source }))),
+    ], state, shown))
+  }
+  const hidden = filtering(view) || !!view.hiddenSources?.length
+  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems"><div class="mb-index-tools">${renderLevels(all, view)}${all.length
+    ? `<div class="mb-switch mb-index-group-by" role="group" aria-label="Group by">${(['source', 'file'] as const).map(group => `<button type="button" data-action="group" data-group="${group}" aria-pressed="${(view.group ?? 'source') === group}">${group === 'source'
+      ? 'Source'
+      : 'File'}</button>`).join('')}</div>`
+    : ''}</div>${renderSources(index.problems, view)}${groups.length
     ? groups.join('')
-    : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
+    : hidden
+      ? '<div class="mb-index-empty"><p class="mb-index-empty-title">No problems match the current filters</p><button type="button" class="mb-index-reset" data-action="show-all">Show all</button></div>'
+      : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
+}
+
+/** What a docked view shows while nothing is open: a calm state, and what each source is doing. */
+export function renderCalm(state: DockedState, index: DockedIndex): string {
+  const now = state.view?.now ?? Date.now()
+  const broken = index.problems.filter(failed).length
+  const checking = index.problems.some(set => set.status === 'checking')
+  return `<div class="mb-docked-calm" data-calm${attr('data-failed', !!broken)}>${broken
+    ? ICONS.error
+    : checking
+      ? ICONS.checking
+      : ICONS.check}<p class="mb-docked-empty-title">${broken
+    ? broken === 1
+      ? 'A check failed'
+      : `${broken} checks failed`
+    : checking
+      ? 'Checking for problems'
+      : 'No problems'}</p><p>Errors, warnings and problems from the dev server show up here as they happen.</p>${index.problems.length
+    ? `<ul class="mb-watched" aria-label="Sources">${index.problems.map((set) => {
+      const tone = sourceTone(set)
+      return `<li data-tone="${tone}">${failed(set)
+        ? ICONS.close
+        : TONE_ICON[tone]}<span class="mb-watched-label">${escapeHtml(set.label ?? set.source)}</span><span class="mb-watched-status">${escapeHtml(calmStatus(set, now))}</span></li>`
+    }).join('')}</ul>`
+    : ''}</div>`
+}
+
+export function renderUnselected(state: DockedState, index: DockedIndex, shown: BadgeFocus | undefined): string {
+  const set = shown?.source === undefined
+    ? undefined
+    : index.problems.find(entry => entry.source === shown.source)
+  return set
+    ? `<div class="mb-docked-empty" data-unselected><p class="mb-docked-empty-title">${escapeHtml(set.label ?? set.source)}</p><p>${escapeHtml(calmStatus(set, state.view?.now ?? Date.now()))}</p></div>`
+    : '<div class="mb-docked-empty" data-unselected><p>Select an entry in the list to see it here.</p></div>'
 }
 
 /** A docked view: the index of everything open, and the report it has selected rendered as the overlay renders it. */
 export function renderDocked(state: DockedState, index: DockedIndex, report?: ErrorReport, shown?: BadgeFocus, selected = 'r'): string {
   const live = !!state.channel
-  const name = escapeHtml(state.theme?.name ?? 'my-bad')
-  const lockup = `${state.theme?.logo ?? ''}<span class="mb-brand-name${state.theme?.logo ? ' mb-sr-only' : ''}">${name}</span>`
   const view = report && { ...state, mode: 'docked' as const, report }
   const set = shown?.list
     ? index.problems.find(entry => entry.source === shown.source)
     : undefined
   const list = safeUrl(set?.url)
+  const calm = nothingOpen(index)
   return `<header class="mb-header mb-corners">
-  <div class="mb-brand-group"><p class="mb-brand">${lockup}</p><span class="mb-header-count" data-docked-count>${escapeHtml(dockedSummary(index))}</span></div>
-  <nav class="mb-tools" aria-label="Tools"><ul><li><button class="mb-tool" type="button" data-action="theme" title="Toggle colour scheme" aria-label="Toggle colour scheme">${ICONS.theme}</button></li>${state.drawer
+  <div class="mb-brand-group"><p class="mb-docked-title">${escapeHtml(state.title || DOCKED_TITLE)}</p><span class="mb-header-count" data-docked-count>${escapeHtml(dockedSummary(index))}</span></div>
+  <nav class="mb-tools" aria-label="Tools"><ul>${calm
+    ? ''
+    : `<li><button class="mb-tool" type="button" data-action="copy-listed" title="Copy the problems listed as Markdown" aria-label="Copy the problems listed as Markdown">${ICONS.copy}</button></li>`}${state.drawer
     ? `<li><button class="mb-tool" type="button" data-action="close-docked" title="Close" aria-label="Close">${ICONS.close}</button></li>`
     : ''}</ul></nav>
   ${live ? '<div class="mb-progress" data-progress hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Build progress"><div class="mb-progress-bar"></div><span class="mb-progress-label" data-progress-label></span></div>' : ''}
 </header>
 <div class="mb-sr-only" role="status" aria-live="polite" data-announce></div>
-<div class="mb-docked">
-${renderIndex(state, index, shown)}
+<div class="mb-docked"${attr('data-calm-view', calm)}>
+${calm
+  ? ''
+  : `<div class="mb-index-pane"><div class="mb-index-filter"><input type="search" data-filter placeholder="Filter problems" aria-label="Filter problems" autocomplete="off" spellcheck="false"${attr('value', state.view?.filter || undefined)}></div>${renderIndex(state, index, shown)}</div>`}
 <main class="mb-main"${attr('data-report-id', report?.id)}${attr('data-list', !!list)} tabindex="-1">
   ${list
     ? `<p class="mb-docked-list-bar"><a href="${escapeHtml(list)}" target="_blank" rel="noreferrer">Open in a new tab${ICONS.open}</a></p><iframe class="mb-docked-list" src="${escapeHtml(list)}" title="${escapeHtml(`${set!.label ?? set!.source}: full list`)}"></iframe>`
@@ -186,7 +351,9 @@ ${renderIndex(state, index, shown)}
   ${renderFallback(view, selected)}`
       : state.withheld && shown?.source && index.problems.some(entry => entry.source === shown.source && entry.errors + entry.warnings)
         ? '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Problems listed on the dev machine</p><p>The dev server only lists problems on its own machine. Open this page there to see them.</p></div>'
-        : '<div class="mb-docked-empty"><p class="mb-docked-empty-title">Nothing to report</p><p>Errors, warnings and problems from the dev server show up here as they happen.</p></div>'}
+        : calm
+          ? renderCalm(state, index)
+          : renderUnselected(state, index, shown)}
   <div class="mb-secondary">${renderSecondaryTools(report, live)}</div>
 </main>
 </div>
@@ -216,7 +383,7 @@ export function pagerIndex(report: ErrorReport, history: HistoryEntry[]): number
 
 export function renderHistoryItems(report: ErrorReport, history: HistoryEntry[]): string {
   const index = pagerIndex(report, history)
-  return history.map((entry, position) => `<li><button type="button" data-entry="${escapeHtml(entry.id)}" data-action="history" data-dir="${position - index}">${escapeHtml(entry.message)}</button></li>`).join('')
+  return history.map((entry, position) => `<li><button type="button" data-entry="${escapeHtml(entry.id)}" data-action="history" data-dir="${position - index}">${inlineHtml(firstLine(entry.message), entry.codeSpans)}</button></li>`).join('')
 }
 
 export function renderHistory(report: ErrorReport, history?: HistoryEntry[]): string {
@@ -266,20 +433,21 @@ function renderCauseNavigation(state: PageState, selected: string): string {
     ? entries
     : entries.reverse()
   const current = chain.findIndex(entry => entry.path === selected)
-  const entry = (index: number, text = chain[index]!.label) => `<button type="button" data-action="cause" data-path="${chain[index]!.path}" aria-current="${index === current}" title="${escapeHtml(chain[index]!.report.message)}">${escapeHtml(text)}</button>`
+  const message = (report: ErrorReport) => inlineHtml(firstLine(report.message), report.codeSpans)
+  const entry = (index: number, html = escapeHtml(chain[index]!.label)) => `<button type="button" data-action="cause" data-path="${chain[index]!.path}" aria-current="${index === current}" title="${escapeHtml(plainText(chain[index]!.report.message, chain[index]!.report.codeSpans))}">${html}</button>`
   if (chain.length === 2 && !related) {
     return `<nav class="mb-single-cause" aria-label="Error cause">${selected === 'r'
-      ? `Caused by ${entry(0, chain[0]!.report.message)}`
-      : entry(1, `Back to: ${state.report.message}`)}</nav>`
+      ? `Caused by ${entry(0, message(chain[0]!.report))}`
+      : entry(1, `Back to: ${message(state.report)}`)}</nav>`
   }
-  return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, `1 ${chain[0]!.label}`)}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1
+  return `<nav class="mb-causes" aria-label="${related ? 'Related errors' : 'Error cause chain'}"><div class="mb-cause-path">${entry(0, escapeHtml(`1 ${chain[0]!.label}`))}<details class="mb-cause-picker"><summary>${current > 0 && current < chain.length - 1
     ? `${current + 1} ${chain[current]!.label}`
     : related
       ? `${chain.length - 1} related errors`
-      : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${index + 1} ${item.label}: ${item.report.message}`)}</li>`).join('')}</ol></details>${related
+      : 'Wrapped errors'}${ICONS.down}</summary><ol>${chain.map((item, index) => `<li>${entry(index, `${escapeHtml(`${index + 1} ${item.label}`)}: ${message(item.report)}`)}</li>`).join('')}</ol></details>${related
     ? ''
-    : `${ICONS.chevron}${entry(chain.length - 1, `${chain.length} Reported error`)}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r'
-    ? `<span>Reported as: ${escapeHtml(state.report.message)}</span>`
+    : `${ICONS.chevron}${entry(chain.length - 1, escapeHtml(`${chain.length} Reported error`))}`}</div><p>Inspecting ${chain[current]?.label.toLowerCase()} · ${current + 1} of ${chain.length}${selected !== 'r'
+    ? `<span>Reported as: ${message(state.report)}</span>`
     : ''}</p></nav>`
 }
 
@@ -314,7 +482,9 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
   return `<article class="mb-report" data-kind="${escapeHtml(report.kind)}" aria-labelledby="${id}-name ${id}-message">
   <div class="mb-report-heading"><p class="mb-kicker">${report.kind === 'error'
     ? ''
-    : `<span class="mb-kind-icon" aria-hidden="true">${ICONS.warning}</span>`}<span class="mb-name" id="${id}-name" data-name>${escapeHtml(selfCoded ? KIND_LABEL[report.kind] : report.name)}</span>${selfCoded
+    : `<span class="mb-kind-icon" aria-hidden="true">${report.kind === 'info'
+      ? ICONS.info
+      : ICONS.warning}</span>`}<span class="mb-name" id="${id}-name" data-name>${escapeHtml(selfCoded ? KIND_LABEL[report.kind] : report.name)}</span>${selfCoded
     ? ''
     : `${report.kind === 'error'
       ? ''
@@ -325,9 +495,7 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
     : ''}${code}${report.status
     ? `<span data-status>HTTP ${escapeHtml(report.status)}</span>`
     : ''}</p>${chrome
-    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy ${report.kind === 'warning'
-      ? 'warning'
-      : 'error'}</button>
+    ? `<div class="mb-menu mb-copy" data-menu><button class="mb-tool" type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy ${KIND_NOUN[report.kind]}</button>
         <button class="mb-tool" type="button" data-action="copy-menu" aria-expanded="false" aria-controls="mb-copy-menu" title="More copy formats" aria-label="More copy formats">${ICONS.down}</button>
         <ul class="mb-menu-list" id="mb-copy-menu" data-menu-list hidden>
           <li><button type="button" data-action="copy" data-copy="markdown">${ICONS.copy}Copy as Markdown</button></li>
@@ -338,14 +506,14 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
     : ''}</div>
   ${renderMessage(report, state, tag, `${id}-message`)}
   ${report.hint
-    ? `<p class="mb-hint" data-hint>${escapeHtml(report.hint)}${docs
+    ? `<p class="mb-hint" data-hint>${inlineHtml(report.hint, report.codeSpans)}${docs
       ? ` <a href="${escapeHtml(docs)}" target="_blank" rel="noreferrer">Learn more</a>`
       : ''}</p>`
     : ''}
   ${chrome
     ? renderCauseNavigation(state, path)
     : ''}
-  ${renderFrames(report.frames, state, id)}
+  ${renderFrames(report.frames, report.related, state, id)}
   ${report.trace?.length
     ? `<details class="mb-disclosure"><summary>${ICONS.chevron}Component trace <span class="mb-count">${report.trace.length}</span></summary>${renderTrace(report, state)}</details>`
     : ''}
@@ -354,10 +522,16 @@ function renderReport(report: ErrorReport, state: PageState, path: string, chrom
 
 function renderMessage(report: ErrorReport, state: PageState, tag: string, id: string): string {
   const { head, rest } = clampMessage(report.message || report.name, state.maxMessageLength)
+  const { headline, body } = splitHeadline(head)
   const more = rest
-    ? `<span class="mb-message-rest" data-message-rest hidden>${escapeHtml(rest)}</span><button type="button" class="mb-message-more" data-action="expand-message">Show full message <span class="mb-count">${rest.length} more characters</span></button>`
+    ? `<span class="mb-message-rest" data-message-rest hidden>${inlineHtml(rest, report.codeSpans)}</span><button type="button" class="mb-message-more" data-action="expand-message">Show full message <span class="mb-count">${rest.length} more characters</span></button>`
     : ''
-  return `<${tag} class="mb-message" id="${id}" data-message>${escapeHtml(head)}${more}</${tag}>`
+  const text = rest
+    ? body
+    : body.trimEnd()
+  return text
+    ? `<${tag} class="mb-message" id="${id}" data-message>${inlineHtml(headline, report.codeSpans)}</${tag}><p class="mb-message-body" data-message-body>${inlineHtml(text, report.codeSpans)}${more}</p>`
+    : `<${tag} class="mb-message" id="${id}" data-message>${inlineHtml(headline, report.codeSpans)}${more}</${tag}>`
 }
 
 function renderTrace(report: ErrorReport, state: PageState): string {
@@ -370,13 +544,21 @@ function renderTrace(report: ErrorReport, state: PageState): string {
   return `<ol class="mb-trace" data-trace aria-label="Component trace">${crumbs.join('')}</ol>`
 }
 
-function renderFrames(frames: Frame[], state: PageState, parent: string): string {
+function renderRelated(related: Location[] | undefined, state: PageState): string {
+  return related?.length
+    ? `<section class="mb-related" aria-label="Also in"><p class="mb-related-heading" aria-hidden="true">Also in</p><ul>${related.map(entry => `<li class="mb-empty-frame"><button type="button" class="mb-loc" data-loc data-action="open"${positionAttrs('data-', entry)}${attr('title', entry.file)}>${renderLocation(entry, entry.line, entry.column, state)}</button>${renderCopyLocation(entry, false)}</li>`).join('')}</ul></section>`
+    : ''
+}
+
+function renderFrames(frames: Frame[], related: Location[] | undefined, state: PageState, parent: string): string {
   if (!frames.length) {
-    return `<p class="mb-unavailable">No stack trace was provided. The ${state.report.kind === 'warning'
-      ? 'warning'
-      : 'error'} message and request context are still available to copy.</p>`
+    return `<p class="mb-unavailable">No stack trace was provided. The ${KIND_NOUN[state.report.kind]} message and request context are still available to copy.</p>${related?.length
+      ? `<div class="mb-ordered-stack">${renderRelated(related, state)}</div>`
+      : ''}`
   }
-  const origin = Math.max(0, frames.findIndex(frame => frame.type === 'app' && (frame.snippet || frame.compiled?.snippet)))
+  const origin = isLocation(frames[0]!)
+    ? 0
+    : Math.max(0, frames.findIndex(frame => frame.type === 'app' && (frame.snippet || frame.compiled?.snippet)))
   const framework = frames.filter(frame => frame.type !== 'app').length
   const frameRow = (frame: Frame, index: number) => index === origin
     ? index === 0
@@ -398,11 +580,16 @@ function renderFrames(frames: Frame[], state: PageState, parent: string): string
       ? ''
       : 's'}<span class="mb-framework-hidden"> hidden</span></span>${missing ? '<span class="mb-missing">Code not captured</span>' : ''}</div><ol class="mb-framework-frames">${group.map(({ frame, index }) => frameRow(frame, index)).join('')}</ol></li>`
   }).join('')
-  return `<div class="mb-ordered-stack">${renderSource(frames[origin]!, state)}${rows
+  return `<div class="mb-ordered-stack">${renderSource(frames[origin]!, state)}${renderRelated(related, state)}${rows
     ? `<section class="mb-stack" data-stack><div class="mb-stack-heading"><button type="button" data-action="stack" class="mb-stack-toggle" aria-expanded="false" aria-controls="${parent}-stack">${ICONS.chevron}Call stack <span class="mb-count">${frames.length}</span></button>${framework
       ? `<button type="button" class="mb-framework" role="switch" data-action="framework" aria-checked="false"><span class="mb-switch-track" aria-hidden="true"></span>Show framework frames <span class="mb-count">(${framework})</span></button>`
       : ''}</div><ol class="mb-frames" id="${parent}-stack" hidden>${rows}</ol></section>`
     : ''}</div>`
+}
+
+/** A location the report names itself, such as a `sources` entry, rather than a stack frame. */
+function isLocation(frame: Frame): boolean {
+  return frame.type === 'app' && !!frame.file && !frame.raw && !frame.function
 }
 
 function renderSource(frame: Frame, state: PageState, supporting = false): string {
@@ -417,17 +604,25 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
   const snippet = (compiled: boolean) => {
     const target = compiled ? frame.compiled! : frame
     return target.snippet && target.line !== undefined
-      ? renderSnippet(target.snippet, target.line, target.column, shortPath(target, state))
+      ? renderSnippet(target.snippet, target.line, target.column, shortPath(target, state), compiled
+          ? undefined
+          : frame)
       : '<p class="mb-unavailable">Source is unavailable at this stack location.</p>'
   }
   const copy = renderCopyLocation(frame, generated)
-  if (supporting && !source && !generated)
-    return `<div class="mb-empty-frame"><span class="mb-function">${escapeHtml(frame.function ?? '<anonymous>')}</span>${location(frame)}${copy}</div>`
-  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)} aria-label="${supporting
+  const fileOnly = !!frame.file && !frame.compiled && !frame.snippet && (frame.line === undefined || isLocation(frame))
+  if (supporting && !source && !generated) {
+    return `<div class="mb-empty-frame">${fileOnly && !frame.function
+      ? ''
+      : `<span class="mb-function">${escapeHtml(frame.function ?? '<anonymous>')}</span>`}${location(frame)}${copy}</div>`
+  }
+  return `<section class="mb-source"${attr('data-supporting', supporting)} data-frame${attr('data-compiled', !source && generated)}${attr('data-file-only', fileOnly)} aria-label="${supporting
     ? 'Stack frame'
     : `${state.report.kind === 'warning'
       ? 'Warning'
-      : 'Error'} source`}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function
+      : state.report.kind === 'info'
+        ? 'Problem'
+        : 'Error'} source`}"><div class="mb-source-toolbar"><div class="mb-source-location">${frame.function
     ? `<span class="mb-function"${attr('title', frame.function)}>${escapeHtml(frame.function)}</span>`
     : ''}<span data-location-source>${location(frame)}</span>${generated
     ? `<span data-location-compiled>${location(frame.compiled!)}</span>`
@@ -439,7 +634,9 @@ function renderSource(frame: Frame, state: PageState, supporting = false): strin
     ? `<p class="mb-compiled-note">Compiled JavaScript${frame.compiled!.file === frame.file
       ? ' (in memory)'
       : ''} · Editor opens the original source location.</p>`
-    : ''}<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>${generated
+    : ''}${fileOnly
+    ? ''
+    : `<div data-snippet-source${attr('hidden', !source && generated)}>${snippet(false)}</div>`}${generated
     ? `<div data-snippet-compiled${attr('hidden', source)}>${snippet(true)}</div>`
     : ''}</section>`
 }
@@ -450,7 +647,7 @@ function positionAttrs(prefix: string, target: Pick<Frame, 'file' | 'line' | 'co
     : ''
 }
 
-function renderCopyLocation(frame: Frame, generated: boolean): string {
+function renderCopyLocation(frame: Pick<Frame, 'file' | 'line' | 'column' | 'compiled'>, generated: boolean): string {
   if (!frame.file && !(generated && frame.compiled?.file)) {
     return ''
   }
@@ -471,19 +668,35 @@ function shortPath(target: string | DisplayTarget, state: PageState): string {
   return displayPath(target, state.cwd)
 }
 
-export function renderSnippet(snippet: Snippet, line: number, column?: number, label?: string): string {
+export function renderSnippet(snippet: Snippet, line: number, column?: number, label?: string, end?: Pick<Frame, 'endLine' | 'endColumn'>): string {
   const more = line >= snippet.start && line < snippet.start + snippet.lines.length && (snippet.start < line - 3 || snippet.start + snippet.lines.length - 1 > line + 3)
   const gutter = String(snippet.start + snippet.lines.length - 1).length
+  const offset = snippet.offset ?? 0
+  const multiline = end?.endLine !== undefined && end.endLine > line
+  const endLine = multiline
+    ? end!.endLine! - (end!.endColumn === 1
+      ? 1
+      : 0)
+    : line
   let rows = ''
   for (const [index, text] of snippet.lines.entries()) {
     const n = snippet.start + index
     const active = n === line
-    rows += `<span class="mb-line${active ? ' mb-line-active' : ''}"${active ? ' data-active aria-current="true"' : ''}${more && Math.abs(n - line) > 3
+    const ranged = n > line && n <= endLine
+    const start = column === undefined
+      ? undefined
+      : column - offset
+    const width = start === undefined
+      ? 1
+      : multiline
+        ? text.length - start + 1
+        : end?.endColumn === undefined
+          ? 1
+          : end.endColumn - offset - start
+    rows += `<span class="mb-line${active ? ' mb-line-active' : ''}${ranged ? ' mb-line-range' : ''}"${active ? ' data-active aria-current="true"' : ''}${more && Math.abs(n - line) > 3
       ? ' data-context="true"'
       : ''}><span class="mb-ln" aria-hidden="true">${escapeHtml(String(n).padStart(gutter))}</span><span class="mb-src">${highlightLine(snippet, index) || ' '}${active
-      ? renderCaret(text, column === undefined
-          ? undefined
-          : column - (snippet.offset ?? 0))
+      ? renderCaret(text, start, width)
       : ''}</span></span>`
   }
   const description = `Source${label
@@ -492,15 +705,18 @@ export function renderSnippet(snippet: Snippet, line: number, column?: number, l
   return `<pre class="mb-snippet"${attr('data-more-context', more)} data-lang="${escapeHtml(snippet.lang ?? '')}" aria-label="${escapeHtml(description)}" tabindex="0"><code>${rows}</code></pre>`
 }
 
-function renderCaret(text: string, column: number | undefined): string {
+function renderCaret(text: string, column: number | undefined, width = 1): string {
   if (column === undefined || !Number.isInteger(column)) {
     return ''
   }
   const firstToken = text.search(/\S/)
+  const carets = Number.isInteger(width)
+    ? Math.min(Math.max(1, width), Math.max(1, text.length - column + 1))
+    : 1
   return column > (firstToken < 0
     ? text.length
     : firstToken) && column <= text.length + 1
-    ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}^</span>`
+    ? `<span class="mb-caret" aria-hidden="true">${escapeHtml(text.slice(0, column - 1).replace(/[^\t]/g, ' '))}${'^'.repeat(carets)}</span>`
     : ''
 }
 
@@ -532,7 +748,7 @@ export function renderSection(section: Section): string {
 
 export function renderToast(report: ErrorReport): string {
   return `<article class="mb-toast" data-toast data-kind="${escapeHtml(report.kind)}" data-toast-id="${escapeHtml(report.id)}">
-  ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${escapeHtml(report.message)}</span></button>
+  ${ICONS.warning}<button type="button" class="mb-toast-body" data-action="show-toast"><strong>${escapeHtml(report.name)}</strong><span>${inlineHtml(firstLine(report.message), report.codeSpans)}</span></button>
   <button type="button" class="mb-tool" data-action="dismiss-toast" title="Dismiss warning" aria-label="Dismiss warning">${ICONS.close}</button>
 </article>`
 }

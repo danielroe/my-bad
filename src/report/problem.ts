@@ -1,4 +1,4 @@
-import type { ErrorReport, Frame, ReportOptions, Snippet } from '../types'
+import type { ErrorReport, Frame, Location, ReportOptions, Snippet } from '../types'
 import { stripAnsi } from './ansi'
 import { defaultCwd, lineLength, reportId, resolveFile, truncate } from './create'
 import { langFromFile, normalizeSlashes } from './path'
@@ -6,22 +6,32 @@ import { cropSnippet, parseCodeFrame } from './snippet'
 import { tokenizeSnippet } from './tokenize'
 
 export interface ProblemInput {
-  /** Heads the report, and prefixes its message in problem lists unless it repeats the set's `label` (or `source`). */
+  /** Heads the report, and prefixes its message in problem lists and cards unless it repeats the set's `label` (or `source`). */
   name: string
   message: string
+  /** How to fix the problem, shown below the message. */
+  hint?: string
   code?: string
   docsUrl?: string
   /** Absolute, or relative to `cwd`. */
   file?: string
   line?: number
   column?: number
+  /** End of the range in `file`, for the snippet to mark. `endColumn` is the column just past the range. */
+  endLine?: number
+  endColumn?: number
   /** Source around `line`: a `Snippet`, or a code frame of `3 | code` lines, which may mark a line with `>`. */
   snippet?: Snippet | string
-  /** Default `error`. */
-  kind?: 'error' | 'warning'
+  /** Other files the problem concerns, absolute or relative to `cwd`. */
+  related?: Array<{ file: string, line?: number, column?: number }>
+  /** Default `error`. An `info` problem is listed, but counts as neither an error nor a warning. */
+  kind?: 'error' | 'warning' | 'info'
 }
 
-export type ProblemReportOptions = Pick<ReportOptions, 'cwd' | 'maxMessageLength' | 'maxSnippetLineLength' | 'tokenizer'>
+export interface ProblemReportOptions extends Pick<ReportOptions, 'cwd' | 'maxMessageLength' | 'maxSnippetLineLength' | 'tokenizer'> {
+  /** Backtick code spans in `message` and `hint` are inline code. See `ErrorReport['codeSpans']`. */
+  codeSpans?: boolean
+}
 
 /**
  * Build a report from a diagnostic another tool has already located, without
@@ -39,10 +49,17 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
         ...(file && { file }),
         ...(input.line !== undefined && { line: input.line }),
         ...(input.column !== undefined && { column: input.column }),
+        ...(input.endLine !== undefined && { endLine: input.endLine }),
+        ...(input.endColumn !== undefined && { endColumn: input.endColumn }),
         type: 'app',
         ...(snippet && { snippet }),
       }
     : undefined
+  const related = input.related?.filter(entry => entry.file).map((entry): Location => ({
+    file: resolveFile(normalizeSlashes(entry.file), cwd),
+    ...(entry.line !== undefined && { line: entry.line }),
+    ...(entry.column !== undefined && { column: entry.column }),
+  }))
   const report: ErrorReport = {
     id: '',
     kind: input.kind ?? 'error',
@@ -50,10 +67,15 @@ export function createProblemReport(input: ProblemInput, options: ProblemReportO
     message: truncate(stripAnsi(input.message), options.maxMessageLength ?? 10_000),
     ...(input.code && { code: input.code }),
     ...(input.code && input.code === input.name && { diagnostic: true as const }),
+    ...(input.hint && {
+      hint: stripAnsi(input.hint),
+    }),
+    ...(options.codeSpans && { codeSpans: true as const }),
     ...(input.docsUrl && { docsUrl: input.docsUrl }),
     frames: frame
       ? [frame]
       : [],
+    ...(related?.length && { related }),
     causes: [],
     sections: [],
     timestamp: Date.now(),

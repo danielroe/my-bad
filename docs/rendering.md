@@ -28,6 +28,8 @@ res.end(renderPage(report, { cwd, channel: '/__my-bad' }))
 
 With a `channel`, the page connects to the [live channel](./channel.md). It swaps in new errors as they arrive, and reloads once its error is retired.
 
+The first line of a message heads the report. The lines after it, such as a list of files, show below the heading as body text. Lists, toasts, the badge, and the document title show only the first line. The terminal output prints the first line in bold, and the rest in regular text.
+
 ### HTML options
 
 `renderPage`, `renderOverlay`, and `injectOverlay` take these options:

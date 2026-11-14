@@ -286,6 +286,23 @@ export function locFromLabelledFrame(text: string): { file: string, line: number
     : undefined
 }
 
+/** Split a `NN |  code` frame with a caret line off the end of a message, as Vite plugins append to the warnings they pass to `this.warn`. */
+export function splitEmbeddedFrame(message: string): { message: string, frame: string } | undefined {
+  const lines = message.trimEnd().split('\n')
+  const start = lines.findIndex(line => FRAME_LINE_RE.test(line))
+  const frame = lines.slice(start)
+  if (start < 1 || !frame.some(line => CARET_LINE_RE.test(line)) || !frame.every(line => FRAME_LINE_RE.test(line) || CARET_LINE_RE.test(line) || !line.trim())) {
+    return
+  }
+  const prose = lines.slice(0, start).join('\n').trimEnd()
+  return prose
+    ? {
+        message: prose,
+        frame: frame.join('\n'),
+      }
+    : undefined
+}
+
 /** Strip an embedded code frame (oxc / esbuild style) from a compiler message, keeping the prose. */
 export function stripEmbeddedFrame(message: string): string {
   const lines = message.split('\n')

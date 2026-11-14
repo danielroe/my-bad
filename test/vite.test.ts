@@ -254,7 +254,7 @@ describe('devtools', () => {
         {
           id: 'my-bad',
           type: 'iframe',
-          title: 'my-bad',
+          title: 'Problems',
           icon: 'ph:bug-beetle-duotone',
           url: '/__bad/panel?embed',
           clientScript: { importFrom: '/__bad/dock.js', eager: true },
@@ -356,7 +356,7 @@ describe('devtools', () => {
         type: 'iframe',
         title: 'Nuxt errors',
         icon: 'ph:bug-beetle-duotone',
-        url: '/__nuxt_error/panel?embed',
+        url: '/__nuxt_error/panel?embed&title=Nuxt%20errors',
         clientScript: {
           importFrom: expect.stringMatching(/^\/__nuxt_error\/devtools\.js\?v=\w+$/),
           eager: true,

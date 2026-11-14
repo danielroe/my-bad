@@ -1,5 +1,6 @@
 import type { ErrorReport, Frame, HistoryEntry } from '../../types'
 import type { DockedIndex } from './state'
+import { splitHeadline } from '../../report/message'
 
 export function warningCount(history: HistoryEntry[] | undefined): number {
   return history?.filter(entry => entry.kind === 'warning').length ?? 0
@@ -24,10 +25,11 @@ export function plural(count: number, noun: string): string {
     : 's'}`
 }
 
-export function countsLabel(counts: { errors: number, warnings: number }): string {
+export function countsLabel(counts: { errors: number, warnings: number, info?: number }): string {
   return [
     counts.errors && plural(counts.errors, 'error'),
     counts.warnings && plural(counts.warnings, 'warning'),
+    counts.info && `${counts.info} info`,
   ].filter(Boolean).join(' · ')
 }
 
@@ -36,6 +38,11 @@ export function reportLocation(report: ErrorReport): Frame | undefined {
   return report.frames.find(frame => frame.file && frame.type === 'app') ?? report.frames.find(frame => frame.file)
 }
 
+/** Whether a name only repeats the label of the problem set it is listed under, ignoring case. */
+export function repeatsLabel(name: string, label: string | undefined): boolean {
+  return label !== undefined && name.toLowerCase() === label.toLowerCase()
+}
+
 export function firstLine(text: string): string {
-  return text.split('\n')[0] ?? ''
+  return splitHeadline(text).headline
 }

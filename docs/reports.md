@@ -31,7 +31,7 @@ Each report has an `id`, a hash of its name, message, and the location of its fi
 | `code` | The report code. |
 | `fix` | The hint shown below the message. |
 | `docs`, `docsUrl` | A link to the documentation. |
-| `sources` | App frames from `file:line:column`, `file:line`, or `file` strings. |
+| `sources` | The leading frame and the `related` locations, from `file:line:column`, `file:line`, or `file` strings. |
 | `statusCode`, `status` | The HTTP status. |
 | `data` | A **Data** section. |
 | `compiled` | See [Compile errors](#compile-errors). |
@@ -52,9 +52,24 @@ class WidgetNameError extends Error {
 }
 ```
 
-Each entry of `sources` becomes an app frame, with a snippet when it names a line. An entry that `my-bad` can't read goes into a **Sources** section instead.
+The first entry of `sources` leads the frames, with a snippet when it names a line. An entry without a line shows as a reference to the file, without a snippet, since the error doesn't say where in the file the problem is. Later entries go into the `related` locations of the report, which pages list under **Also in**, without snippets. When the error also has a `loc`, every entry is related. An entry that `my-bad` can't read still shows as a reference to the file when it looks like a path, with no spaces and with a `/` or a `.`. Any other entry goes into a **Sources** section instead.
 
 An error named after its own `code` describes itself. The heading shows the code once, and presets don't add a documentation link to it.
+
+### Code in messages
+
+A report can mark its `message` and `hint` as using backtick code spans, such as `` Pass a non-empty `name` prop ``. The report then has `codeSpans: true`, and renderers show each span as code:
+
+| Output | Code span |
+| --- | --- |
+| HTML | A `<code>` element. |
+| ANSI | Coloured, without the backticks. |
+| Plain text, such as titles and DevTools messages | Without the backticks. |
+| Markdown, JSON, and sinks | Unchanged. |
+
+Spans follow the CommonMark rules: a run of backticks opens a span, and the next run of the same length closes it. A backtick without a match stays as it is.
+
+An error named after its own `code` always uses code spans. For other errors, pass `codeSpans: true` to `createReport`. The option applies to the top-level report only, since causes often quote source code that contains backticks.
 
 ## Report options
 
@@ -70,6 +85,7 @@ An error named after its own `code` describes itself. The heading shows the code
 | `tokenizer` | Built in | See [Syntax highlighting](#syntax-highlighting). |
 | `compiled` | Detected | See [Compile errors](#compile-errors). |
 | `snippets` | `true` | Read source snippets. |
+| `codeSpans` | `false` | Mark the top-level report as using [code spans](#code-in-messages). |
 | `snippetLines` | `5` | Lines of source read on each side of the error line. |
 | `maxSnippets` | `100` | Snippets across the whole report, causes and related errors included. Later frames keep their location without a snippet. |
 | `maxSnippetLineLength` | `500` | Characters of each snippet line. Longer lines are cropped around the column. |
@@ -148,6 +164,10 @@ Parsers and loaders often throw an error whose message ends in a `file:line:colu
 - The path is absolute, and names a module that `my-bad` can read.
 
 An error without a stack stays an `error`. To place it, pass the Vite error shape: `{ message, id, loc }`.
+
+Vite plugins often append the code frame to the message they pass to `this.warn`, as `NN |  code` lines and a `^` line. When an input has an `id` or a `loc` but no `frame`, `createReport` splits a code frame like this off the end of the message, and uses it for the location and the snippet.
+
+When the `loc` and the caret of the code frame name different lines, the caret wins, since it lines up with the snippet that the page shows. One case is different: a caret past the end of its line marks the start of the next line, as the Vue compiler draws it. When the `loc` names that next line, the `loc` wins.
 
 ### Code frames from compiled code
 

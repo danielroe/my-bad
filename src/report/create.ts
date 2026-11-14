@@ -1,4 +1,4 @@
-import type { CompiledMarker, CompileErrorInput, ErrorReport, Frame, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
+import type { CompiledMarker, CompileErrorInput, ErrorReport, Frame, Location, ReportKind, ReportOptions, ResolvedReportOptions, Section, Snippet } from '../types'
 import process from 'node:process'
 import { parseRawStackTrace } from 'errx'
 import { fnv1a64Base36 } from 'fnv1a-64'
@@ -8,7 +8,7 @@ import { stripAnsi } from './ansi'
 import { classifyFrame } from './classify'
 import { externalPackage } from './package'
 import { hasScheme, isFilePath, isModuleLocation, langFromFile, normalizeSlashes, resolvePath, stripCacheQuery, toPath, withoutQuery } from './path'
-import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, stripEmbeddedFrame } from './snippet'
+import { cropSnippet, extractSnippet, lineAt, locFromCodeFrame, locFromLabelledFrame, parseCodeFrame, splitEmbeddedFrame, stripEmbeddedFrame } from './snippet'
 import { stringifyValue } from './stringify'
 import { tokenizeSnippet } from './tokenize'
 
@@ -48,6 +48,7 @@ export function resolveOptions(options: ReportOptions = {}): ResolvedReportOptio
     maxSnippets: snippetCount(options.maxSnippets),
     maxSnippetLineLength: lineLength(options.maxSnippetLineLength),
     snippets: options.snippets ?? true,
+    codeSpans: options.codeSpans,
     context: options.context ?? {},
     tokenizer: options.tokenizer,
     compiled: options.compiled,
@@ -122,10 +123,12 @@ function collapseDuplicateCauses(report: ErrorReport): ErrorReport {
     code: report.code ?? duplicate.code,
     ...((report.diagnostic ?? duplicate.diagnostic) && { diagnostic: true as const }),
     hint: report.hint ?? duplicate.hint,
+    ...((report.codeSpans ?? duplicate.codeSpans) && { codeSpans: true as const }),
     docsUrl: report.docsUrl ?? duplicate.docsUrl,
     status: report.status ?? duplicate.status,
     trace: report.trace ?? duplicate.trace,
     frames,
+    ...((report.related ?? duplicate.related) && { related: report.related ?? duplicate.related }),
     rawStack: report.rawStack ?? duplicate.rawStack,
     sections: mergeSections(report.sections, duplicate.sections),
     causes: [
@@ -193,19 +196,21 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     seen.add(input)
   }
 
-  const quoted = options.kind === undefined && !isCompileInput(input)
-    ? await compileInputFromMessage(error, ctx)
-    : undefined
-  const kind = options.kind ?? (quoted || isCompileInput(input)
-    ? 'compile'
-    : 'error')
-  const located = quoted ?? (isCompileInput(input)
+  const embedded = embeddedFrameInput(input, error)
+  const declared = embedded ?? (isCompileInput(input)
     ? input
     : undefined)
+  const quoted = options.kind === undefined && !declared
+    ? await compileInputFromMessage(error, ctx)
+    : undefined
+  const kind = options.kind ?? (quoted || declared
+    ? 'compile'
+    : 'error')
+  const located = quoted ?? declared
   const frames = await buildFrames(located ?? input, error, ctx, kind)
 
-  const sources = await buildSourceFrames(error.sources, ctx)
-  frames.splice(located ? 1 : 0, 0, ...sources.frames)
+  const sources = await buildSourceFrames(error.sources, ctx, !located)
+  frames.unshift(...sources.frames)
 
   const sections: Section[] = []
   if (sources.unresolved.length) {
@@ -229,17 +234,19 @@ async function buildReport(input: unknown, ctx: BuildContext, depth: number): Pr
     name: quoted?.name ?? (error.unnamed && kind === 'warning'
       ? 'Warning'
       : error.name),
-    message: truncate(quoted
-      ? quoted.message
+    message: truncate(quoted ?? embedded
+      ? located!.message
       : located
         ? stripEmbeddedFrame(error.message)
         : error.message, options.maxMessageLength),
     ...(error.code && { code: error.code }),
     ...(error.diagnostic && { diagnostic: true as const }),
     ...(error.hint && { hint: error.hint }),
+    ...((error.diagnostic || options.codeSpans) && { codeSpans: true as const }),
     ...(error.docsUrl && { docsUrl: error.docsUrl }),
     ...(error.status && { status: error.status }),
     frames,
+    ...(sources.related.length && { related: sources.related }),
     causes: [],
     sections,
     ...(error.stack && {
@@ -285,7 +292,12 @@ export function reportId(report: Pick<ErrorReport, 'name' | 'message' | 'frames'
 function nestedContext(ctx: BuildContext): BuildContext {
   return {
     ...ctx,
-    options: { ...ctx.options, kind: undefined, compiled: undefined },
+    options: {
+      ...ctx.options,
+      kind: undefined,
+      compiled: undefined,
+      codeSpans: undefined,
+    },
   }
 }
 
@@ -377,6 +389,7 @@ function withoutHeader(stack: string, message: string, name: string): Pick<Norma
 }
 
 const TRAILING_POSITION_RE = /^\s*(?<file>(?:[a-z]:)?[^\s:][^:]*):(?<line>\d+):(?<column>\d+)[\s)]*$/i
+const PATH_LIKE_RE = /^[^\s./]*[./]\S*$/
 const SOURCE_RE = /^(?<file>(?:[a-z]:)?[^\s:][^:]*)(?::(?<line>\d+)(?::(?<column>\d+))?)?$/i
 const ERROR_NAME_RE = /^(?<name>[A-Z][A-Za-z]*(?:Error|Exception)): (?<message>[\s\S]*)$/
 
@@ -457,11 +470,14 @@ function isInside(file: string, dir: string): boolean {
 /**
  * Locations a thrower collected itself (nostics' `sources`), as `file:line:column`,
  * `file:line` or a bare `file`.
- * Only entries that parse and can be read become frames; the rest are listed verbatim
- * so nothing the thrower reported is lost.
+ * Entries that parse are kept, and those that cannot be read only when they look
+ * like a path, so prose is not mistaken for a file; the rest are listed verbatim
+ * so nothing the thrower reported is lost. With `lead`, the first entry kept
+ * leads the frames, and the others are `related`.
  */
-async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContext): Promise<{ frames: Frame[], unresolved: string[] }> {
+async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContext, lead: boolean): Promise<{ frames: Frame[], related: Location[], unresolved: string[] }> {
   const frames: Frame[] = []
+  const related: Location[] = []
   const unresolved: string[] = []
   for (const source of sources ?? []) {
     const groups = SOURCE_RE.exec(source.trim())?.groups
@@ -471,11 +487,11 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
     const file = raw
       ? resolveFile(raw, ctx.options.cwd)
       : undefined
-    if (!file || await readSource(file, ctx) === undefined) {
+    if (!file || (!PATH_LIKE_RE.test(raw!) && await readSource(file, ctx) === undefined)) {
       unresolved.push(source)
       continue
     }
-    const frame: Frame = {
+    const location: Location = {
       file,
       ...(groups!.line && {
         line: Number(groups!.line),
@@ -483,15 +499,47 @@ async function buildSourceFrames(sources: string[] | undefined, ctx: BuildContex
       ...(groups!.column && {
         column: Number(groups!.column),
       }),
-      type: 'app',
     }
+    if (!lead || frames.length) {
+      const displayFile = externalPackage(file, ctx.options.cwd)?.displayFile
+      related.push(displayFile
+        ? { ...location, displayFile }
+        : location)
+      continue
+    }
+    const frame: Frame = { ...location, type: 'app' }
     if (ctx.options.snippets && frame.line) {
       setSnippet(frame, await loadSnippet(file, frame.line, frame.column, ctx))
     }
     addDisplayPaths(frame, ctx.options.cwd)
     frames.push(frame)
   }
-  return { frames, unresolved }
+  return { frames, related, unresolved }
+}
+
+/**
+ * Vite plugins warn with a code frame appended to the message and only an `id`
+ * or `loc` to place it, so the frame is split off to locate the report.
+ */
+function embeddedFrameInput(input: unknown, error: NormalizedError): CompileErrorInput | undefined {
+  if (typeof input !== 'object' || input === null) {
+    return
+  }
+  const candidate = input as CompileErrorInput
+  const id = typeof candidate.id === 'string' && candidate.id
+    ? candidate.id
+    : undefined
+  if ((typeof candidate.frame === 'string' && candidate.frame) || (!id && !compileLoc(candidate))) {
+    return
+  }
+  const split = splitEmbeddedFrame(error.message)
+  return split && {
+    message: split.message,
+    frame: split.frame,
+    ...(id && { id }),
+    ...(candidate.loc && { loc: candidate.loc }),
+    ...(candidate.compiled !== undefined && { compiled: candidate.compiled }),
+  }
 }
 
 function isCompileInput(input: unknown): input is CompileErrorInput {
@@ -537,9 +585,15 @@ function compileLoc(input: CompileErrorInput): { file?: string, line: number, co
  * columns from zero when rendering a frame but compilers report them from one,
  * so the caret is a character to the right of the position the compiler named.
  * A declared column past the end of the caret line is an offset, not a column.
+ * A caret past the end of its line marks the start of the next one, as
+ * `generateCodeFrame` of `@vue/shared` draws it, so a declared loc on that next
+ * line wins.
  */
 function mergeFrameLoc(declared: { file?: string, line: number, column: number } | undefined, frameLoc: { line: number, column: number }, caretLine: string | undefined): { file?: string, line: number, column: number } {
   if (declared && declared.line === frameLoc.line && typeof declared.column === 'number' && (caretLine === undefined || declared.column <= caretLine.length + 1)) {
+    return declared
+  }
+  if (declared && declared.line === frameLoc.line + 1 && caretLine !== undefined && frameLoc.column > caretLine.length + 1) {
     return declared
   }
   return {

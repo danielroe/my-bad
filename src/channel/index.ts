@@ -148,10 +148,12 @@ export interface Channel {
 
 function summarize({ reports, ...set }: ProblemSet): ProblemSummary {
   const warnings = reports.filter(report => report.kind === 'warning').length
+  const info = reports.filter(report => report.kind === 'info').length
   return {
     ...set,
-    errors: reports.length - warnings,
+    errors: reports.length - warnings - info,
     warnings,
+    ...(info && { info }),
   }
 }
 
@@ -162,6 +164,8 @@ function sameProblems(a: ProblemSet, b: ProblemSet): boolean {
     && a.error === b.error
     && a.url === b.url
     && a.devtoolsDock === b.devtoolsDock
+    && a.lastRun?.startedAt === b.lastRun?.startedAt
+    && a.lastRun?.finishedAt === b.lastRun?.finishedAt
     && sameReports(a.reports, b.reports)
 }
 
@@ -597,6 +601,7 @@ export function createChannel(options: ChannelOptions = {}): Channel {
     const body = matched === 'panel'
       ? renderDockedPage({
           channel: url.pathname.slice(0, -'/panel'.length).replace(/^[/\\]+/, '/'),
+          title: url.searchParams.get('title') ?? undefined,
           embed: url.searchParams.has('embed'),
           drawer: url.searchParams.has('drawer'),
           nonce,
@@ -851,6 +856,12 @@ export function createChannel(options: ChannelOptions = {}): Channel {
         ...(meta.error !== undefined && { error: meta.error }),
         ...(meta.url !== undefined && { url: meta.url }),
         ...(meta.devtoolsDock !== undefined && { devtoolsDock: meta.devtoolsDock }),
+        ...(typeof meta.lastRun?.startedAt === 'number' && {
+          lastRun: {
+            startedAt: meta.lastRun.startedAt,
+            ...(typeof meta.lastRun.finishedAt === 'number' && { finishedAt: meta.lastRun.finishedAt }),
+          },
+        }),
         reports: [...reports],
       }
       const previous = problemSets.get(source)

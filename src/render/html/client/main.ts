@@ -1,11 +1,14 @@
 import type { BuildProgress, ChannelEvent, ProblemSet, ProblemSummary } from '../../../channel/protocol'
 import type { ErrorReport, HistoryEntry } from '../../../types'
-import type { BadgeFocus, Dock, DockedIndex, DockedState, PageState } from '../state'
+import type { BadgeFocus, Dock, DockedIndex, DockedState, Level, PageState } from '../state'
+import { plainText } from '../../../report/code'
 import { toMarkdown } from '../../../report/markdown'
 import { escapeHtml, safeUrl } from '../escape'
+import { listing, nothingOpen } from '../problems'
 import { THEME_STORAGE_KEY } from '../state'
+import { firstLine } from '../summary'
 import { themeStyles } from '../theme'
-import { dockedSummary, ICONS, pagerIndex, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderToast, renderView, reportEntries, warningCount, warningLabel } from '../view'
+import { dockedSummary, ICONS, pagerIndex, renderCalm, renderDocked, renderHistory, renderHistoryItems, renderIndex, renderPager, renderToast, renderUnselected, renderView, reportEntries, warningCount, warningLabel } from '../view'
 
 declare global {
   interface Window { __MY_BAD__?: PageState }
@@ -15,6 +18,7 @@ const STORAGE = {
   theme: THEME_STORAGE_KEY,
   dock: 'my-bad:overlay:dock',
   minimized: 'my-bad:overlay:minimized',
+  group: 'my-bad:docked:group',
 }
 
 /** The report id the user last expanded, so a retry of the same error starts expanded. */
@@ -139,7 +143,7 @@ function mount(): Mount | undefined {
 }
 
 function errorOf(report: ErrorReport | undefined): ErrorReport | undefined {
-  return report?.kind === 'warning'
+  return report?.kind === 'warning' || report?.kind === 'info'
     ? undefined
     : report
 }
@@ -198,13 +202,18 @@ function overlayMount(state: PageState, host: HTMLElement): Mount {
   }
 }
 
+/** The colour scheme of the DevTools panel a docked view sits in. */
+let hostScheme: 'dark' | 'light' | undefined
+
 function applyTheme(m: Mount): void {
   const forced = m.state.theme?.scheme
-  const remembered = storage(STORAGE.theme)
+  const remembered = m.docked && !m.docked.state.drawer
+    ? undefined
+    : storage(STORAGE.theme)
   const stored = remembered === 'light' || remembered === 'dark'
     ? remembered
     : undefined
-  const scheme = forced ?? stored ?? (matchMedia('(prefers-color-scheme: dark)').matches
+  const scheme = forced ?? hostScheme ?? stored ?? (matchMedia('(prefers-color-scheme: dark)').matches
     ? 'dark'
     : 'light')
   m.themeTarget.setAttribute('data-theme', scheme)
@@ -287,6 +296,9 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
   const scroll = m.root.scrollTop
   const root = m.root.getRootNode() as Document | ShadowRoot
   const focused = [m.root, m.overlay].some(el => el?.contains(root.activeElement))
+  const typing = root.activeElement instanceof HTMLInputElement && root.activeElement.matches('[data-filter]')
+    ? root.activeElement.selectionStart
+    : undefined
   revive(m)
   m.error = error
   m.selected = undefined
@@ -326,7 +338,12 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
       ? headline(report)
       : 'Nothing to report'))
   }
-  if (focused || !(options.quiet || options.inPlace)) {
+  if (typing !== undefined) {
+    const filter = m.root.querySelector<HTMLInputElement>('[data-filter]')
+    filter?.focus({ preventScroll: true })
+    filter?.setSelectionRange(typing, typing)
+  }
+  else if (focused || !(options.quiet || options.inPlace)) {
     focusHeading(m)
   }
 }
@@ -334,7 +351,9 @@ function rerender(m: Mount, report: ErrorReport | undefined, history?: HistoryEn
 function headline(report: ErrorReport): string {
   return `${report.kind === 'warning'
     ? 'Warning'
-    : 'Error'}: ${report.name}: ${report.message}`
+    : report.kind === 'info'
+      ? 'Info'
+      : 'Error'}: ${report.name}: ${plainText(firstLine(report.message), report.codeSpans)}`
 }
 
 const labelRestores = new WeakMap<HTMLElement, () => void>()
@@ -908,6 +927,9 @@ function embeddingSource(): MyBadSharedSource | undefined {
 }
 
 function dockedMount(state: DockedState, root: HTMLElement): Mount {
+  if (storage(STORAGE.group) === 'file') {
+    state.view = { ...state.view, group: 'file' }
+  }
   const docked: Docked = {
     state,
     history: [],
@@ -963,7 +985,9 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
   if (page) {
     const settings = {
       cwd: page.cwd,
-      theme: page.theme,
+      theme: d.state.drawer
+        ? page.theme
+        : undefined,
       editor: page.editor,
       maxMessageLength: page.maxMessageLength,
       requestId: page.requestId,
@@ -972,7 +996,7 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
     Object.assign(d.state, settings)
     Object.assign(m.state, settings)
     applyTheme(m)
-    const styles = themeStyles(page.theme, ':root')
+    const styles = themeStyles(settings.theme, ':root')
     if (styles) {
       const style = document.createElement('style')
       style.textContent = styles
@@ -983,6 +1007,77 @@ async function adoptPage(m: Mount, d: Docked): Promise<void> {
     }
   }
   d.query = new URL(source?.url ?? `${d.state.channel}/events`, location.href).searchParams
+}
+
+/** The element in the embedding document hosting this view, such as a DevTools panel, when it is on the same origin. */
+function hostFrame(): HTMLElement | undefined {
+  try {
+    return window.frameElement as HTMLElement | null ?? undefined
+  }
+  catch {}
+}
+
+function hostAncestors(frame: Element): Element[] {
+  const chain: Element[] = []
+  for (let node: Element | undefined = frame; node;) {
+    chain.push(node)
+    const root: Node | null = node.parentNode
+    node = node.parentElement ?? (root && 'host' in root
+      ? (root as ShadowRoot).host
+      : undefined)
+  }
+  return chain
+}
+
+const TRANSPARENT_RE = /^(?:transparent|rgba\(.*,\s*0\))$/
+
+/**
+ * Take the colour scheme, colours and font of the DevTools panel this view is
+ * docked in, following the scheme when the panel switches it. Vite DevTools
+ * marks the scheme with a `dark` or `light` class on an ancestor of the frame.
+ */
+function adoptHost(m: Mount): void {
+  const frame = hostFrame()
+  if (!frame) {
+    return
+  }
+  const chain = hostAncestors(frame)
+  const marked = chain.find(el => el.classList.contains('dark') || el.classList.contains('light'))
+  const apply = () => {
+    const view = frame.ownerDocument.defaultView!
+    const style = (el: Element) => view.getComputedStyle(el)
+    const surface = chain.slice(1).find(el => !TRANSPARENT_RE.test(style(el).backgroundColor))
+    const opaque = surface && style(surface).backgroundColor.replace(/^rgba\((.*),\s*[\d.]+\)$/, (_, channels: string) => `rgb(${channels})`)
+    const parent = style(frame.parentElement ?? frame)
+    const accent = style(marked ?? frame).getPropertyValue('--devframe-primary-DEFAULT').trim()
+    const root = document.documentElement
+    for (const [name, value] of [
+      ['--mb-bg', opaque],
+      ['--mb-fg', parent.color],
+      ['--mb-font-sans', parent.fontFamily],
+      ['--mb-accent', accent],
+    ] as const) {
+      if (value && /^[^;{}<]+$/.test(value)) {
+        root.style.setProperty(name, value)
+      }
+    }
+    if (marked) {
+      hostScheme = marked.classList.contains('dark')
+        ? 'dark'
+        : 'light'
+      applyTheme(m)
+    }
+  }
+  try {
+    apply()
+    if (marked) {
+      new MutationObserver(apply).observe(marked, {
+        attributes: true,
+        attributeFilter: ['class'],
+      })
+    }
+  }
+  catch {}
 }
 
 function dockedIndex(d: Docked): DockedIndex {
@@ -1002,21 +1097,110 @@ function dockedIndex(d: Docked): DockedIndex {
 
 function focusedItem(m: Mount): DOMStringMap | undefined {
   const active = document.activeElement as HTMLElement | null
-  return active?.matches('[data-index] [data-id]') && m.root.contains(active)
+  return active?.matches('[data-index] [data-action]') && m.root.contains(active)
     ? { ...active.dataset }
     : undefined
 }
 
 function refocusItem(m: Mount, item: DOMStringMap | undefined): void {
-  if (item) {
-    m.root.querySelector<HTMLElement>(`[data-index] [data-id="${CSS.escape(item.id ?? '')}"]${item.source
-      ? `[data-source="${CSS.escape(item.source)}"]`
-      : ':not([data-source])'}`)?.focus({ preventScroll: true })
+  if (!item) {
+    return
   }
+  const selector = [
+    'action',
+    'id',
+    'source',
+    'level',
+    'group',
+  ].map(key => item[key] === undefined
+    ? key === 'source'
+      ? ':not([data-source])'
+      : ''
+    : `[data-${key}="${CSS.escape(item[key]!)}"]`).join('')
+  m.root.querySelector<HTMLElement>(`[data-index] ${selector}`)?.focus({ preventScroll: true })
+}
+
+function toggleLevel(m: Mount, d: Docked, level: Level): void {
+  const hidden = new Set(d.state.view?.hiddenLevels)
+  if (!hidden.delete(level)) {
+    hidden.add(level)
+  }
+  d.state.view = {
+    ...d.state.view,
+    hiddenLevels: [...hidden],
+  }
+  refreshIndex(m, d)
+}
+
+function showAll(m: Mount, d: Docked): void {
+  d.state.view = { group: d.state.view?.group }
+  const filter = m.root.querySelector<HTMLInputElement>('[data-filter]')
+  if (filter) {
+    filter.value = ''
+  }
+  refreshIndex(m, d)
+  filter?.focus()
+}
+
+function groupIndex(m: Mount, d: Docked, group: string | undefined): void {
+  const by = group === 'file'
+    ? 'file'
+    : 'source'
+  storage(STORAGE.group, by)
+  d.state.view = { ...d.state.view, group: by }
+  refreshIndex(m, d)
+}
+
+async function copyListed(m: Mount, d: Docked, button: HTMLElement): Promise<void> {
+  const listed = listing(dockedIndex(d), d.state.view ?? {}, d.state.cwd)
+  const reports = [
+    ...listed.current
+      ? [listed.current]
+      : [],
+    ...(await Promise.all(listed.warnings.map(entry => warnings.get(entry.id) ?? fetchDocked(m, d, entry.id)))).filter(report => !!report),
+    ...listed.sets.flatMap(set => set.reports ?? []),
+  ]
+  return reports.length
+    ? copyText(m, reports.map(report => toMarkdown(report, { cwd: m.state.cwd })).join('\n'), button, 'problems')
+    : undefined
+}
+
+function filterIndex(m: Mount, d: Docked, text: string): void {
+  d.state.view = { ...d.state.view, filter: text }
+  refreshIndex(m, d)
+}
+
+function toggleSource(m: Mount, d: Docked, source: string): void {
+  const hidden = new Set(d.state.view?.hiddenSources)
+  if (!hidden.delete(source)) {
+    hidden.add(source)
+  }
+  d.state.view = {
+    ...d.state.view,
+    hiddenSources: [...hidden],
+  }
+  refreshIndex(m, d)
 }
 
 function refreshIndex(m: Mount, d: Docked): void {
   const index = dockedIndex(d)
+  if (!!m.root.querySelector('[data-calm-view]') !== nothingOpen(index)) {
+    return rerender(m, d.report, undefined, { inPlace: true })
+  }
+  for (const [selector, html] of [
+    [
+      '[data-calm]',
+      () => renderCalm(d.state, index),
+    ],
+    [
+      '[data-unselected]',
+      () => renderUnselected(d.state, index, d.shown),
+    ],
+  ] as const) {
+    const stale = m.root.querySelector(selector)
+    stale?.insertAdjacentHTML('afterend', html())
+    stale?.remove()
+  }
   const nav = m.root.querySelector('[data-index]')
   const item = focusedItem(m)
   const scroll = nav?.scrollTop ?? 0
@@ -1257,6 +1441,13 @@ function connectDocked(m: Mount, d: Docked): void {
   })
   on('log', payload => appendLog(m, payload))
   on('build', payload => showProgress(m, payload))
+  setInterval(() => {
+    if ([
+      ...d.summaries.values(),
+    ].some(set => set.lastRun)) {
+      refreshIndex(m, d)
+    }
+  }, 15_000)
 
   addEventListener('message', (event) => {
     const data = event.data as { type?: string } & BadgeFocus
@@ -1664,12 +1855,12 @@ function bind(m: Mount): void {
         }
         m.root.querySelector('.mb-report')?.replaceWith(article)
         markOverflowingSnippets(m)
-        announce(m, `${selected.label}: ${selected.report.name}: ${selected.report.message}`)
+        announce(m, `${selected.label}: ${selected.report.name}: ${plainText(firstLine(selected.report.message), selected.report.codeSpans)}`)
         focusHeading(m)
         return
       }
       case 'expand-message': {
-        const rest = target.closest('[data-message]')?.querySelector('[data-message-rest]')
+        const rest = target.closest('[data-message], [data-message-body]')?.querySelector('[data-message-rest]')
         rest?.removeAttribute('hidden')
         target.remove()
         return
@@ -1743,6 +1934,24 @@ function bind(m: Mount): void {
         return void navigateHistory(m, Number(target.dataset.dir))
       case 'select':
         return void selectDocked(m, { id: target.dataset.id, source: target.dataset.source })
+      case 'toggle-source':
+        return m.docked && target.dataset.source !== undefined
+          ? toggleSource(m, m.docked, target.dataset.source)
+          : undefined
+      case 'level':
+        return m.docked && target.dataset.level
+          ? toggleLevel(m, m.docked, target.dataset.level as Level)
+          : undefined
+      case 'show-all':
+        return m.docked
+          ? showAll(m, m.docked)
+          : undefined
+      case 'group':
+        return m.docked
+          ? groupIndex(m, m.docked, target.dataset.group)
+          : undefined
+      case 'copy-listed':
+        return void (m.docked && copyListed(m, m.docked, target))
       case 'list': {
         const source = target.dataset.source
         const dock = source === undefined
@@ -1795,6 +2004,20 @@ function bind(m: Mount): void {
     }
   })
   container.addEventListener('toggle', () => markOverflowingSnippets(m), true)
+  container.addEventListener('input', (event) => {
+    const target = event.target
+    if (m.docked && target instanceof HTMLInputElement && target.matches('[data-filter]')) {
+      filterIndex(m, m.docked, target.value)
+    }
+  })
+  container.addEventListener('keydown', (event) => {
+    const target = (event as KeyboardEvent).key === 'Escape' && event.target
+    if (m.docked && target instanceof HTMLInputElement && target.matches('[data-filter]') && target.value) {
+      event.preventDefault()
+      target.value = ''
+      filterIndex(m, m.docked, '')
+    }
+  })
   container.addEventListener('change', (event) => {
     const select = event.target as HTMLSelectElement
     if (select.matches('[data-log-filter]')) {
@@ -1840,12 +2063,15 @@ if (m?.docked) {
   m.root.innerHTML = renderDocked(m.docked.state, dockedIndex(m.docked))
   activate(m)
   const docked = m.docked
+  if (!docked.state.drawer) {
+    adoptHost(m)
+  }
   if (docked.state.drawer) {
     addEventListener('keydown', (event) => {
       const target = event.target instanceof Element
         ? event.target
         : undefined
-      const layered = !!m.root.querySelector('.mb-cause-picker[open], .mb-history[open], [data-menu-list]:not([hidden]), [data-logs]:not([hidden]), dialog[open]') || !!target?.closest('[data-toast]')
+      const layered = !!m.root.querySelector('.mb-cause-picker[open], .mb-history[open], [data-menu-list]:not([hidden]), [data-logs]:not([hidden]), dialog[open]') || !!target?.closest('[data-toast]') || (target instanceof HTMLInputElement && target.matches('[data-filter]') && !!target.value)
       if (event.key === 'Escape' && !layered) {
         closeDrawer()
       }

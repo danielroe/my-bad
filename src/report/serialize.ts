@@ -26,6 +26,15 @@ export function serializeReport(report: ErrorReport, options: SerializeOptions =
   return {
     ...report,
     frames: report.frames.map(frame),
+    ...(report.related && (cwd || !snippets) && {
+      related: report.related.map(entry => ({
+        ...entry,
+        ...(cwd && {
+          file: relativeToCwd(entry.file, cwd),
+        }),
+        ...(!snippets && { snippet: undefined }),
+      })),
+    }),
     causes: report.causes.map(cause => serializeReport(cause, options)),
     ...(report.errors && {
       errors: report.errors.map(error => serializeReport(error, options)),

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createReport, injectOverlay, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
-import { renderIndex } from '../src/render/html/view'
+import { createProblemReport, createReport, injectOverlay, renderAnsi, renderBadge, renderOverlay, renderPage, toMarkdown } from '../src'
+import { nuxtTheme } from '../src/presets'
+import { renderDockedPage } from '../src/render/html'
+import { ICONS, renderDocked, renderIndex } from '../src/render/html/view'
 
 async function report() {
   const error = Object.assign(new Error('Something <broke>'), { code: 'E1001' })
@@ -556,6 +558,426 @@ describe('long messages', () => {
   it('leaves a short message alone', async () => {
     const html = markup(renderPage(await report()))
     expect(html).not.toContain('data-message-rest')
+  })
+})
+
+describe('docked view', () => {
+  it('heads the view with its title, without the brand of the theme', () => {
+    const index = { history: [], problems: [] }
+    const html = renderDocked({ mode: 'docked', version: '', theme: nuxtTheme }, index)
+    expect(html).toContain('<p class="mb-docked-title">Problems</p>')
+    expect(html).not.toMatch(/mb-brand[ "]/)
+    expect(html).not.toContain('my-bad')
+    expect(renderDocked({ mode: 'docked', version: '', title: 'Nuxt <errors>' }, index)).toContain('<p class="mb-docked-title">Nuxt &lt;errors&gt;</p>')
+  })
+
+  it('lists info problems with their own icon and count', () => {
+    const info = {
+      ...createProblemReport({ name: 'Checker', message: 'Consider a type annotation', kind: 'info' }),
+      id: 'i',
+    }
+    const index = {
+      history: [],
+      problems: [
+        {
+          source: 'checker',
+          label: 'Checker',
+          errors: 0,
+          warnings: 0,
+          info: 1,
+          reports: [info],
+        },
+      ],
+    }
+    const html = renderDocked({ mode: 'docked', version: '' }, index)
+    expect(html).toContain('<span class="mb-count">1 info</span>')
+    expect(html).toContain(`data-kind="info" data-id="i" data-source="checker" aria-current="false">${ICONS.info}`)
+    expect(html).toContain('data-docked-count>1 info</span>')
+    const page = renderPage(info)
+    expect(page).toContain('<span data-kind-label>Info</span>')
+    expect(page).toContain('Copy problem')
+    expect(renderAnsi(info, { colors: false }).split('\n')[0]).toBe('ℹ Checker: Consider a type annotation')
+    expect(toMarkdown(info)).toContain('## Info: Checker')
+  })
+
+  it('marks the range of a problem in its snippet', () => {
+    const snippet = {
+      start: 1,
+      lines: ['const a = 1', 'const b: string = a', 'export {}'],
+    }
+    const problem = (end: { endLine?: number, endColumn?: number }) => markup(renderPage(createProblemReport({
+      name: 'TS2322',
+      message: 'Type mismatch',
+      file: '/proj/a.ts',
+      line: 2,
+      column: 7,
+      ...end,
+      snippet,
+    }, { cwd: '/proj' })))
+    expect(problem({ endColumn: 8 })).toContain('<span class="mb-caret" aria-hidden="true">      ^</span>')
+    expect(problem({ endColumn: 16 })).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^</span>')
+    expect(problem({ endColumn: 99 })).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
+    const lines = problem({ endLine: 3, endColumn: 4 })
+    expect(lines).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
+    expect(lines.match(/class="mb-line mb-line-range"/g)).toHaveLength(1)
+    const toLineEnd = problem({ endLine: 3, endColumn: 1 })
+    expect(toLineEnd).toContain('<span class="mb-caret" aria-hidden="true">      ^^^^^^^^^^^^^</span>')
+    expect(toLineEnd).not.toContain('class="mb-line mb-line-range"')
+    expect(problem({})).not.toContain('class="mb-line mb-line-range"')
+
+    const ansi = renderAnsi(createProblemReport({
+      name: 'TS2322',
+      message: 'Type mismatch',
+      file: '/proj/a.ts',
+      line: 2,
+      column: 7,
+      endColumn: 16,
+      snippet,
+    }, { cwd: '/proj' }), { cwd: '/proj', colors: false })
+    expect(ansi).toContain('  │       ^^^^^^^^^\n')
+  })
+
+  it('shows a pill with the status of each source, and leaves out the problems of hidden ones', () => {
+    const problem = (message: string) => ({
+      ...createProblemReport({ name: 'TS', message }),
+      id: message,
+    })
+    const index = {
+      history: [],
+      problems: [
+        {
+          source: 'ts',
+          label: 'TypeScript',
+          errors: 1,
+          warnings: 0,
+          lastRun: { startedAt: 0, finishedAt: 7000 },
+          reports: [
+            problem('Type mismatch'),
+          ],
+        },
+        {
+          source: 'lint',
+          label: 'ESLint',
+          errors: 0,
+          warnings: 0,
+          status: 'checking' as const,
+        },
+        {
+          source: 'vue',
+          label: 'Vue',
+          errors: 0,
+          warnings: 0,
+          status: 'failed' as const,
+          error: 'crashed',
+        },
+        {
+          source: 'a11y',
+          label: 'Audit',
+          errors: 0,
+          warnings: 0,
+          lastRun: { startedAt: 0, finishedAt: 1000 },
+        },
+      ],
+    }
+    const pills = (hiddenSources?: string[]) => [
+      ...renderIndex({
+        mode: 'docked',
+        version: '',
+        view: { now: 10_000, hiddenSources },
+      }, index).matchAll(/<button type="button" class="mb-pill"[^>]*data-tone="(\w+)" aria-pressed="(\w+)" title="([^"]*)">.*?<span class="mb-pill-label">([^<]*)<\/span>(?:<span class="mb-pill-count">([^<]*)<\/span>)?<\/button>/g),
+    ].map(match => match.slice(1).join(' | '))
+    expect(pills()).toEqual([
+      'error | true | Checked just now. Hide TypeScript problems. | TypeScript | 1',
+      'busy | true | Starting. Hide ESLint problems. | ESLint | ',
+      'error | true | Failed: crashed. Hide Vue problems. | Vue | failed',
+      'ok | true | Checked 9s ago. Hide Audit problems. | Audit | ',
+    ])
+    const hidden = renderIndex({
+      mode: 'docked',
+      version: '',
+      view: {
+        hiddenSources: ['ts'],
+      },
+    }, index)
+    expect(hidden).toContain('data-source="ts" data-tone="error" aria-pressed="false" title="Checked')
+    expect(hidden).not.toContain('Type mismatch')
+    expect(hidden).not.toContain('data-index-source="ts"')
+    const rechecking = renderIndex({ mode: 'docked', version: '' }, {
+      history: [],
+      problems: [
+        { ...index.problems[0]!, status: 'checking' },
+      ],
+    })
+    expect(rechecking).toContain(`data-tone="busy" aria-pressed="true" title="Checking. Hide TypeScript problems.">${ICONS.checking}<span class="mb-pill-label">TypeScript</span><span class="mb-pill-count">1</span>`)
+  })
+
+  it('narrows the list down by text and level, with counts per level', () => {
+    const problem = (message: string, kind: 'error' | 'warning' | 'info', file?: string) => ({
+      ...createProblemReport({
+        name: 'Checker',
+        message,
+        code: `C-${message.length}`,
+        kind,
+        file,
+        line: 1,
+      }, { cwd: '/proj' }),
+      id: message,
+    })
+    const index = {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning' as const,
+          name: 'Vue warn',
+          message: 'Extraneous attrs',
+          timestamp: 0,
+        },
+      ],
+      problems: [
+        {
+          source: 'checker',
+          label: 'Checker',
+          errors: 1,
+          warnings: 1,
+          info: 1,
+          reports: [
+            problem('Type mismatch', 'error', '/proj/src/a.ts'),
+            problem('Unused import', 'warning', '/proj/src/b.ts'),
+            problem('Prefer const', 'info'),
+          ],
+        },
+      ],
+    }
+    const titles = (view: object) => [
+      ...renderIndex({
+        mode: 'docked',
+        version: '',
+        cwd: '/proj',
+        view,
+      }, index).matchAll(/<span class="mb-index-title">([^<]*)<\/span>/g),
+    ].map(match => match[1])
+    expect(titles({})).toEqual([
+      'Vue warn: Extraneous attrs',
+      'Type mismatch',
+      'Unused import',
+      'Prefer const',
+    ])
+    expect(titles({ filter: '  TYPE ' })).toEqual(['Type mismatch'])
+    expect(titles({ filter: 'src/b' })).toEqual(['Unused import'])
+    expect(titles({ filter: 'c-12' })).toEqual(['Prefer const'])
+    expect(titles({
+      hiddenLevels: ['warning', 'info'],
+    })).toEqual(['Type mismatch'])
+    const levels = renderIndex({
+      mode: 'docked',
+      version: '',
+      view: {
+        hiddenLevels: ['info'],
+      },
+    }, index)
+    expect([
+      ...levels.matchAll(/data-level="(\w+)" aria-pressed="(\w+)"[^>]*>.*?<span class="mb-sr-only">([^<]*)<\/span>(\d+)/g),
+    ].map(match => match.slice(1).join(' '))).toEqual([
+      'error true Errors  1',
+      'warning true Warnings  2',
+      'info false Info  1',
+    ])
+    const none = renderIndex({
+      mode: 'docked',
+      version: '',
+      view: { filter: 'nothing like this' },
+    }, index)
+    expect(none).toContain('<p class="mb-index-empty-title">No problems match the current filters</p><button type="button" class="mb-index-reset" data-action="show-all">Show all</button>')
+    expect(none).not.toContain('data-index-source="checker"')
+    expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [] })).toContain('Nothing to report.')
+  })
+
+  it('groups the list by file, sorted by path and position, with entries without a file last', () => {
+    const problem = (message: string, file?: string, line?: number) => ({
+      ...createProblemReport({
+        name: 'TypeScript',
+        message,
+        file,
+        line,
+        column: line && 2,
+      }, { cwd: '/proj' }),
+      id: message,
+    })
+    const index = {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning' as const,
+          name: 'Vue warn',
+          message: 'Extraneous attrs',
+          timestamp: 0,
+        },
+      ],
+      current: problem('Render failed', '/proj/src/b.ts', 3),
+      problems: [
+        {
+          source: 'ts',
+          label: 'TypeScript',
+          errors: 3,
+          warnings: 0,
+          reports: [
+            problem('Late', '/proj/src/b.ts', 9),
+            problem('Early', '/proj/src/b.ts', 1),
+            problem('Other file', '/proj/src/a.ts', 5),
+          ],
+        },
+      ],
+    }
+    const html = renderIndex({
+      mode: 'docked',
+      version: '',
+      cwd: '/proj',
+      view: { group: 'file' },
+    }, index)
+    expect([
+      ...html.matchAll(/<h2><span class="mb-index-label"[^>]*>([^<]*)<\/span><span class="mb-count">(\d+)/g),
+    ].map(match => `${match[1]} ${match[2]}`)).toEqual(['src/a.ts 1', 'src/b.ts 3', 'No file 1'])
+    expect([
+      ...html.matchAll(/<span class="mb-index-title">([^<]*)<\/span><span class="mb-index-loc">([^<]*)/g),
+    ].map(match => `${match[1]} (${match[2]})`)).toEqual([
+      'Other file (TypeScript · 5:2)',
+      'Early (TypeScript · 1:2)',
+      'TypeScript: Render failed (Error · 3:2)',
+      'Late (TypeScript · 9:2)',
+      'Vue warn: Extraneous attrs (Warning)',
+    ])
+    expect(html).toContain('data-group="file" aria-pressed="true"')
+  })
+
+  it('shows a calm state with what each source is doing while nothing is open', () => {
+    const problems = [
+      {
+        source: 'ts',
+        label: 'TypeScript',
+        errors: 0,
+        warnings: 0,
+        status: 'checking' as const,
+        lastRun: { startedAt: 0, finishedAt: 1000 },
+      },
+      {
+        source: 'lint',
+        label: 'ESLint',
+        errors: 0,
+        warnings: 0,
+        lastRun: { startedAt: 0, finishedAt: 1000 },
+      },
+      {
+        source: 'vue',
+        label: 'Vue',
+        errors: 0,
+        warnings: 0,
+        status: 'failed' as const,
+        error: 'crashed',
+      },
+      {
+        source: 'a11y',
+        label: 'Audit',
+        errors: 0,
+        warnings: 0,
+      },
+    ]
+    const rows = (html: string) => [
+      ...html.matchAll(/<li data-tone="(\w+)">.*?<span class="mb-watched-label">([^<]*)<\/span><span class="mb-watched-status">([^<]*)<\/span>/g),
+    ].map(match => match.slice(1).join(' | '))
+    const checking = renderDocked({
+      mode: 'docked',
+      version: '',
+      view: { now: 61_000 },
+    }, { history: [], problems })
+    expect(checking).toContain('<div class="mb-docked" data-calm-view="true">')
+    expect(checking).toContain('<div class="mb-docked-calm" data-calm data-failed="true">')
+    expect(checking).toContain('<p class="mb-docked-empty-title">A check failed</p>')
+    expect(checking).toContain('data-docked-count>1 check failed</span>')
+    expect(rows(checking)).toEqual([
+      'busy | TypeScript | Checking',
+      'ok | ESLint | No problems, checked 1m ago',
+      'error | Vue | Failed: crashed',
+      'ok | Audit | No problems',
+    ])
+    expect(checking).not.toContain('data-filter')
+    expect(checking).not.toContain('copy-listed')
+    expect(checking).not.toContain('data-index')
+    const unfailed = problems.filter(set => set.status !== 'failed')
+    const busy = renderDocked({ mode: 'docked', version: '' }, { history: [], problems: unfailed })
+    expect(busy).toContain('<div class="mb-docked-calm" data-calm>')
+    expect(busy).toContain('<p class="mb-docked-empty-title">Checking for problems</p>')
+    expect(busy).toContain('data-docked-count>Checking</span>')
+    const broken = renderDocked({ mode: 'docked', version: '' }, {
+      history: [],
+      problems: [
+        ...problems,
+        { ...problems[2]!, source: 'lint2' },
+      ],
+    })
+    expect(broken).toContain('<p class="mb-docked-empty-title">2 checks failed</p>')
+    expect(broken).toContain('data-docked-count>2 checks failed</span>')
+    const idle = renderDocked({ mode: 'docked', version: '' }, {
+      history: [],
+      problems: problems.slice(1, 2),
+    })
+    expect(idle).toContain('<p class="mb-docked-empty-title">No problems</p>')
+    expect(idle).toContain('data-docked-count>All clear</span>')
+    expect(renderDocked({ mode: 'docked', version: '' }, { history: [], problems: [] })).not.toContain('mb-watched')
+    const open = renderDocked({ mode: 'docked', version: '' }, {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning',
+          name: 'Vue warn',
+          message: 'x',
+          timestamp: 0,
+        },
+      ],
+      problems,
+    })
+    expect(open).not.toContain('data-calm-view')
+    expect(open).toContain('data-filter')
+    const failed = renderDocked({ mode: 'docked', version: '' }, {
+      history: [
+        {
+          id: 'w',
+          kind: 'warning',
+          name: 'Vue warn',
+          message: 'x',
+          timestamp: 0,
+        },
+      ],
+      problems,
+    }, undefined, { source: 'vue' })
+    expect(failed).toContain('<div class="mb-docked-empty" data-unselected><p class="mb-docked-empty-title">Vue</p><p>Failed: crashed</p></div>')
+  })
+
+  it('styles the dock after its host and the drawer after the page', () => {
+    const dock = renderDockedPage({ channel: '/__my-bad', embed: true })
+    expect(dock).toContain('<html lang="en" dir="ltr" data-host>')
+    expect(dock).not.toContain('localStorage')
+    const drawer = renderDockedPage({ channel: '/__my-bad', embed: true, drawer: true })
+    expect(drawer).toContain('<html lang="en" dir="ltr">')
+    expect(drawer).toContain('localStorage')
+  })
+})
+
+describe('multi-line messages', () => {
+  it('heads the report with the first line and renders the rest as body text', async () => {
+    const r = await report()
+    r.message = '\nTwo components are named <Widget>:\n\n - ~/a.vue\n - ~/b.vue\n'
+    const html = markup(renderPage(r))
+    expect(html).toContain(`<title>Error: Two components are named &lt;Widget&gt;:</title>`)
+    expect(html).toContain(`data-message>Two components are named &lt;Widget&gt;:</h1><p class="mb-message-body" data-message-body> - ~/a.vue\n - ~/b.vue</p>`)
+    expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [], current: r })).toContain('<span class="mb-index-title">Error: Two components are named &lt;Widget&gt;:</span>')
+  })
+
+  it('keeps the button for the rest of a long message in the body', async () => {
+    const r = await report()
+    r.message = `Headline\n${'L'.repeat(3000)}`
+    const html = markup(renderPage(r, { maxMessageLength: 100 }))
+    expect(html).toContain('data-message>Headline</h1><p class="mb-message-body" data-message-body>L')
+    expect(html).toMatch(/data-message-body>L+<span class="mb-message-rest" data-message-rest hidden>L+<\/span><button[^>]*data-action="expand-message"/)
   })
 })
 

@@ -1,3 +1,5 @@
+import { codeSpans } from '../../report/code'
+
 const ESCAPES: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -42,4 +44,13 @@ export function attr(name: string, value: unknown): string {
   return value === undefined || value === null || value === false
     ? ''
     : ` ${name}="${escapeHtml(value)}"`
+}
+
+/** Escape text, marking up its code spans as `<code>` when `spans` is set. */
+export function inlineHtml(text: string, spans: boolean | undefined): string {
+  return spans && text.includes('`')
+    ? codeSpans(text).map(segment => segment.code
+        ? `<code>${escapeHtml(segment.text)}</code>`
+        : escapeHtml(segment.text)).join('')
+    : escapeHtml(text)
 }

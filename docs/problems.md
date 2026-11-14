@@ -12,7 +12,7 @@ An error takes over the page until it's fixed. Problems don't interrupt you, so 
 - They raise no toasts, and never take over a page.
 - Every page shows a count for each source, in a pill beside the badge.
 - Selecting an entry in the pill opens its problems in a drawer beside the page.
-- New problems grow the pill into a card for a few seconds. The card shows the first new problem, and how many more arrived with it.
+- New problems grow the pill into a card for a few seconds. The card shows the first new problem with its hint, and how many more arrived with it.
 
 The card shows only on pages that the channel sends reports to. See [Trusted and untrusted callers](./channel.md#trusted-and-untrusted-callers).
 
@@ -54,20 +54,36 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | --- | --- |
 | `name` | Heads the report when it's opened. |
 | `message` | The diagnostic. |
+| `hint` | How to fix the problem, shown below the message. |
 | `code` | For example a rule name or `TS2322`. |
 | `docsUrl` | Link to the documentation of the diagnostic. |
 | `file` | Absolute, or relative to `cwd`. |
 | `line`, `column` | Position in `file`. |
-| `kind` | `error` or `warning`. Default `error`. |
+| `endLine`, `endColumn` | End of the range in `file`. The snippet marks the range. `endColumn` is the column just past it. |
+| `kind` | `error`, `warning`, or `info`. Default `error`. The drawer and the dock list `info` problems, but the pill, the card, and the DevTools icon leave them out. |
 | `snippet` | A `Snippet`, or a code frame of `3 \| code` lines. A code frame can mark a line with `>`. |
+| `related` | Other files the problem concerns, as `{ file, line, column }`. Pages list them under **Also in**. |
 
-A report without a `file` or a `snippet` has no frames. As a second argument, `createProblemReport` takes `cwd`, `tokenizer`, `maxMessageLength`, and `maxSnippetLineLength`.
+A report without a `file` or a `snippet` has no frames. As a second argument, `createProblemReport` takes `cwd`, `tokenizer`, `maxMessageLength`, and `maxSnippetLineLength`. Pass `codeSpans: true` too when the tool writes code in backticks, as the Vue compiler does, to show it as code. See [Code in messages](./reports.md#code-in-messages).
 
 If you want `my-bad` to read the snippet from disk, use `createReport` instead. Pass the location as a compile-shaped input (`{ message, loc }`), or as `sources`, and set `kind: 'warning'` for warnings.
 
 ### Names in the problem list
 
-The drawer and the DevTools dock list each problem under the `label` of its set. A `name` that only repeats the label is left out of the row, ignoring case. Any other `name`, such as `TS2322`, shows before the message.
+The drawer and the DevTools dock list each problem under the `label` of its set, and the card names the set below the problem. A `name` that only repeats the label is left out of the row and the card, ignoring case. Any other `name`, such as `TS2322`, shows before the message.
+
+## Browse problems in the drawer and the dock
+
+The drawer and the DevTools dock list the open error, the warnings, and every problem set. While nothing is open, they show **No problems**, or **Checking for problems** while a source is checking, with what each source is doing. When a source has failed, the heading says so instead, for example **A check failed**, and the header counts failed checks apart from errors. With nothing to count, the header reads **Checking** while a source is checking, and **All clear** otherwise. To narrow the list down:
+
+- Type in **Filter problems** to list only the entries whose name, message, code, or file contains the text. Press <kbd>Escape</kbd> to clear it.
+- Select the error, warning, or info count to hide or show that level.
+- Select the pill of a source to hide or show its problems.
+- Switch **Group by** from **Source** to **File** to list the entries under the file they point at, in the order of their position. The choice is remembered.
+
+When nothing matches, the list says so, and **Show all** clears every filter.
+
+The copy button in the header copies every entry listed as Markdown, for example to paste into an issue or a prompt. The **Copy** button of the entry shown copies that entry alone.
 
 ## Report the lifecycle of a run
 
@@ -116,7 +132,9 @@ The pill shows each status like this:
 - **`idle`**: the count of errors and warnings. A source without a status is idle.
 - **`failed`**: `failed` in place of the count, with the `error` reason in the title of the pill.
 
-An empty set shows nothing in the pill unless it failed. The drawer lists it only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
+An empty set shows nothing in the pill unless it failed. The drawer lists its problems only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
+
+The drawer and the dock show a status pill for every source, empty sets included. The title of each pill tells whether the source is starting, checking, or failed, or when it last finished a run. Selecting a pill hides or shows the problems of that source.
 
 ## Problem metadata
 
@@ -130,6 +148,7 @@ The third argument of `setProblems` describes the source:
 | `url` | A page that lists the problems in full. The drawer shows it in a frame, so it must allow framing by the app. |
 | `group` | Sources with the same group count together under this name, as one entry. |
 | `devtoolsDock` | Id of a Vite DevTools dock that lists the problems in full. |
+| `lastRun` | `{ startedAt, finishedAt }` of the latest run, in epoch milliseconds. Leave out `finishedAt` while the run is in progress. Pills show it as, for example, `Checked 3s ago`. |
 
 ### Count several sources together
 
@@ -151,7 +170,7 @@ The channel uses ids to skip repeated updates. If a source publishes the same re
 
 ## What pages and sinks receive
 
-Every page receives the error and warning counts of each set, but not its reports. A page receives the counts of every set when it connects. After that, it receives a `problems` event when a set changes, and a `problems:clear` event when `clearProblems` retires a set. The `problems:clear` payload names the `source`, or no source when every set is retired.
+Every page receives the error and warning counts of each set, and its `info` count when it has any, but not its reports. A page receives the counts of every set when it connects. After that, it receives a `problems` event when a set changes, and a `problems:clear` event when `clearProblems` retires a set. The `problems:clear` payload names the `source`, or no source when every set is retired.
 
 Trusted callers can fetch every set in full from `{channel}/problems`. Untrusted callers receive only the counts. See [Who can use the channel](./channel.md#who-can-use-the-channel).
 

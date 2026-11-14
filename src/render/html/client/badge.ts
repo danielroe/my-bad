@@ -2,9 +2,11 @@ import type { ChannelEvent, ProblemSet, ProblemSummary } from '../../../channel/
 import type { ErrorReport, HistoryEntry } from '../../../types'
 import type { BadgeFocus, BadgeState, PageState } from '../state'
 import styles from 'virtual:my-bad-badge-styles'
+import { plainText } from '../../../report/code'
 import { displayPath } from '../../../report/path'
+import { escapeHtml, inlineHtml } from '../escape'
 import { THEME_STORAGE_KEY } from '../state'
-import { firstLine, plural, reportLocation } from '../summary'
+import { firstLine, plural, repeatsLabel, reportLocation } from '../summary'
 import { focusSender } from './frame'
 
 type Payload<T extends ChannelEvent['type']> = Extract<ChannelEvent, { type: T }>['payload']
@@ -177,7 +179,9 @@ function start(state: BadgeState, nonce: string | undefined): void {
       ? `${set.label ?? set.source}: `
       : ''}${report.kind === 'warning'
       ? 'Warning'
-      : 'Error'}: ${report.name}: ${firstLine(report.message)}${more
+      : 'Error'}: ${set && repeatsLabel(report.name, set.label ?? set.source)
+      ? ''
+      : `${report.name}: `}${plainText(firstLine(report.message), report.codeSpans)}${more
       ? `, and ${more} more`
       : ''}`
   }
@@ -249,7 +253,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
     for (const set of sets) {
       const known = new Set(problemReports.get(set.source)?.map(report => report.id))
       for (const report of set.reports) {
-        if (problemsKnown && !known.has(report.id)) {
+        if (problemsKnown && !known.has(report.id) && report.kind !== 'info') {
           fresh.push({ report, source: set.source })
         }
       }
@@ -570,7 +574,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
     const dock = document.createElement('div')
     dock.className = 'mb-dock'
     dock.lang = 'en'
-    dock.innerHTML = '<span class="mb-problems"><span></span><span class="mb-problems-count"></span></span><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span></button><button type="button" class="mb-peek" hidden><span class="mb-peek-inner"><span></span><span class="mb-peek-message"></span><span class="mb-peek-meta"></span></span></button>'
+    dock.innerHTML = '<span class="mb-problems"><span></span><span class="mb-problems-count"></span></span><button type="button" class="mb-badge"><span></span><span class="mb-badge-count"></span></button><button type="button" class="mb-peek" hidden><span class="mb-peek-inner"><span></span><span class="mb-peek-message"></span><span class="mb-peek-hint"></span><span class="mb-peek-meta"></span></span></button>'
     const [problems, button, card] = dock.children as unknown as [HTMLElement, HTMLButtonElement, HTMLButtonElement]
     button.addEventListener('click', () => void expand())
     card.addEventListener('click', openPeek)
@@ -673,10 +677,14 @@ function start(state: BadgeState, nonce: string | undefined): void {
       ? 'warning'
       : 'error'
     const frame = reportLocation(report)
-    const [icon, message, meta] = card.firstElementChild!.children as unknown as HTMLElement[]
+    const [icon, message, hint, meta] = card.firstElementChild!.children as unknown as HTMLElement[]
     card.dataset.kind = kind
     icon!.outerHTML = ICONS[kind]
-    message!.textContent = `${report.name}: ${firstLine(report.message)}`
+    message!.innerHTML = `${set && repeatsLabel(report.name, set.label ?? set.source)
+      ? ''
+      : `${escapeHtml(report.name)}: `}${inlineHtml(firstLine(report.message), report.codeSpans)}`
+    hint!.innerHTML = inlineHtml(report.hint ?? '', report.codeSpans)
+    hint!.hidden = !report.hint
     meta!.textContent = [
       set && (set.group
         ? `${set.group} · ${set.label ?? set.source}`

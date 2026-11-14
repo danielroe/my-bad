@@ -1,4 +1,5 @@
-export type ReportKind = 'error' | 'warning' | 'compile'
+/** `info` is for problem sets: lists and filters show it, but it counts as neither an error nor a warning. */
+export type ReportKind = 'error' | 'warning' | 'compile' | 'info'
 
 export type FrameType = 'app' | 'vendor' | 'native' | 'internal'
 
@@ -60,6 +61,9 @@ export interface Frame {
   displayFile?: string
   line?: number
   column?: number
+  /** End of the range the problem covers, when known. `endColumn` is the column just past it. */
+  endLine?: number
+  endColumn?: number
   function?: string
   type: FrameType
   isAsync?: boolean
@@ -100,9 +104,17 @@ export interface ErrorReport {
    */
   diagnostic?: boolean
   hint?: string
+  /**
+   * Backtick code spans in `message` and `hint` are inline code, following
+   * CommonMark: renderers mark them up as code, and plain-text surfaces drop
+   * the backticks. Markdown and JSON keep the text as it is.
+   */
+  codeSpans?: boolean
   docsUrl?: string
   status?: number
   frames: Frame[]
+  /** Other files the report concerns, such as the further `sources` of a diagnostic. Not a stack. */
+  related?: Location[]
   causes: ErrorReport[]
   /** Populated for `AggregateError`. */
   errors?: ErrorReport[]
@@ -189,6 +201,11 @@ export interface ReportOptions {
   maxSnippetLineLength?: number
   /** Skip snippet loading entirely. */
   snippets?: boolean
+  /**
+   * Mark the top-level report's `message` and `hint` as using backtick code
+   * spans. Errors named after their `code` are always marked.
+   */
+  codeSpans?: boolean
   /** Arbitrary data for plugins: request, event, Vue instance, route... */
   context?: Record<string, unknown>
   /** Custom syntax tokenizer for snippets. Tokens are stored on the report. */
@@ -225,6 +242,7 @@ export interface ResolvedReportOptions {
   maxSnippets: number
   maxSnippetLineLength: number
   snippets: boolean
+  codeSpans?: boolean
   context: Record<string, unknown>
   tokenizer?: Tokenizer
   compiled?: CompiledMarker
@@ -258,5 +276,6 @@ export interface HistoryEntry {
   kind: ReportKind
   name: string
   message: string
+  codeSpans?: boolean
   timestamp: number
 }

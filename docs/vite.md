@@ -88,7 +88,7 @@ To show the badge on your server-rendered pages, add `renderBadge({ channel: ctx
 
 ## Add Vite DevTools
 
-If you use [Vite DevTools](https://devtools.vite.dev/guide/), `myBad()` adds a `my-bad` dock to it. You don't need to configure `my-bad`. Vite DevTools requires Vite 8.3 or later.
+If you use [Vite DevTools](https://devtools.vite.dev/guide/), `myBad()` adds a **Problems** dock to it. You don't need to configure `my-bad`. Vite DevTools requires Vite 8.3 or later.
 
 To add the dock:
 
@@ -126,11 +126,12 @@ With DevTools running, errors no longer take over the page:
 - The badge shows on every page and opens the dock instead of the overlay.
 - The dock lists the open error, the warnings, and every problem set. It shows the one you pick the way the overlay does.
 - The dock icon in the DevTools bar counts them, in red while any of them is an error.
+- The dock follows the colour scheme, colours, and font of the DevTools panel, instead of the page's theme.
 - The open error and each problem set also appear in the DevTools messages panel, with their file position.
 
 The messages panel shows a spinner while a problem set is `checking`. Its actions show an entry in the dock, or show the full list of a problem set. The badge announces new reports, so DevTools shows no toast for them.
 
-A problem set can name another DevTools dock in `devtoolsDock`. The badge entry for that set still opens the `my-bad` dock, and its "full list" button there switches to the other dock. The tool behind that dock posts its own messages, so `my-bad` adds none for the set, but still counts it on the dock icon. See [Problem metadata](./problems.md#problem-metadata).
+A problem set can name another DevTools dock in `devtoolsDock`. The badge entry for that set still opens the **Problems** dock, and its "full list" button there switches to the other dock. The tool behind that dock posts its own messages, so `my-bad` adds none for the set, but still counts it on the dock icon. See [Problem metadata](./problems.md#problem-metadata).
 
 ### Add the dock for a channel outside the plugin
 
@@ -160,11 +161,11 @@ In this example, `./dev-server` stands for the module that creates your channel.
 | --- | --- |
 | `channel` | Base path of the channel. Required. |
 | `id` | Dock id. Default `my-bad`. |
-| `title` | Dock title. Default `my-bad`. |
+| `title` | Dock title, also shown as the heading of the dock. Default `Problems`. |
 | `icon` | An Iconify name or an image URL. |
 | `onRegister` | Called once DevTools registers the dock. |
 
-The channel serves the dock page at `{channel}/panel` and its script at `{channel}/devtools.js`.
+The channel serves the dock page at `{channel}/panel` and its script at `{channel}/devtools.js`. The page takes its heading from a `title` query parameter.
 
 ### Wait for DevTools before showing the overlay
 

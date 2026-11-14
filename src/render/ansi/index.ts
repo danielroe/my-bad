@@ -3,7 +3,8 @@ import type { Palette } from './style'
 import process from 'node:process'
 import { hyperlink, link } from 'clickable-path'
 import { stripAnsi as clean } from '../../report/ansi'
-import { clampMessage, DEFAULT_DISPLAY_MESSAGE_LENGTH } from '../../report/message'
+import { codeSpans } from '../../report/code'
+import { clampMessage, DEFAULT_DISPLAY_MESSAGE_LENGTH, splitHeadline } from '../../report/message'
 import { displayPath, isFilePath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { snippetTokens } from '../../report/tokenize'
@@ -61,13 +62,17 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const indent = '  '.repeat(depth)
   const width = ctx.width - indent.length
 
-  const icon = report.kind === 'warning'
-    ? p.yellow('⚠')
-    : p.red('✖')
-  const reportName = clean(report.name)
-  const name = report.kind === 'warning'
-    ? p.yellow(p.bold(reportName))
-    : p.red(p.bold(reportName))
+  const tone = report.kind === 'warning'
+    ? p.yellow
+    : report.kind === 'info'
+      ? p.blue
+      : p.red
+  const icon = tone(report.kind === 'warning'
+    ? '⚠'
+    : report.kind === 'info'
+      ? 'ℹ'
+      : '✖')
+  const name = tone(p.bold(clean(report.name)))
   const status = finite(report.status)
   const meta = [report.code !== report.name && report.code && p.dim(`[${clean(report.code)}]`), status && p.dim(`(${status})`)].filter(Boolean).join(' ')
   const header = depth === 0
@@ -79,12 +84,18 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     ? ` ${meta}`
     : ''}${p.dim(':')} `
   const { head, rest } = clampMessage(clean(report.message), ctx.maxMessageLength)
-  const messageLines = wrap(rest
+  const { headline, body } = splitHeadline(rest
     ? `${head}…`
-    : head, width - 2, '')
+    : head.trimEnd())
+  const messageLines = wrap(styleCode(headline, report.codeSpans, p), width - 2, '')
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)
   for (const line of messageLines.slice(1)) {
     out.push(`${indent}  ${p.bold(line)}`)
+  }
+  if (body) {
+    for (const line of wrap(styleCode(body, report.codeSpans, p), width - 2, '')) {
+      out.push(`${indent}  ${line}`)
+    }
   }
   if (rest) {
     out.push(`${indent}  ${p.dim(`${rest.length} more characters`)}`)
@@ -92,7 +103,7 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
 
   if (report.hint) {
     out.push('')
-    for (const [index, line] of wrap(clean(report.hint), width - 4).entries()) {
+    for (const [index, line] of wrap(styleCode(clean(report.hint), report.codeSpans, p), width - 4).entries()) {
       out.push(`${indent}  ${index === 0
         ? p.cyan('ℹ')
         : ' '} ${line}`)
@@ -112,7 +123,9 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const topApp = report.frames.find(frame => frame.type === 'app' && frame.snippet)
   if (topApp?.snippet && topApp.line !== undefined) {
     out.push('')
-    out.push(...renderSnippet(topApp.snippet, topApp.line, topApp.column, ctx, `${indent}  `))
+    out.push(...renderSnippet(topApp.snippet, topApp.line, topApp.column, ctx, `${indent}  `, topApp.endLine === undefined || topApp.endLine === topApp.line
+      ? finite(topApp.endColumn)
+      : undefined))
   }
   else {
     const generated = report.frames.find(frame => frame.type === 'app' && frame.compiled?.snippet && frame.compiled.line !== undefined)?.compiled
@@ -125,6 +138,12 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   if (report.frames.length) {
     out.push('')
     out.push(...renderFrames(report.frames, ctx, `${indent}  `))
+  }
+  if (report.related?.length) {
+    out.push('', `${indent}  ${p.dim('Also in:')}`)
+    for (const entry of report.related) {
+      out.push(`${indent}    ${p.cyan(renderPath(entry, ctx, width - 4))}`)
+    }
   }
 
   if (ctx.verbose && report.sections.length) {
@@ -159,6 +178,15 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   }
 
   return out
+}
+
+/** Code spans lose their backticks and take a colour, word by word so that wrapping keeps each word styled. */
+function styleCode(text: string, spans: boolean | undefined, p: Palette): string {
+  return spans && text.includes('`')
+    ? codeSpans(text).map(segment => segment.code
+        ? segment.text.split(' ').map(word => word && p.cyan(word)).join(' ')
+        : segment.text).join('')
+    : text
 }
 
 /** Skip a cause that only repeats its parent's message, keeping whatever it wraps. */
@@ -230,13 +258,32 @@ function renderFrame(frame: Frame, ctx: Ctx, indent: string, dim: boolean): stri
     : text}`
 }
 
+function renderPath(target: Pick<Frame, 'file' | 'displayFile' | 'line' | 'column'>, ctx: Ctx, max: number): string {
+  const line = finite(target.line)
+  const column = finite(target.column)
+  const shown = truncateMiddle(clean(`${displayPath(target, ctx.cwd)}${line !== undefined
+    ? `:${line}${column !== undefined
+      ? `:${column}`
+      : ''}`
+    : ''}`), Math.max(20, max))
+  return target.file && isFilePath(target.file)
+    ? link(target.file, {
+        cwd: ctx.cwd,
+        line,
+        column,
+        enabled: ctx.hyperlinks,
+        formatter: () => shown,
+      })
+    : shown
+}
+
 function finite(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value)
     ? value
     : undefined
 }
 
-function renderSnippet(snippet: Snippet, line: number, column: number | undefined, ctx: Ctx, indent: string): string[] {
+function renderSnippet(snippet: Snippet, line: number, column: number | undefined, ctx: Ctx, indent: string, endColumn?: number): string[] {
   const { p } = ctx
   const out: string[] = []
   const first = Math.max(snippet.start, line - ctx.snippetContext)
@@ -257,7 +304,10 @@ function renderSnippet(snippet: Snippet, line: number, column: number | undefine
         ? undefined
         : column - (snippet.offset ?? 0)
       if (shown !== undefined && shown > 0 && shown <= codeWidth) {
-        out.push(`${indent}  ${' '.repeat(gutter)} ${p.dim('│')} ${' '.repeat(shown - 1)}${p.red('^')}`)
+        const width = endColumn === undefined || column === undefined
+          ? 1
+          : Math.min(Math.max(1, endColumn - column), codeWidth - shown + 1, Math.max(1, raw.length - shown + 1))
+        out.push(`${indent}  ${' '.repeat(gutter)} ${p.dim('│')} ${' '.repeat(shown - 1)}${p.red('^'.repeat(width))}`)
       }
     }
     else {

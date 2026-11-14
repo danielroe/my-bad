@@ -236,7 +236,10 @@ describe('createReport', () => {
         snippets: false,
       })
       expect(compiled.kind).toBe('compile')
-      expect(compiled.frames.map(frame => frame.file)).toEqual(['/proj/app.vue', '/proj/other.vue'])
+      expect(compiled.frames.map(frame => frame.file)).toEqual(['/proj/app.vue'])
+      expect(compiled.related).toEqual([
+        { file: '/proj/other.vue' },
+      ])
     }
   })
 
@@ -254,7 +257,10 @@ describe('createReport', () => {
       },
     ]
     const report = await createReport(input, { kind: 'warning', loaders })
-    expect(report.frames.map(frame => frame.file)).toEqual(['/proj/app.vue', '/proj/other.vue'])
+    expect(report.frames.map(frame => frame.file)).toEqual(['/proj/app.vue'])
+    expect(report.related).toEqual([
+      { file: '/proj/other.vue' },
+    ])
     const { sources: _, ...located } = input
     expect(report.id).toBe((await createReport(located, { kind: 'warning', loaders })).id)
   })
@@ -268,6 +274,95 @@ describe('createReport', () => {
     })
     expect(report.kind).toBe('compile')
     expect(report.frames[0]).toMatchObject({ file: '/proj/app.vue', line: 2, column: 9 })
+  })
+
+  it('takes a code frame appended to the message of a located warning', async () => {
+    const frame = '1  |  <template>\n2  |    <input v-model="count">\n   |           ^^^^^^^^^^^^^^^\n3  |  </template>'
+    const loaders = [
+      {
+        name: 'memory',
+        read: () => '<template>\n  <input v-model="count">\n</template>\n',
+      },
+    ]
+    for (const located of [
+      { id: '/proj/app.vue' },
+      {
+        loc: { file: '/proj/app.vue', line: 2, column: 10 },
+      },
+    ]) {
+      const report = await createReport({
+        message: `v-model cannot be used on a const binding.\n${frame}\n`,
+        ...located,
+      }, { cwd: '/proj', kind: 'warning', loaders })
+      expect(report.kind).toBe('warning')
+      expect(report.message).toBe('v-model cannot be used on a const binding.')
+      expect(report.frames).toHaveLength(1)
+      expect(report.frames[0]).toMatchObject({
+        file: '/proj/app.vue',
+        line: 2,
+        column: 10,
+        type: 'app',
+        snippet: {
+          start: 1,
+          lines: ['<template>', '  <input v-model="count">', '</template>'],
+        },
+      })
+    }
+  })
+
+  it('trusts a declared loc at the start of a line that the code frame marks at the end of the line before', async () => {
+    const frame = '1  |  <template>\n2  |    <div>\n   |          ^\n3  |      <input v-model="x">\n   |  ^^^^\n4  |    </div>'
+    const loaders = [
+      {
+        name: 'memory',
+        read: () => '<template>\n  <div>\n    <input v-model="x">\n  </div>\n</template>\n',
+      },
+    ]
+    const report = await createReport({
+      message: 'v-model cannot be used on a const binding.',
+      id: '/proj/app.vue',
+      loc: { file: '/proj/app.vue', line: 3, column: 1 },
+      frame,
+    }, { cwd: '/proj', kind: 'warning', loaders })
+    expect(report.frames[0]).toMatchObject({ file: '/proj/app.vue', line: 3, column: 1 })
+
+    const inside = await createReport({
+      message: 'Unexpected token',
+      id: '/proj/app.vue',
+      loc: { file: '/proj/app.vue', line: 3, column: 1 },
+      frame: '2  |    <div>\n   |        ^\n3  |      <input v-model="x">',
+    }, { cwd: '/proj', kind: 'warning', loaders })
+    expect(inside.frames[0]).toMatchObject({ line: 2, column: 7 })
+  })
+
+  it('takes the snippet of a located warning from its message, and leaves the message of an unlocated one alone', async () => {
+    const message = 'Broken\n1  |  a\n   |  ^'
+    const unlocated = await createReport({ message }, { cwd: '/proj', loaders: [] })
+    expect(unlocated.message).toBe(message)
+    expect(unlocated.frames).toEqual([])
+
+    for (const location of [
+      { id: '/proj/app.vue' },
+      {
+        loc: { file: '/proj/app.vue', line: 1, column: 1 },
+      },
+    ]) {
+      const located = await createReport({ message, ...location }, { cwd: '/proj', kind: 'warning', loaders: [] })
+      expect(located.message).toBe('Broken')
+      expect(located.frames).toEqual([
+        {
+          file: '/proj/app.vue',
+          line: 1,
+          column: 1,
+          type: 'app',
+          snippet: {
+            start: 1,
+            lines: ['a'],
+            lang: 'vue',
+          },
+        },
+      ])
+    }
   })
 
   it('picks up status, code and data', async () => {
@@ -1153,6 +1248,20 @@ describe('createProblemReport', () => {
       ],
       lang: 'vue',
     })
+  })
+
+  it('takes an info problem', () => {
+    expect(createProblemReport({ name: 'Checker', message: 'Consider a type annotation', kind: 'info' }).kind).toBe('info')
+  })
+
+  it('keeps the hint of a problem, without colours', () => {
+    const problem = createProblemReport({
+      name: 'ESLint',
+      message: 'Missing return type.',
+      hint: '\u001B[36mAnnotate the return type.\u001B[39m',
+    })
+    expect(problem.hint).toBe('Annotate the return type.')
+    expect(createProblemReport({ name: 'ESLint', message: 'Missing return type.', hint: '' }).hint).toBeUndefined()
   })
 
   it('keeps the indentation of a code frame with a single-space gutter', () => {
