@@ -108,7 +108,8 @@
 .mb-dock[data-dock^='top'] :is(.mb-peek, .mb-list)::after { bottom: auto; top: var(--mb-pill); }
 
 .mb-peek { cursor: pointer; }
-.mb-peek-inner { display: grid; grid-template-columns: 6px minmax(0, 1fr); gap: 3px 10px; align-items: start; padding: 8px 10px 9px; border-radius: 8px; transition: background-color .12s; }
+/* border-box, so the width morph() pins while the card grows is the width the text has at rest */
+.mb-peek-inner { box-sizing: border-box; display: grid; grid-template-columns: 6px minmax(0, 1fr); gap: 3px 10px; align-items: start; padding: 8px 10px 9px; border-radius: 8px; transition: background-color .12s; }
 @media (hover: hover) and (pointer: fine) {
   .mb-peek:hover .mb-peek-inner { background: var(--mb-surface-2); }
 }

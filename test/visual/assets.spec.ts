@@ -147,8 +147,16 @@ test.describe('README assets', () => {
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
       await page.goto('http://my-bad.test/')
-      await page.locator('.mb-problems').waitFor()
-      const box = (await page.locator('.mb-problems').boundingBox())!
+      const pill = page.locator('.mb-badge')
+      await expect(pill).toHaveAttribute('title', 'Problems: 3 errors, 2 warnings, checking')
+      // the counts fold in, so measure once the pill holds its width
+      let box = (await pill.boundingBox())!
+      await expect.poll(async () => {
+        const next = (await pill.boundingBox())!
+        const settled = next.width === box.width
+        box = next
+        return settled
+      }).toBe(true)
       const clip = {
         x: box.x - 24,
         y: box.y - 24,
@@ -171,7 +179,8 @@ test.describe('README assets', () => {
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 3' }).click()
+        await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.locator('my-bad-overlay-badge .mb-row[data-source="typecheck"]').click()
         await page.frameLocator('my-bad-overlay-badge .mb-drawer iframe').locator('.mb-message').waitFor()
         await expect(page).toHaveScreenshot(`drawer-${scheme}.png`, {
           maxDiffPixels: 2000,
@@ -193,6 +202,7 @@ test.describe('README assets', () => {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
         await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.locator('my-bad-overlay-badge .mb-row[data-place="page"]').click()
         await page.locator('my-bad-overlay [data-message]').first().waitFor()
         await expect(page).toHaveScreenshot(`warnings-${scheme}.png`, {
           maxDiffPixels: 2000,
@@ -215,6 +225,7 @@ test.describe('README assets', () => {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
         await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.locator('my-bad-overlay-badge .mb-row[data-place="page"]').click()
         await page.frameLocator('iframe').locator('.mb-message').waitFor()
         await expect(page).toHaveScreenshot(`devtools-${scheme}.png`, {
           maxDiffPixels: 2000,

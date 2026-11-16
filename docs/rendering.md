@@ -101,7 +101,7 @@ When everything the pill showed is fixed, it says **All clear** for a moment, th
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-dark.png">
-  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-light.png" alt="A small pill in the corner of a page reading vue-tsc 3, ESLint 2, with a spinner while ESLint is checking" width="203">
+  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-light.png" alt="A small pill in the corner of a page reading 3 errors, 2 warnings, with a red light and a ring around it while ESLint is checking" width="203">
 </picture>
 
 A new warning, or a new error while the overlay is hidden, grows the pill into a card for a few seconds. The card shows the report and where it points. It stays open while you hover or focus it.
