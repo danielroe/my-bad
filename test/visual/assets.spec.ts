@@ -4,6 +4,38 @@ import { ansiSvg } from '../../playground/ansi-svg.ts'
 import { demoReport, fixtures } from '../../playground/demo.ts'
 import { routeIcons, startShowcase } from './showcase.ts'
 
+/** DIAGNOSTIC (temporary): the state of the badge, and what still animates in each frame of the page. */
+async function diagnose(page: import('playwright/test').Page): Promise<unknown> {
+  const badge = await page.evaluate(() => {
+    const root = document.querySelector('my-bad-overlay-badge')?.shadowRoot
+    return {
+      dock: root?.querySelector('.mb-dock')?.outerHTML.slice(0, 120),
+      pill: root?.querySelector('.mb-badge')?.getAttribute('title'),
+      rows: [
+        ...root?.querySelectorAll('.mb-row') ?? [],
+      ].map(row => row.textContent),
+      listHidden: root?.querySelector<HTMLElement>('.mb-list')?.hidden,
+      overlay: !!document.querySelector('my-bad-overlay'),
+      badgeAnimations: root?.getAnimations().map(animation => `${animation.playState} ${((animation.effect as KeyframeEffect | null)?.target as Element | null)?.className}`),
+    }
+  }).catch(error => String(error))
+  const frames = await Promise.all(page.frames().map(async frame => ({
+    url: frame.url().slice(0, 80),
+    animations: await frame.evaluate(() => document.getAnimations().map((animation) => {
+      const target = (animation.effect as KeyframeEffect | null)?.target as Element | null
+      const name = 'animationName' in animation
+        ? animation.animationName
+        : 'transitionProperty' in animation
+          ? animation.transitionProperty
+          : 'waapi'
+      return `${name} ${animation.playState} on ${target?.nodeName}.${typeof target?.className === 'string'
+        ? target.className
+        : ''}`
+    })).catch(error => String(error)),
+  })))
+  return { badge, frames }
+}
+
 /**
  * Imports the built package because this spec runs under Playwright's runner,
  * which has no bundler to resolve the inlined client module.
@@ -223,18 +255,31 @@ test.describe('README assets', () => {
       await routeIcons(page)
       // DevTools remembers its open dock, so each scheme starts as fresh as the first
       await page.addInitScript(() => window === window.top && localStorage.clear())
+      // DIAGNOSTIC (temporary): each step logs, and a step that fails dumps the page, so the CI log shows what hangs
+      const step = async <T>(name: string, run: () => Promise<T>): Promise<T> => {
+        process.stderr.write(`DIAG start ${name}\n`)
+        try {
+          return await run()
+        }
+        catch (error) {
+          process.stderr.write(`DIAG failed ${name} ${JSON.stringify(await diagnose(page))}\n`)
+          throw error
+        }
+      }
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
-        await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-badge').click()
-        await page.locator('my-bad-overlay-badge .mb-row[data-place="page"]').click()
-        await page.frameLocator('iframe').locator('.mb-message').waitFor()
-        await expect(page).toHaveScreenshot(`devtools-${scheme}.png`, {
+        await step(`${scheme} goto`, () => page.goto(showcase.url))
+        await step(`${scheme} pill`, () => page.locator('my-bad-overlay-badge .mb-badge').click({ timeout: 6000 }))
+        await step(`${scheme} row`, () => page.locator('my-bad-overlay-badge .mb-row[data-place="page"]').click({ timeout: 6000 }))
+        await step(`${scheme} dock`, () => page.frameLocator('iframe').locator('.mb-message').waitFor({ timeout: 6000 }))
+        process.stderr.write(`DIAG ready ${scheme} ${JSON.stringify(await diagnose(page))}\n`)
+        await step(`${scheme} screenshot`, () => expect(page).toHaveScreenshot(`devtools-${scheme}.png`, {
           maxDiffPixels: 2000,
           scale: 'device',
           animations: 'disabled',
           caret: 'hide',
-        })
+          timeout: 8000,
+        }))
       }
     }
     finally {
