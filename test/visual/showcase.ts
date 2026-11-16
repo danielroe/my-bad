@@ -48,9 +48,10 @@ const badge: Plugin = {
  * Serves `app/` with the Vite plugin and publishes a warning and problem sets
  * from TypeScript and ESLint pointing into `src/widgets.ts`. With Vite
  * DevTools, it also publishes the error `src/render.ts` throws, which the
- * dock lists rather than letting it take over the page.
+ * dock lists rather than letting it take over the page. Without `problems`,
+ * the warning is all the page has.
  */
-export async function startShowcase(options: { devtools: boolean }) {
+export async function startShowcase(options: { devtools: boolean, problems?: boolean }) {
   const server = await createServer({
     root,
     configFile: false,
@@ -64,7 +65,7 @@ export async function startShowcase(options: { devtools: boolean }) {
   })
   await server.listen()
   try {
-    await publish(server, options.devtools)
+    await publish(server, options.devtools, options.problems ?? true)
   }
   catch (error) {
     await server.close()
@@ -77,7 +78,7 @@ export async function startShowcase(options: { devtools: boolean }) {
   }
 }
 
-async function publish(server: ViteDevServer, devtools: boolean) {
+async function publish(server: ViteDevServer, devtools: boolean, problems: boolean) {
   const ctx = useMyBad(server)!
   const file = `${root}src/widgets.ts`
 
@@ -98,6 +99,10 @@ async function publish(server: ViteDevServer, devtools: boolean) {
     message: 'loadWidgets(names) is deprecated. Pass { names } instead.',
     sources: [`${root}src/render.ts:4:19`],
   }, { kind: 'warning' }))
+
+  if (!problems) {
+    return
+  }
 
   ctx.channel.setProblems('typecheck', await Promise.all(typescript.map(problem => ctx.report({
     ...problem,

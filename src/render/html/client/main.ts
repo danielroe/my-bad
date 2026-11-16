@@ -1228,6 +1228,28 @@ function pickLevel(m: Mount, d: Docked, level: string): void {
     : level))
 }
 
+/**
+ * A filter picked on the badge acts like a level tab here: the list is filtered in place, the shown problem
+ * stays while it still matches, and the same filter again changes nothing.
+ */
+function filterFromBadge(m: Mount, d: Docked, focus: BadgeFocus): void {
+  if (d.state.withheld) {
+    return
+  }
+  if ((d.state.view?.filter ?? '') !== focus.query) {
+    setQuery(m, d, focus.query!)
+  }
+  // the checks that could not run stand above the list in every filter, so they are not what the filter lists
+  const listed = [
+    ...m.root.querySelectorAll<HTMLElement>('.mb-index-group:not([data-index-broken]) .mb-index-item'),
+  ]
+  const shown = listed.find(item => item.getAttribute('aria-current') === 'true')
+  if (shown || !listed.length) {
+    return
+  }
+  void selectDocked(m, { id: listed[0]!.dataset.id, source: listed[0]!.dataset.source })
+}
+
 function setQuery(m: Mount, d: Docked, text: string): void {
   const input = m.root.querySelector<HTMLInputElement>('[data-filter]')
   if (input) {
@@ -1391,6 +1413,14 @@ let selection = 0
 
 async function selectDocked(m: Mount, focus: BadgeFocus | undefined): Promise<void> {
   const d = m.docked!
+  // with its reports withheld, the list points at the dev machine, and there is nothing to filter
+  if (typeof focus?.query === 'string' && !d.state.withheld) {
+    d.state.view = { ...d.state.view, filter: focus.query }
+    const input = m.root.querySelector<HTMLInputElement>('[data-filter]')
+    if (input) {
+      input.value = focus.query
+    }
+  }
   const request = ++selection
   const found = focus && await findReport(m, d, focus)
   if (request !== selection) {
@@ -1550,13 +1580,21 @@ function connectDocked(m: Mount, d: Docked): void {
     if (event.source !== window.parent || event.origin !== location.origin || data?.type !== 'my-bad:select') {
       return
     }
-    const focus = { id: data.id, source: data.source, list: data.list }
+    const focus = {
+      id: data.id,
+      source: data.source,
+      list: data.list,
+      query: data.query,
+    }
     window.parent.postMessage({ type: 'my-bad:selected' }, location.origin)
-    if (ready) {
-      void selectDocked(m, focus)
+    if (!ready) {
+      pending = focus
+    }
+    else if (typeof focus.query === 'string') {
+      filterFromBadge(m, d, focus)
     }
     else {
-      pending = focus
+      void selectDocked(m, focus)
     }
   })
   if (window.parent !== window) {

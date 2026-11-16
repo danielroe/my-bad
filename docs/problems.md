@@ -11,7 +11,7 @@ An error takes over the page until it's fixed. Problems don't interrupt you, so 
 - Problem sets stay out of the history, and don't count towards the warning limit.
 - They raise no toasts, and never take over a page.
 - Every page counts them in the pill of the badge, with the open error and warnings of the page.
-- Selecting the pill opens the problems of a source in a drawer beside the page. With more than one place to go, it lists each of them first.
+- Selecting a count in the pill, such as **2 errors**, opens the problems in a drawer beside the page, filtered to that level.
 - New problems grow the pill into a card for a few seconds. The card shows the first new problem with its hint, and how many more arrived with it.
 
 The card shows only on pages that the channel sends reports to. See [Trusted and untrusted callers](./channel.md#trusted-and-untrusted-callers).
@@ -128,9 +128,9 @@ In this example, `linter` stands for the tool you integrate. The same approach f
 
 The badge shows each status like this:
 
-- **`checking`**: a ring around the light of the pill, and **Checking…** under the source in its list. While a run with no problems is checking, the source stays out of the badge.
+- **`checking`**: a ring around the light of the pill. While a run with no problems is checking, the source stays out of the badge.
 - **`idle`**: the count of errors and warnings. A source without a status is idle.
-- **`failed`**: counted as `1 failed` in the pill. Its row in the list reads **Failed**, with the `error` reason beneath the name.
+- **`failed`**: named in the pill, for example **Stylelint failed**, or counted when several fail, for example **2 checks failed**. The drawer and the dock list it under **Couldn't run**, above the problems in any filter, with the `error` reason. Selecting it shows what failed and why.
 
 An empty set shows nothing in the badge unless it failed. The drawer lists its problems only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
 
@@ -152,7 +152,7 @@ The third argument of `setProblems` describes the source:
 
 ### Count several sources together
 
-Sources with the same `group` share one row in the list of the badge, for example **Nuxt**, with the labels of its sources beneath the name and their counts added up. A source of the group that fails counts in its own column. The title of the row lists each source, and the row opens the first of them.
+Sources with the same `group` count together. In the drawer and the dock, their problems share one heading, for example **Nuxt · Nuxt scan**, and a source of the group that fails is named after the group in the pill, for example **Nuxt failed**.
 
 ### Share one page between sources
 

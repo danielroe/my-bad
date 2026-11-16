@@ -688,11 +688,14 @@ describe('docked view', () => {
       ...list().matchAll(/<h2>(.*?)<span class="mb-index-label">([^<]*)<\/span>(?:<span class="mb-count[^"]*">([^<]*)<\/span>)?/g),
     ].map(([, icon, label, count]) => `${icon ? 'busy ' : ''}${label} ${count ?? ''}`.trim())
     expect(headings).toEqual([
+      'Couldn\'t run',
       'TypeScript 1',
       'busy ESLint 0',
-      'Vue failed: crashed',
     ])
-    expect(list()).toContain('<span class="mb-count mb-status">failed: crashed</span>')
+    // a check that could not run heads the list in its own section, in every filter, with its reason as its location
+    expect(list()).toContain('<section class="mb-index-group" data-index-broken><h2><span class="mb-index-label">Couldn\'t run</span></h2><ul><li><button type="button" class="mb-index-item" data-action="select" data-kind="error" data-source="vue" aria-current="false">')
+    expect(list()).toContain('<span class="mb-index-title">Vue</span><span class="mb-index-loc">crashed</span>')
+    expect(list('is:warning')).toContain('data-index-broken')
     expect(list('-source:ts')).not.toContain('Type mismatch')
     expect(list('source:types')).toContain('Type mismatch')
     expect(list('source:lint')).not.toContain('data-index-source')
@@ -945,7 +948,10 @@ describe('docked view', () => {
       ],
       problems,
     }, undefined, { source: 'vue' })
-    expect(failed).toContain('<div class="mb-docked-empty" data-unselected><p class="mb-docked-empty-title">Vue</p><p>Failed: crashed</p></div>')
+    // a check that could not run is shown like a report: what failed, what happens next, and why
+    expect(failed).toContain('<h1 class="mb-message" id="mb-broken-title">Vue couldn\'t run</h1>')
+    expect(failed).toContain('<p class="mb-hint">Its problems are left out until it runs again. Fix the cause below, and Vue runs on the next change.</p>')
+    expect(failed).toContain('<section class="mb-source mb-broken-reason" aria-label="Why it failed"><pre>crashed</pre></section>')
   })
 
   it('styles the dock after its host and the drawer after the page', () => {

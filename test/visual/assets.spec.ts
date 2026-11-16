@@ -179,8 +179,7 @@ test.describe('README assets', () => {
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-badge').click()
-        await page.locator('my-bad-overlay-badge .mb-row[data-source="typecheck"]').click()
+        await page.locator('my-bad-overlay-badge .mb-slot[data-level="error"] button').click()
         await page.frameLocator('my-bad-overlay-badge .mb-drawer iframe').locator('.mb-message').waitFor()
         await expect(page).toHaveScreenshot(`drawer-${scheme}.png`, {
           maxDiffPixels: 2000,
@@ -196,13 +195,13 @@ test.describe('README assets', () => {
   })
 
   test('warnings panel', async ({ page }) => {
-    const showcase = await startShowcase({ devtools: false })
+    // the page's own warnings open in the overlay while they are all there is
+    const showcase = await startShowcase({ devtools: false, problems: false })
     try {
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-badge').click()
-        await page.locator('my-bad-overlay-badge .mb-row[data-place="page"]').click()
+        await page.locator('my-bad-overlay-badge .mb-slot[data-level="warning"] button').click()
         await page.locator('my-bad-overlay [data-message]').first().waitFor()
         await expect(page).toHaveScreenshot(`warnings-${scheme}.png`, {
           maxDiffPixels: 2000,
@@ -224,7 +223,7 @@ test.describe('README assets', () => {
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.locator('my-bad-overlay-badge .mb-slot[data-level="error"] button').click()
         await page.frameLocator('iframe').locator('.mb-message').waitFor()
         await expect(page).toHaveScreenshot(`devtools-${scheme}.png`, {
           maxDiffPixels: 2000,

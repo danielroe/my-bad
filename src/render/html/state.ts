@@ -112,6 +112,8 @@ export interface BadgeFocus {
   source?: string
   /** Show the problem set's full list rather than one of its reports. */
   list?: boolean
+  /** The filter to list the problems with, as typed in the list's filter field. */
+  query?: string
 }
 
 export interface BadgeState {

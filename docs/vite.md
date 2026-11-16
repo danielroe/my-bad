@@ -123,7 +123,7 @@ The Vite DevTools documentation lists the Vite versions it supports. To leave th
 
 With DevTools running, errors no longer take over the page:
 
-- The badge shows on every page and opens the dock instead of the overlay. The dock lists every source, so the pill opens it straight away, rather than its own list.
+- The badge shows on every page, and its counts open the dock, filtered to their level, instead of the drawer or the overlay.
 - The dock lists the open error, the warnings, and every problem set. It shows the one you pick the way the overlay does.
 - The dock icon in the DevTools bar counts them, in red while any of them is an error.
 - The dock follows the colour scheme, colours, and font of the DevTools panel, instead of the page's theme.

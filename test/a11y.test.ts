@@ -710,14 +710,9 @@ describe.each(themes)('badge, theme: $name', (theme) => {
     await page.clock.fastForward(7000)
     await page.locator('my-bad-overlay-badge .mb-peek').waitFor({ state: 'hidden' })
     await page.locator('my-bad-overlay-badge .mb-dock').evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)))
-    await audit(page, /mb-badge|mb-slot/, ['.mb-badge'])
-    expect((await sampleContrast(page)).some(sample => sample.selector.includes('mb-slot'))).toBe(true)
-
-    await page.locator('my-bad-overlay-badge .mb-badge').click()
-    const list = page.locator('my-bad-overlay-badge .mb-list')
-    await list.waitFor()
-    await page.locator('my-bad-overlay-badge .mb-dock').evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)))
-    await audit(page, /mb-list|mb-row|mb-badge/, ['.mb-row >> nth=0', '.mb-row >> nth=1', '.mb-badge'])
+    // each count is its own button, so each is a target of its own
+    await audit(page, /mb-badge|mb-count/, ['.mb-badge', '.mb-slot[data-level="error"] button', '.mb-slot[data-level="warning"] button'])
+    expect((await sampleContrast(page)).some(sample => sample.selector.includes('mb-count'))).toBe(true)
     await page.context().close()
   }, 30_000)
 })

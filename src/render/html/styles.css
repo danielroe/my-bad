@@ -125,6 +125,8 @@
 
 /* Source card and frame previews */
 .mb-source { border: 1px solid var(--mb-line-strong); border-radius: 8px; background: var(--mb-code-bg); }
+/* why a check could not run, in the frame a report shows its source in */
+.mb-broken-reason pre { margin: 0; padding: 12px 14px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 var(--mb-font-mono); color: var(--mb-fg); }
 .mb-source-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 44px; gap: 10px; padding: 5px 12px; border-bottom: 1px solid var(--mb-line); border-radius: 7px 7px 0 0; background: var(--mb-surface); }
 .mb-source-location { display: flex; align-items: center; flex: 1; min-width: 0; gap: 10px; }
 .mb-function { font: 500 12px/1.4 var(--mb-font-mono); overflow-wrap: anywhere; }
