@@ -95,7 +95,7 @@ The badge renders nothing until something concerns the page:
 - **An error** mounts the overlay, minimised unless you pass `startMinimized: false`.
 - **Warnings** and **problem sets** show one pill in the corner, for example `● 3 errors 2 warnings 1 failed`. It sums up the page and every source, and its light shows the worst level. See [Publish problems](./problems.md).
 
-Selecting the pill takes you to the only place with problems: the warnings, in a panel beside the page, or a source, in a drawer. When there is more than one, it opens a list instead, with **This page** first and then each source or `group`, with its counts under the pill's. Select a row to open it. In the list, <kbd>↑</kbd> and <kbd>↓</kbd> move between rows, and <kbd>Escape</kbd> closes it.
+Selecting the pill takes you to the only place with problems: the warnings, in a panel beside the page, or a source, in a drawer. When there is more than one, it opens a list instead, with **This page** first and then each source or `group`, with its counts under the pill's. Select a row to open it. In the list, <kbd>↑</kbd> and <kbd>↓</kbd> move between rows, and <kbd>Escape</kbd> closes it. With [Vite DevTools](./vite.md), the pill opens the **Problems** dock instead, which lists every place itself.
 
 When everything the pill showed is fixed, it says **All clear** for a moment, then steps away.
 

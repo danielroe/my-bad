@@ -160,7 +160,7 @@ Several sources can share one `url`, for example a tool that serves one page for
 
 ### Open another DevTools dock
 
-A tool with its own Vite DevTools dock can name it in `devtoolsDock`. When the page runs DevTools, the badge entry for that source opens the `my-bad` dock as usual, and the full list there switches to the tool's dock instead of showing `url`. `my-bad` adds no DevTools message for the source, since the tool posts its own.
+A tool with its own Vite DevTools dock can name it in `devtoolsDock`. When the page runs DevTools, the badge opens the `my-bad` dock as usual, and the full list there switches to the tool's dock instead of showing `url`. `my-bad` adds no DevTools message for the source, since the tool posts its own.
 
 ## Identify problems
 

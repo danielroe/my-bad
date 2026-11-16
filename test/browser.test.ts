@@ -2516,7 +2516,7 @@ describe('devtools dock', () => {
     await page.close()
   }, 30_000)
 
-  it('opens every badge entry in the my-bad dock, and a problem set\'s full list in the dock it names, or its url', async () => {
+  it('opens the my-bad dock from the pill, and a problem set\'s full list in the dock it names, or its url', async () => {
     channel.clearError()
     channel.clearWarning()
     channel.clearProblems()
@@ -2530,16 +2530,16 @@ describe('devtools dock', () => {
       params: { source: 'lint', list: true },
     })
 
+    // the dock lists every source, so the pill opens it straight away, on the first of them, instead of listing them itself
     const badge = page.locator('my-bad-overlay-badge .mb-badge')
-    const row = (source: string) => page.locator(`my-bad-overlay-badge .mb-row[data-source="${source}"]`)
     const panel = page.frameLocator('iframe')
+    expect(await badge.getAttribute('aria-expanded')).toBeNull()
     await badge.click()
-    await row('ts').click()
     await waitFor(async () => (await calls()).switched.join(), 'my-bad')
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Type mismatch')
+    expect(await page.locator('my-bad-overlay-badge .mb-list').isVisible()).toBe(false)
 
-    await badge.click()
-    await row('lint').click()
+    await page.evaluate(() => (window as unknown as { devtools: { activate: (params: unknown) => void } }).devtools.activate({ source: 'lint' }))
     await waitFor(() => panel.locator('.mb-message').textContent().catch(() => ''), 'Unused variable')
     await panel.locator('[data-index-source="ts"]').getByRole('button', { name: 'Show the full list' }).click()
     await waitFor(async () => (await calls()).switched.at(-1), 'checker')

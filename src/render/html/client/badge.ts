@@ -874,9 +874,14 @@ function start(state: BadgeState, nonce: string | undefined): void {
     ].filter(Boolean).join(', ')
   }
 
+  /** Whether the pill lists the places, rather than going straight to one. A host such as Vite DevTools lists them in its dock. */
+  function lists(): boolean {
+    return shownPlaces.length > 1 && !target.host
+  }
+
   /** The pill takes you straight to the only place with problems, and lists them when there is a choice. */
   function select(byKeyboard: boolean): void {
-    if (listOpen || shownPlaces.length > 1) {
+    if (listOpen || lists()) {
       toggleList(!listOpen, byKeyboard)
       return
     }
@@ -1259,7 +1264,7 @@ function start(state: BadgeState, nonce: string | undefined): void {
         : `${only!.sets[0]!.group ?? only!.sets[0]!.label ?? only!.sets[0]!.source}: `, checking
       ? ', checking'
       : '')
-    if (shownPlaces.length > 1) {
+    if (lists()) {
       button.setAttribute('aria-expanded', String(listOpen))
       button.setAttribute('aria-controls', 'mb-list')
     }
