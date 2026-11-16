@@ -590,7 +590,7 @@ describe('docked view', () => {
       ],
     }
     const html = renderDocked({ mode: 'docked', version: '' }, index)
-    expect(html).toContain('<span class="mb-count">1 info</span>')
+    expect(html).toContain('<span class="mb-index-label">Checker</span><span class="mb-count">1</span>')
     expect(html).toContain(`data-kind="info" data-id="i" data-source="checker" aria-current="false">${ICONS.info}`)
     expect(html).toContain('data-docked-count>1 info</span>')
     const page = renderPage(info)
@@ -637,7 +637,7 @@ describe('docked view', () => {
     expect(ansi).toContain('  │       ^^^^^^^^^\n')
   })
 
-  it('shows a pill with the status of each source, and leaves out the problems of hidden ones', () => {
+  it('heads each source with its count or status, and narrows the list to sources with source:', () => {
     const problem = (message: string) => ({
       ...createProblemReport({ name: 'TS', message }),
       id: message,
@@ -679,39 +679,33 @@ describe('docked view', () => {
         },
       ],
     }
-    const pills = (hiddenSources?: string[]) => [
-      ...renderIndex({
-        mode: 'docked',
-        version: '',
-        view: { now: 10_000, hiddenSources },
-      }, index).matchAll(/<button type="button" class="mb-pill"[^>]*data-tone="(\w+)" aria-pressed="(\w+)" title="([^"]*)">.*?<span class="mb-pill-label">([^<]*)<\/span>(?:<span class="mb-pill-count">([^<]*)<\/span>)?<\/button>/g),
-    ].map(match => match.slice(1).join(' | '))
-    expect(pills()).toEqual([
-      'error | true | Checked just now. Hide TypeScript problems. | TypeScript | 1',
-      'busy | true | Starting. Hide ESLint problems. | ESLint | ',
-      'error | true | Failed: crashed. Hide Vue problems. | Vue | failed',
-      'ok | true | Checked 9s ago. Hide Audit problems. | Audit | ',
-    ])
-    const hidden = renderIndex({
+    const list = (filter?: string) => renderIndex({
       mode: 'docked',
       version: '',
-      view: {
-        hiddenSources: ['ts'],
-      },
+      view: { now: 10_000, filter },
     }, index)
-    expect(hidden).toContain('data-source="ts" data-tone="error" aria-pressed="false" title="Checked')
-    expect(hidden).not.toContain('Type mismatch')
-    expect(hidden).not.toContain('data-index-source="ts"')
+    const headings = [
+      ...list().matchAll(/<h2>(.*?)<span class="mb-index-label">([^<]*)<\/span>(?:<span class="mb-count[^"]*">([^<]*)<\/span>)?/g),
+    ].map(([, icon, label, count]) => `${icon ? 'busy ' : ''}${label} ${count ?? ''}`.trim())
+    expect(headings).toEqual([
+      'TypeScript 1',
+      'busy ESLint 0',
+      'Vue failed: crashed',
+    ])
+    expect(list()).toContain('<span class="mb-count mb-status">failed: crashed</span>')
+    expect(list('-source:ts')).not.toContain('Type mismatch')
+    expect(list('source:types')).toContain('Type mismatch')
+    expect(list('source:lint')).not.toContain('data-index-source')
     const rechecking = renderIndex({ mode: 'docked', version: '' }, {
       history: [],
       problems: [
         { ...index.problems[0]!, status: 'checking' },
       ],
     })
-    expect(rechecking).toContain(`data-tone="busy" aria-pressed="true" title="Checking. Hide TypeScript problems.">${ICONS.checking}<span class="mb-pill-label">TypeScript</span><span class="mb-pill-count">1</span>`)
+    expect(rechecking).toContain(`<h2>${ICONS.checking}<span class="mb-index-label">TypeScript</span>`)
   })
 
-  it('narrows the list down by text and level, with counts per level', () => {
+  it('narrows the list down with a query of words, is:, source: and file:, with counts per level', () => {
     const problem = (message: string, kind: 'error' | 'warning' | 'info', file?: string) => ({
       ...createProblemReport({
         name: 'Checker',
@@ -765,29 +759,31 @@ describe('docked view', () => {
     expect(titles({ filter: '  TYPE ' })).toEqual(['Type mismatch'])
     expect(titles({ filter: 'src/b' })).toEqual(['Unused import'])
     expect(titles({ filter: 'c-12' })).toEqual(['Prefer const'])
-    expect(titles({
-      hiddenLevels: ['warning', 'info'],
-    })).toEqual(['Type mismatch'])
-    const levels = renderIndex({
+    expect(titles({ filter: 'import unused' })).toEqual(['Unused import'])
+    expect(titles({ filter: '-type -unused' })).toEqual(['Vue warn: Extraneous attrs', 'Prefer const'])
+    expect(titles({ filter: 'checker' })).toEqual(['Type mismatch', 'Unused import', 'Prefer const'])
+    expect(titles({ filter: 'is:error' })).toEqual(['Type mismatch'])
+    expect(titles({ filter: 'is:warn,info' })).toEqual(['Vue warn: Extraneous attrs', 'Unused import', 'Prefer const'])
+    expect(titles({ filter: 'file:src/' })).toEqual(['Type mismatch', 'Unused import'])
+    const tabs = renderIndex({
       mode: 'docked',
       version: '',
-      view: {
-        hiddenLevels: ['info'],
-      },
+      view: { filter: 'is:info' },
     }, index)
     expect([
-      ...levels.matchAll(/data-level="(\w+)" aria-pressed="(\w+)"[^>]*>.*?<span class="mb-sr-only">([^<]*)<\/span>(\d+)/g),
+      ...tabs.matchAll(/class="mb-tab" data-action="level" data-level="(\w+)" aria-pressed="(\w+)">([^<]*) <span class="mb-tab-count">(\d+)/g),
     ].map(match => match.slice(1).join(' '))).toEqual([
-      'error true Errors  1',
-      'warning true Warnings  2',
-      'info false Info  1',
+      'all false All 4',
+      'error false Errors 1',
+      'warning false Warnings 2',
+      'info true Info 1',
     ])
     const none = renderIndex({
       mode: 'docked',
       version: '',
       view: { filter: 'nothing like this' },
     }, index)
-    expect(none).toContain('<p class="mb-index-empty-title">No problems match the current filters</p><button type="button" class="mb-index-reset" data-action="show-all">Show all</button>')
+    expect(none).toContain('<p class="mb-index-empty-title">Nothing matches <code>nothing like this</code></p><button type="button" class="mb-index-reset" data-action="show-all">Clear the filter</button>')
     expect(none).not.toContain('data-index-source="checker"')
     expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [] })).toContain('Nothing to report.')
   })
@@ -836,17 +832,17 @@ describe('docked view', () => {
     }, index)
     expect([
       ...html.matchAll(/<h2><span class="mb-index-label"[^>]*>([^<]*)<\/span><span class="mb-count">(\d+)/g),
-    ].map(match => `${match[1]} ${match[2]}`)).toEqual(['src/a.ts 1', 'src/b.ts 3', 'No file 1'])
+    ].map(match => `${match[1]!.replaceAll('&lrm;', '')} ${match[2]}`)).toEqual(['src/a.ts 1', 'src/b.ts 3', 'No file 1'])
     expect([
       ...html.matchAll(/<span class="mb-index-title">([^<]*)<\/span><span class="mb-index-loc">([^<]*)/g),
     ].map(match => `${match[1]} (${match[2]})`)).toEqual([
       'Other file (TypeScript · 5:2)',
       'Early (TypeScript · 1:2)',
-      'TypeScript: Render failed (Error · 3:2)',
+      'TypeScript: Render failed (3:2)',
       'Late (TypeScript · 9:2)',
-      'Vue warn: Extraneous attrs (Warning)',
     ])
-    expect(html).toContain('data-group="file" aria-pressed="true"')
+    expect(html).toContain('<span class="mb-index-title">Vue warn: Extraneous attrs</span></button>')
+    expect(html).toContain('data-action="group" aria-pressed="true" title="Group by file"')
   })
 
   it('shows a calm state with what each source is doing while nothing is open', () => {
@@ -969,7 +965,7 @@ describe('multi-line messages', () => {
     const html = markup(renderPage(r))
     expect(html).toContain(`<title>Error: Two components are named &lt;Widget&gt;:</title>`)
     expect(html).toContain(`data-message>Two components are named &lt;Widget&gt;:</h1><p class="mb-message-body" data-message-body> - ~/a.vue\n - ~/b.vue</p>`)
-    expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [], current: r })).toContain('<span class="mb-index-title">Error: Two components are named &lt;Widget&gt;:</span>')
+    expect(renderIndex({ mode: 'docked', version: '' }, { history: [], problems: [], current: r })).toContain('<span class="mb-index-title">Two components are named &lt;Widget&gt;:</span>')
   })
 
   it('keeps the button for the rest of a long message in the body', async () => {

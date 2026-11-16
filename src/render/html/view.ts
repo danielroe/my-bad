@@ -1,8 +1,8 @@
 import type { ProblemSummary } from '../../channel/protocol'
 import type { DisplayTarget } from '../../report/path'
 import type { ErrorReport, Frame, HistoryEntry, Location, Section, Snippet } from '../../types'
-import type { Listed } from './problems'
-import type { BadgeFocus, DockedIndex, DockedState, IndexView, PageState } from './state'
+import type { Listed, QueryKey, suggest, Suggestion } from './problems'
+import type { BadgeFocus, DockedIndex, DockedState, Level, PageState } from './state'
 import { plainText } from '../../report/code'
 import { clampMessage, splitHeadline } from '../../report/message'
 import { displayPath } from '../../report/path'
@@ -10,7 +10,7 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
-import { calmStatus, filtering, levelOf, LEVELS, listing, nothingOpen, sourceStatus, sourceTone } from './problems'
+import { calmStatus, facets, filtering, listing, nothingOpen, parseQuery, sourceTone } from './problems'
 import { DOCKED_TITLE } from './state'
 import { countsLabel, dockedCounts, firstLine, plural, repeatsLabel, reportLocation, warningCount } from './summary'
 
@@ -32,6 +32,7 @@ export const ICONS = {
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   minimize: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
   error: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>',
+  search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   list: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
   checking: '<svg class="mb-spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>',
 }
@@ -42,6 +43,8 @@ const KIND_LABEL = {
   compile: 'Compile error',
   info: 'Info',
 }
+/** Names that only restate the kind, which the row's icon already shows. */
+const GENERIC_NAMES = new Set(Object.values(KIND_LABEL).map(label => label.toLowerCase()))
 const KIND_NOUN = {
   error: 'error',
   warning: 'warning',
@@ -139,7 +142,7 @@ export function dockedSummary(index: DockedIndex): string {
 function renderIndexItem(entry: Pick<HistoryEntry, 'id' | 'kind' | 'name' | 'message' | 'codeSpans'>, location: string, shown: BadgeFocus | undefined, source?: string, heading?: string): string {
   const current = shown?.id === entry.id && shown.source === source
   const message = inlineHtml(firstLine(entry.message), entry.codeSpans)
-  const title = repeatsLabel(entry.name, heading)
+  const title = repeatsLabel(entry.name, heading) || GENERIC_NAMES.has(entry.name.toLowerCase())
     ? message
     : `${escapeHtml(entry.name)}: ${message}`
   return `<li><button type="button" class="mb-index-item" data-action="select" data-kind="${escapeHtml(entry.kind)}" data-id="${escapeHtml(entry.id)}"${attr('data-source', source)} aria-current="${current}">${KIND_ICON[entry.kind]}<span class="mb-index-title">${title}</span>${location
@@ -164,14 +167,18 @@ function renderIndexSet(set: DockedIndex['problems'][number], state: DockedState
     ? `failed${set.error
       ? `: ${set.error}`
       : ''}`
-    : countsLabel(set)
+    : String(set.reports?.length ?? set.errors + set.warnings + (set.info ?? 0))
   const reports = set.reports ?? []
   const listed = shown?.list && shown.source === set.source
   return `<section class="mb-index-group" data-index-source="${escapeHtml(set.source)}"${attr('data-focused', shown?.source === set.source && !shown.id)}><h2>${set.status === 'checking'
     ? ICONS.checking
     : ''}<span class="mb-index-label">${escapeHtml(set.group
     ? `${set.group} · ${set.label ?? set.source}`
-    : set.label ?? set.source)}</span><span class="mb-count">${escapeHtml(status)}</span>${url || (set.devtoolsDock && state.docks)
+    : set.label ?? set.source)}</span>${status
+    ? `<span class="mb-count${failed(set)
+      ? ' mb-status'
+      : ''}">${escapeHtml(status)}</span>`
+    : ''}${url || (set.devtoolsDock && state.docks)
     ? `<button type="button" class="mb-index-list" data-action="list" data-source="${escapeHtml(set.source)}" title="Show the full list" aria-label="Show the full list" aria-pressed="${!!listed}">${ICONS.list}</button>`
     : ''}</h2>${reports.length
     ? `<ul>${reports.map(report => renderIndexItem(report, indexLocation(report, state), shown, set.source, set.label ?? set.source)).join('')}</ul>`
@@ -183,25 +190,6 @@ const TONE_ICON = {
   error: ICONS.error,
   warning: ICONS.warning,
   ok: ICONS.check,
-}
-
-function renderSources(sets: DockedIndex['problems'], view: IndexView): string {
-  const now = view.now ?? Date.now()
-  return sets.length
-    ? `<ul class="mb-index-sources" aria-label="Sources">${sets.map((set) => {
-      const label = set.label ?? set.source
-      const shown = !view.hiddenSources?.includes(set.source)
-      const total = set.errors + set.warnings + (set.info ?? 0)
-      const tone = sourceTone(set)
-      return `<li><button type="button" class="mb-pill" data-action="toggle-source" data-source="${escapeHtml(set.source)}" data-tone="${tone}" aria-pressed="${shown}" title="${escapeHtml(`${sourceStatus(set, now)}. ${shown ? 'Hide' : 'Show'} ${label} problems.`)}">${failed(set)
-        ? ICONS.close
-        : TONE_ICON[tone]}<span class="mb-pill-label">${escapeHtml(label)}</span>${failed(set)
-        ? '<span class="mb-pill-count">failed</span>'
-        : total
-          ? `<span class="mb-pill-count">${total}</span>`
-          : ''}</button></li>`
-    }).join('')}</ul>`
-    : ''
 }
 
 interface FileEntry {
@@ -235,23 +223,76 @@ function renderByFile(entries: FileEntry[], state: DockedState, shown: BadgeFocu
       : 1).map(({ file, path, items }) => {
     const rows = items
       .sort((a, b) => (a.frame?.line ?? 0) - (b.frame?.line ?? 0) || (a.frame?.column ?? 0) - (b.frame?.column ?? 0))
-      .map(({ entry, source, label, frame }) => renderIndexItem(entry, `${label}${frame?.line === undefined
-        ? ''
-        : ` · ${frame.line}${frame.column === undefined
+      .map(({ entry, source, label, frame }) => {
+        const position = frame?.line === undefined
           ? ''
-          : `:${frame.column}`}`}`, shown, source, source && label))
-    return `<section class="mb-index-group" data-index-file="${escapeHtml(file)}"><h2><span class="mb-index-label"${attr('title', path || undefined)}>${escapeHtml(path || 'No file')}</span><span class="mb-count">${items.length}</span></h2><ul>${rows.join('')}</ul></section>`
+          : `${frame.line}${frame.column === undefined
+            ? ''
+            : `:${frame.column}`}`
+        return renderIndexItem(entry, [source && label, position].filter(Boolean).join(' · '), shown, source, source && label)
+      })
+    return `<section class="mb-index-group" data-index-file="${escapeHtml(file)}"><h2><span class="mb-index-label"${attr('title', path || undefined)}>${path
+      ? `&lrm;${escapeHtml(path)}&lrm;`
+      : 'No file'}</span><span class="mb-count">${items.length}</span></h2><ul>${rows.join('')}</ul></section>`
   })
 }
 
 const LEVEL_LABEL = { error: 'Errors', warning: 'Warnings', info: 'Info' }
 
-function renderLevels(entries: Listed[], view: IndexView): string {
-  const levels = LEVELS.map(level => ({ level, count: entries.filter(entry => levelOf(entry.kind) === level).length, hidden: !!view.hiddenLevels?.includes(level) }))
-    .filter(({ count, hidden }) => count || hidden)
-  return levels.length
-    ? `<div class="mb-index-levels" role="group" aria-label="Levels">${levels.map(({ level, count, hidden }) => `<button type="button" class="mb-level" data-action="level" data-level="${level}" aria-pressed="${!hidden}" title="${hidden ? 'Show' : 'Hide'} ${LEVEL_LABEL[level].toLowerCase()}">${KIND_ICON[level]}<span class="mb-sr-only">${LEVEL_LABEL[level]} </span>${count}</button>`).join('')}</div>`
+/**
+ * The level tabs above the list. A tab sets the `is:` token of the query, or clears it for All, so the field keeps
+ * the whole filter. Counts are what each tab would list given the rest of the query. With one level, there is nothing to pick.
+ */
+function renderTabs(state: DockedState, index: DockedIndex): string {
+  const view = state.view ?? {}
+  const { levels } = facets(index, view, state.cwd)
+  const picked = parseQuery(view.filter).is.include
+  const only = picked.length === 1
+    ? picked[0]
+    : undefined
+  const shown = levels.filter(({ level, count }) => count || only === level)
+  const byFile = view.group === 'file'
+  // Grouping changes the list right below it, so it sits at the end of the bar above the list.
+  const group = `<button type="button" class="mb-tab-tool" data-action="group" aria-pressed="${byFile}" title="Group by file" aria-label="Group by file">${ICONS.file}</button>`
+  const tab = (level: string, label: string, count: number, active: boolean) => `<button type="button" class="mb-tab" data-action="level" data-level="${level}" aria-pressed="${active}">${escapeHtml(label)} <span class="mb-tab-count">${count}</span></button>`
+  const tabs = shown.length > 1 || only
+    ? `<div class="mb-tab-list" role="group" aria-label="Show">${[
+      tab('all', 'All', levels.reduce((sum, { count }) => sum + count, 0), !picked.length),
+      ...shown.map(({ level, count }) => tab(level, LEVEL_LABEL[level], count, only === level)),
+    ].join('')}</div>`
     : ''
+  return `<div class="mb-tabs">${tabs}${group}</div>`
+}
+
+const SUGGEST_TITLE = { is: 'Level', source: 'Source', file: 'File' }
+
+/** The filters the search field offers, as options of its listbox. `active` is the option the keyboard is on. */
+export function renderSuggestions(result: ReturnType<typeof suggest>, active: number): string {
+  let position = 0
+  const option = (key: QueryKey, item: Suggestion) => {
+    const at = position++
+    const token = `${result.negate ? '-' : ''}${item.token}`
+    const icon = key === 'is'
+      ? KIND_ICON[item.value as Level]
+      : key === 'source'
+        ? TONE_ICON[item.tone ?? 'ok']
+        : ICONS.file
+    // A path keeps its end in view, so it is cut from the start: the marks keep its slashes in place.
+    const label = key === 'file'
+      ? `&lrm;${escapeHtml(item.label)}&lrm;`
+      : escapeHtml(key === 'is'
+          ? LEVEL_LABEL[item.value as Level]
+          : item.label)
+    const shownToken = key === 'file'
+      ? ''
+      : `<code class="mb-suggest-token">${escapeHtml(token)}</code>`
+    return `<div class="mb-suggest-item" role="option" id="mb-suggest-${at}" data-action="suggest" data-token="${escapeHtml(token)}" data-key="${key}"${attr('data-tone', item.tone)}${attr('data-level', key === 'is'
+      ? item.value
+      : undefined)} aria-selected="${at === active}">${icon}<span class="mb-suggest-label"${attr('title', key === 'file'
+      ? item.label
+      : undefined)}>${label}</span>${shownToken}<span class="mb-suggest-count">${item.count}</span></div>`
+  }
+  return `${result.groups.map(({ key, items }) => `<div class="mb-suggest-group" role="group" aria-label="${SUGGEST_TITLE[key]}"><p class="mb-suggest-title" aria-hidden="true">${SUGGEST_TITLE[key]}</p>${items.map(item => option(key, item)).join('')}</div>`).join('')}<p class="mb-suggest-foot" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> pick <kbd>↵</kbd> add <span>·</span> start with <kbd>-</kbd> to leave out</p>`
 }
 
 /** The list beside a docked view, of the open error, the warnings and every problem set. */
@@ -274,15 +315,12 @@ export function renderIndex(state: DockedState, index: DockedIndex, shown?: Badg
       ...listedSets.flatMap(set => (set.reports ?? []).map(entry => ({ entry, source: set.source, label: set.label ?? set.source }))),
     ], state, shown))
   }
-  const hidden = filtering(view) || !!view.hiddenSources?.length
-  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems"><div class="mb-index-tools">${renderLevels(all, view)}${all.length
-    ? `<div class="mb-switch mb-index-group-by" role="group" aria-label="Group by">${(['source', 'file'] as const).map(group => `<button type="button" data-action="group" data-group="${group}" aria-pressed="${(view.group ?? 'source') === group}">${group === 'source'
-      ? 'Source'
-      : 'File'}</button>`).join('')}</div>`
-    : ''}</div>${renderSources(index.problems, view)}${groups.length
+  return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${all.length
+    ? renderTabs(state, index)
+    : ''}${groups.length
     ? groups.join('')
-    : hidden
-      ? '<div class="mb-index-empty"><p class="mb-index-empty-title">No problems match the current filters</p><button type="button" class="mb-index-reset" data-action="show-all">Show all</button></div>'
+    : filtering(view)
+      ? `<div class="mb-index-empty"><p class="mb-index-empty-title">Nothing matches <code>${escapeHtml(view.filter!.trim())}</code></p><button type="button" class="mb-index-reset" data-action="show-all">Clear the filter</button></div>`
       : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
 }
 
@@ -342,7 +380,7 @@ export function renderDocked(state: DockedState, index: DockedIndex, report?: Er
 <div class="mb-docked"${attr('data-calm-view', calm)}>
 ${calm
   ? ''
-  : `<div class="mb-index-pane"><div class="mb-index-filter"><input type="search" data-filter placeholder="Filter problems" aria-label="Filter problems" autocomplete="off" spellcheck="false"${attr('value', state.view?.filter || undefined)}></div>${renderIndex(state, index, shown)}</div>`}
+  : `<div class="mb-index-pane"><div class="mb-index-filter"><div class="mb-query">${ICONS.search}<input type="search" data-filter placeholder="Filter problems" aria-label="Filter problems" role="combobox" aria-autocomplete="list" aria-controls="mb-suggest" aria-expanded="false" autocomplete="off" spellcheck="false"${attr('value', state.view?.filter || undefined)}><button type="button" class="mb-query-clear" data-action="show-all" title="Clear the filter" aria-label="Clear the filter">${ICONS.close}</button></div><div class="mb-suggest" id="mb-suggest" role="listbox" aria-label="Filters" data-suggest hidden></div></div>${renderIndex(state, index, shown)}</div>`}
 <main class="mb-main"${attr('data-report-id', report?.id)}${attr('data-list', !!list)} tabindex="-1">
   ${list
     ? `<p class="mb-docked-list-bar"><a href="${escapeHtml(list)}" target="_blank" rel="noreferrer">Open in a new tab${ICONS.open}</a></p><iframe class="mb-docked-list" src="${escapeHtml(list)}" title="${escapeHtml(`${set!.label ?? set!.source}: full list`)}"></iframe>`

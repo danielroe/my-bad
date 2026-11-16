@@ -78,12 +78,8 @@ export type Level = 'error' | 'warning' | 'info'
 
 /** What the list of a docked view shows. */
 export interface IndexView {
-  /** Text that every entry listed contains, in its name, message, code or file. */
+  /** The filter query, the only filter state: see `parseQuery`. Level and source facets edit it. */
   filter?: string
-  /** Levels left out. */
-  hiddenLevels?: Level[]
-  /** Problem sources whose problems are left out. */
-  hiddenSources?: string[]
   /** Group the list by source, the default, or by file. */
   group?: 'source' | 'file'
   /** Current time, for how long ago each source last ran. */
