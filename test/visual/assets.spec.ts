@@ -221,6 +221,8 @@ test.describe('README assets', () => {
     const showcase = await startShowcase({ devtools: true })
     try {
       await routeIcons(page)
+      // DevTools remembers its open dock, so each scheme starts as fresh as the first
+      await page.addInitScript(() => window === window.top && localStorage.clear())
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
