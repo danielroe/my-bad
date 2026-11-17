@@ -31,11 +31,11 @@
   border: 1px solid var(--mb-line-strong); border-radius: 999px;
   box-shadow: var(--mb-shadow);
   white-space: nowrap;
-  /* the edge comes back once a card has folded back into the pill */
-  transition: border-color .12s .22s, box-shadow .12s .22s;
+  /* the edge comes back once a card has folded back into the pill, and the fill before the card is hidden */
+  transition: border-color .12s .22s, box-shadow .12s .22s, background-color 0s .22s;
 }
-/* behind a card, the pill keeps its size and hands its edge to the card, so nothing in it moves */
-.mb-dock[data-peek] .mb-badge { border-color: transparent; box-shadow: none; transition-delay: 0s; }
+/* in front of a card, the pill keeps its size and hands its edge and fill to the card, so nothing in it moves and the card's corner shows */
+.mb-dock[data-peek] .mb-badge { background-color: transparent; border-color: transparent; box-shadow: none; transition-delay: 0s; }
 
 /* the status light: the worst level, with a ring while a source is checking */
 .mb-lamp {
@@ -54,9 +54,10 @@
 .mb-lamp[data-checking]::after { opacity: 1; animation: mb-spin .7s linear infinite; }
 @keyframes mb-spin { to { transform: rotate(360deg); } }
 
-/* each count folds to nothing when it has no value, so the pill eases between widths */
-.mb-slot { display: grid; grid-template-columns: 0fr; opacity: 0; transition: grid-template-columns var(--mb-fold) var(--mb-ease), opacity .18s; }
-.mb-slot[data-on] { grid-template-columns: 1fr; opacity: 1; }
+/* each count folds to nothing when it has no value, so the pill eases between widths. The 0 minimum and the clip
+   keep the button's padding from holding 16px of a folded count open */
+.mb-slot { display: grid; grid-template-columns: minmax(0, 0fr); overflow: hidden; opacity: 0; transition: grid-template-columns var(--mb-fold) var(--mb-ease), opacity .18s; }
+.mb-slot[data-on] { grid-template-columns: minmax(0, 1fr); opacity: 1; }
 .mb-slot > * { min-width: 0; overflow: hidden; }
 /* a count is a button that opens the problems of its level */
 .mb-count {

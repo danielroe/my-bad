@@ -149,14 +149,10 @@ test.describe('README assets', () => {
       await page.goto('http://my-bad.test/')
       const pill = page.locator('.mb-badge')
       await expect(pill).toHaveAttribute('title', 'Problems: 3 errors, 2 warnings, checking')
-      // the counts fold in, so measure once the pill holds its width
-      let box = (await pill.boundingBox())!
-      await expect.poll(async () => {
-        const next = (await pill.boundingBox())!
-        const settled = next.width === box.width
-        box = next
-        return settled
-      }).toBe(true)
+      // the counts fold in, so measure once they are on and the pill's transitions are done
+      await expect(pill.locator('.mb-slot[data-on]')).toHaveCount(2)
+      await pill.evaluate(el => new Promise(requestAnimationFrame).then(() => Promise.all(el.getAnimations({ subtree: true }).filter(a => a instanceof CSSTransition).map(a => a.finished))))
+      const box = (await pill.boundingBox())!
       const clip = {
         x: box.x - 24,
         y: box.y - 24,
