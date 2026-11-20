@@ -10,8 +10,8 @@ An error takes over the page until it's fixed. Problems don't interrupt you, so 
 
 - Problem sets stay out of the history, and don't count towards the warning limit.
 - They raise no toasts, and never take over a page.
-- Every page shows a count for each source, in a pill beside the badge.
-- Selecting an entry in the pill opens its problems in a drawer beside the page.
+- Every page counts them in the pill of the badge, with the open error and warnings of the page.
+- Selecting a count in the pill, such as **2 errors**, opens the problems in a drawer beside the page, filtered to that level.
 - New problems grow the pill into a card for a few seconds. The card shows the first new problem with its hint, and how many more arrived with it.
 
 The card shows only on pages that the channel sends reports to. See [Trusted and untrusted callers](./channel.md#trusted-and-untrusted-callers).
@@ -21,7 +21,7 @@ The card shows only on pages that the channel sends reports to. See [Trusted and
   <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/drawer-light.png" alt="The problems drawer beside a page, listing a warning, three TypeScript errors and two ESLint warnings, with the first TypeScript error and its source snippet shown beside them">
 </picture>
 
-The pill shows problems only on pages that render the badge. See [Badge](./rendering.md#badge).
+The badge shows problems only on pages that render it. See [Badge](./rendering.md#badge).
 
 ## Publish a problem set
 
@@ -60,7 +60,7 @@ channel.setProblems('eslint', results.flatMap(result => result.messages.map(mess
 | `file` | Absolute, or relative to `cwd`. |
 | `line`, `column` | Position in `file`. |
 | `endLine`, `endColumn` | End of the range in `file`. The snippet marks the range. `endColumn` is the column just past it. |
-| `kind` | `error`, `warning`, or `info`. Default `error`. The drawer and the dock list `info` problems, but the pill, the card, and the DevTools icon leave them out. |
+| `kind` | `error`, `warning`, or `info`. Default `error`. The drawer and the dock list `info` problems, but the badge, the card, and the DevTools icon leave them out. |
 | `snippet` | A `Snippet`, or a code frame of `3 \| code` lines. A code frame can mark a line with `>`. |
 | `related` | Other files the problem concerns, as `{ file, line, column }`. Pages list them under **Also in**. |
 
@@ -126,13 +126,13 @@ linter.on('close', () => {
 
 In this example, `linter` stands for the tool you integrate. The same approach fits any tool with a run lifecycle, such as an accessibility audit or the `api.subscribe` server API of vite-plugin-checker.
 
-The pill shows each status like this:
+The badge shows each status like this:
 
-- **`checking`**: a spinner. While a run with no problems is checking, the pill stays hidden.
+- **`checking`**: a ring around the light of the pill. While a run with no problems is checking, the source stays out of the badge.
 - **`idle`**: the count of errors and warnings. A source without a status is idle.
-- **`failed`**: `failed` in place of the count, with the `error` reason in the title of the pill.
+- **`failed`**: named in the pill, for example **Stylelint failed**, or counted when several fail, for example **2 checks failed**. The drawer and the dock list it under **Couldn't run**, above the problems in any filter, with the `error` reason. Selecting it shows what failed and why.
 
-An empty set shows nothing in the pill unless it failed. The drawer lists its problems only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
+An empty set shows nothing in the badge unless it failed. The drawer lists its problems only while it's checking or after it failed. The channel keeps it, with its metadata, in `channel.problems`.
 
 The drawer and the dock show a status pill for every source, empty sets included. The title of each pill tells whether the source is starting, checking, or failed, or when it last finished a run. Selecting a pill hides or shows the problems of that source.
 
@@ -152,7 +152,7 @@ The third argument of `setProblems` describes the source:
 
 ### Count several sources together
 
-Sources with the same `group` share one entry in the pill, for example `Nuxt 3`. When one of them fails, the entry reads `Nuxt 2, 1 failed`. The title lists each source, and the entry opens the first of them.
+Sources with the same `group` count together. In the drawer and the dock, their problems share one heading, for example **Nuxt · Nuxt scan**, and a source of the group that fails is named after the group in the pill, for example **Nuxt failed**.
 
 ### Share one page between sources
 
@@ -160,7 +160,7 @@ Several sources can share one `url`, for example a tool that serves one page for
 
 ### Open another DevTools dock
 
-A tool with its own Vite DevTools dock can name it in `devtoolsDock`. When the page runs DevTools, the badge entry for that source opens the `my-bad` dock as usual, and the full list there switches to the tool's dock instead of showing `url`. `my-bad` adds no DevTools message for the source, since the tool posts its own.
+A tool with its own Vite DevTools dock can name it in `devtoolsDock`. When the page runs DevTools, the badge opens the `my-bad` dock as usual, and the full list there switches to the tool's dock instead of showing `url`. `my-bad` adds no DevTools message for the source, since the tool posts its own.
 
 ## Identify problems
 

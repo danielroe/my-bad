@@ -93,15 +93,18 @@ html += renderBadge({ channel: '/__my-bad' })
 The badge renders nothing until something concerns the page:
 
 - **An error** mounts the overlay, minimised unless you pass `startMinimized: false`.
-- **Warnings** show a count in the corner. Selecting the count opens the warnings in a panel beside the page.
-- **Problem sets** show a pill beside the count, with one entry for each source or `group`. Selecting an entry opens its problems in a drawer beside the page. See [Publish problems](./problems.md).
+- **Warnings** and **problem sets** show one pill in the corner, for example `● 3 errors 2 warnings Stylelint failed`. It sums up the page and every source, and its light shows the worst level. See [Publish problems](./problems.md).
+
+Each count in the pill is a button. Select **3 errors** to open the problems in a drawer beside the page, filtered to errors, on the first of them. The warnings count does the same for warnings. A check that couldn't run is named, for example **Stylelint failed**, and opens on its reason. While the page's own error or warnings are all there is, a count opens them in the overlay instead. With [Vite DevTools](./vite.md), the counts open the **Problems** dock.
+
+When everything the pill showed is fixed, it says **All clear** for a moment, then steps away.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-dark.png">
-  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-light.png" alt="A small pill in the corner of a page reading vue-tsc 3, ESLint 2, with a spinner while ESLint is checking" width="203">
+  <img src="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-problems-light.png" alt="A small pill in the corner of a page reading 3 errors, 2 warnings, with a red light and a ring around it while ESLint is checking" width="203">
 </picture>
 
-A new warning, or a new error while the overlay is hidden, grows the count into a card for a few seconds. The card shows the report and where it points. It stays open while you hover or focus it.
+A new warning, or a new error while the overlay is hidden, grows the pill into a card for a few seconds. The card shows the report and where it points. It stays open while you hover or focus it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/danielroe/my-bad/main/assets/badge-dark.png">
@@ -136,7 +139,7 @@ The event also fires on other pages when an error from no request is retired. On
 | `assets` | | URLs for `script`, `styles`, and `badge`, instead of the ones the channel serves. |
 | `awaitHost` | `0` | Milliseconds to wait for Vite DevTools before mounting the overlay. See [Wait for DevTools](./vite.md#wait-for-devtools-before-showing-the-overlay). |
 
-The badge script is about 19 kB. It loads from the channel at `{channel}/badge.js`, and loads the overlay only when the page needs it. The badge closes its connection while the tab is in the background.
+The badge script is about 24 kB, or 9 kB compressed. It loads from the channel at `{channel}/badge.js`, and loads the overlay only when the page needs it. The badge closes its connection while the tab is in the background.
 
 An overlay rendered into the same page with the same `tag` joins the badge, instead of mounting a second time. The two share one connection.
 

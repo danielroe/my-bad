@@ -710,8 +710,9 @@ describe.each(themes)('badge, theme: $name', (theme) => {
     await page.clock.fastForward(7000)
     await page.locator('my-bad-overlay-badge .mb-peek').waitFor({ state: 'hidden' })
     await page.locator('my-bad-overlay-badge .mb-dock').evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)))
-    await audit(page, /mb-dock|mb-problems/, ['.mb-badge', '.mb-problems', '.mb-problems button'])
-    expect((await sampleContrast(page)).some(sample => sample.selector.includes('mb-problems'))).toBe(true)
+    // each count is its own button, so each is a target of its own
+    await audit(page, /mb-badge|mb-count/, ['.mb-badge', '.mb-slot[data-level="error"] button', '.mb-slot[data-level="warning"] button'])
+    expect((await sampleContrast(page)).some(sample => sample.selector.includes('mb-count'))).toBe(true)
     await page.context().close()
   }, 30_000)
 })

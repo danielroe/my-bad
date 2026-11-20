@@ -330,7 +330,7 @@ export function nothingOpen(index: DockedIndex): boolean {
   return !index.current && !index.history?.some(entry => entry.kind === 'warning') && index.problems.every(set => !(set.errors + set.warnings + (set.info ?? 0)))
 }
 
-function ago(time: number, now: number): string {
+export function ago(time: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - time) / 1000))
   return seconds < 5
     ? 'just now'

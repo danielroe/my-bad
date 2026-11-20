@@ -1,62 +1,120 @@
 @import './tokens.css';
 
+/*
+ * One pill sums up the page and every problem set, with one button for each count. New problems grow it into a card,
+ * which sits behind the pill and keeps it as its footer, so the two read as one surface.
+ */
 .mb-dock {
+  --mb-ease: cubic-bezier(.32, .72, 0, 1);
+  --mb-ok: #34c47c;
+  --mb-pill: 32px;
+  --mb-panel: min(380px, calc(100vw - 32px));
+  --mb-fold: 300ms;
   position: fixed; right: 16px; bottom: 16px; z-index: 2147483000;
-  display: flex; gap: 8px; justify-content: flex-end;
+  display: flex; justify-content: flex-end;
   max-width: calc(100vw - 32px);
+  color: var(--mb-fg);
+  font: 500 12px/16px var(--mb-font-sans); font-variant-numeric: tabular-nums;
   direction: ltr;
 }
-.mb-dock[data-dock$='left'] { right: auto; left: 16px; flex-direction: row-reverse; }
+:host([data-theme='light']) .mb-dock { --mb-ok: #1a7f4b; }
+.mb-dock[data-dock$='left'] { right: auto; left: 16px; justify-content: flex-start; }
 .mb-dock[data-dock^='top'] { bottom: auto; top: 16px; }
 .mb-dock[hidden], .mb-dock [hidden] { display: none; }
-.mb-badge, .mb-problems {
-  box-sizing: border-box;
-  display: inline-flex; align-items: center; gap: 8px;
-  min-width: 0; max-width: 440px; height: 30px; margin: 0; padding: 0 12px;
-  color: var(--mb-fg); background: var(--mb-bg);
+
+/* the pill */
+.mb-badge {
+  position: relative; z-index: 1;
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: flex-end;
+  min-width: 0; height: var(--mb-pill); padding: 0 4px 0 12px;
+  background: var(--mb-bg);
   border: 1px solid var(--mb-line-strong); border-radius: 999px;
   box-shadow: var(--mb-shadow);
-  font: 500 12px/1.4 var(--mb-font-sans); text-align: left; text-decoration: none;
-  cursor: pointer;
+  white-space: nowrap;
+  /* the edge comes back once a card has folded back into the pill, and the fill before the card is hidden */
+  transition: border-color .12s .22s, box-shadow .12s .22s, background-color 0s .22s;
 }
-.mb-problems { cursor: default; }
-.mb-problems button { display: inline-flex; align-items: center; min-height: 24px; margin: 0; padding: 0 3px; color: inherit; background: none; border: 0; font: inherit; text-decoration: none; border-radius: 4px; cursor: pointer; }
-.mb-problems button:hover { text-decoration: underline; text-underline-offset: 3px; }
-.mb-badge:hover { background: var(--mb-surface-2); }
-.mb-badge:focus-visible, .mb-problems button:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; }
-.mb-problems button:focus-visible { outline-offset: -2px; }
-.mb-dock svg { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--mb-warning); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.mb-dock [data-kind='error'] svg { stroke: var(--mb-error); }
-.mb-dock .mb-spin { animation: mb-spin 1s linear infinite; }
+/* in front of a card, the pill keeps its size and hands its edge and fill to the card, so nothing in it moves and the card's corner shows */
+.mb-dock[data-peek] .mb-badge { background-color: transparent; border-color: transparent; box-shadow: none; transition-delay: 0s; }
+
+/* the status light: the worst level, with a ring while a source is checking */
+.mb-lamp {
+  position: relative; flex: none; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%;
+  color: var(--mb-error); background: currentColor;
+  box-shadow: 0 0 6px 1px color-mix(in oklab, currentColor 50%, transparent);
+  transition: color .3s;
+}
+.mb-lamp[data-level='warning'] { color: var(--mb-warning); }
+.mb-lamp[data-level='ok'] { color: var(--mb-ok); }
+.mb-lamp::after {
+  content: ''; position: absolute; inset: -3.5px; border-radius: 50%;
+  border: 1.25px solid transparent; border-top-color: var(--mb-fg-muted);
+  opacity: 0; transition: opacity .2s;
+}
+.mb-lamp[data-checking]::after { opacity: 1; animation: mb-spin .7s linear infinite; }
 @keyframes mb-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .mb-dock .mb-spin { animation: none; }
+
+/* each count folds to nothing when it has no value, so the pill eases between widths. The 0 minimum and the clip
+   keep the button's padding from holding 16px of a folded count open */
+.mb-slot { display: grid; grid-template-columns: minmax(0, 0fr); overflow: hidden; opacity: 0; transition: grid-template-columns var(--mb-fold) var(--mb-ease), opacity .18s; }
+.mb-slot[data-on] { grid-template-columns: minmax(0, 1fr); opacity: 1; }
+.mb-slot > * { min-width: 0; overflow: hidden; }
+/* a count is a button that opens the problems of its level */
+.mb-count {
+  box-sizing: border-box; display: flex; align-items: center; justify-content: flex-end;
+  height: 24px; margin: 0; padding: 0 8px;
+  color: inherit; background: none; border: 0; border-radius: 12px;
+  font: inherit; white-space: nowrap; cursor: pointer;
+  transition: background-color .12s;
 }
-.mb-badge-count { flex: none; }
-.mb-problems-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mb-dock > .mb-badge, .mb-dock > .mb-problems { transition: opacity .15s, visibility 0s; }
-.mb-dock[data-peek] > .mb-badge, .mb-dock[data-peek] > .mb-problems { opacity: 0; visibility: hidden; transition: opacity .15s, visibility 0s .15s; }
+@media (hover: hover) and (pointer: fine) {
+  button.mb-count:hover { background: var(--mb-surface-2); }
+}
+button.mb-count:active { background: var(--mb-line-strong); transition-duration: 0s; }
+button.mb-count:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: -2px; }
+.mb-count-num { position: relative; display: inline-grid; overflow: hidden; height: 16px; font-weight: 600; }
+.mb-count-num > span { grid-area: 1 / 1; text-align: right; }
+/* the number rolling away leaves the layout, so the cell is already the new number's width */
+.mb-count-num > .mb-count-out { position: absolute; right: 0; }
+.mb-count-word { color: var(--mb-fg-muted); white-space: pre; }
+.mb-slot[data-level='failed'] .mb-count-word { color: var(--mb-fg); }
+/* one check that could not run is named, so its count is left out */
+.mb-slot[data-named] .mb-count-num { display: none; }
+.mb-slot[data-level='clear'] .mb-count { color: var(--mb-fg-muted); cursor: default; }
+
+/* the card grows out of the pill, which stays its footer */
 .mb-peek {
   position: absolute; right: 0; bottom: 0;
   box-sizing: border-box; display: block;
-  width: min(380px, calc(100vw - 32px)); margin: 0; padding: 6px 12px 9px;
+  width: var(--mb-panel); margin: 0; padding: 6px 6px calc(var(--mb-pill) + 4px);
   overflow: hidden;
   color: var(--mb-fg); background: var(--mb-bg);
-  border: 1px solid var(--mb-line-strong); border-radius: 12px;
+  border: 1px solid var(--mb-line-strong); border-radius: 14px;
   box-shadow: var(--mb-shadow);
-  font: 500 12px/1.4 var(--mb-font-sans); text-align: left;
-  cursor: pointer;
+  font: inherit; text-align: left; cursor: pointer;
 }
+.mb-peek::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: var(--mb-pill); height: 1px; background: var(--mb-line); }
 .mb-dock[data-dock$='left'] .mb-peek { right: auto; left: 0; }
-.mb-dock[data-dock^='top'] .mb-peek { bottom: auto; top: 0; }
-.mb-peek:hover { background: var(--mb-surface-2); }
+.mb-dock[data-dock^='top'] .mb-peek { bottom: auto; top: 0; padding: calc(var(--mb-pill) + 4px) 6px 6px; }
+.mb-dock[data-dock^='top'] .mb-peek::after { bottom: auto; top: var(--mb-pill); }
+/* border-box, so the width morph() pins while the card grows is the width the text has at rest */
+.mb-peek-inner { box-sizing: border-box; display: grid; grid-template-columns: 6px minmax(0, 1fr); gap: 3px 10px; align-items: start; padding: 8px 10px 9px; border-radius: 8px; transition: background-color .12s; }
+@media (hover: hover) and (pointer: fine) {
+  .mb-peek:hover .mb-peek-inner { background: var(--mb-surface-2); }
+}
 .mb-peek:focus-visible { outline: 2px solid var(--mb-accent-ink); outline-offset: 2px; }
-.mb-peek-inner { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 2px 8px; align-items: start; }
-.mb-peek-inner svg { margin-top: 1px; }
+.mb-dot { width: 6px; height: 6px; margin-top: 5px; color: var(--mb-error); fill: currentColor; }
+[data-kind='warning'] .mb-dot { color: var(--mb-warning); }
 .mb-peek-message { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.mb-peek-hint { grid-column: 2; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--mb-fg-muted); font-weight: 400; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.mb-peek code { font-family: var(--mb-font-mono); font-size: max(12px, .9em); }
+.mb-peek-hint { grid-column: 2; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--mb-fg-muted); font-weight: 400; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mb-dock code { font-family: var(--mb-font-mono); font-size: max(12px, .9em); }
 .mb-peek-meta { grid-column: 2; min-width: 0; overflow: hidden; color: var(--mb-fg-muted); font: 12px/1.4 var(--mb-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mb-dock { --mb-fold: 1ms; }
+  .mb-lamp[data-checking]::after { animation: none; }
+}
+
 .mb-drawer {
   position: fixed; top: 16px; right: 16px; bottom: 58px; z-index: 2147482999;
   width: min(960px, calc(100vw - 32px));

@@ -147,8 +147,12 @@ test.describe('README assets', () => {
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
       await page.goto('http://my-bad.test/')
-      await page.locator('.mb-problems').waitFor()
-      const box = (await page.locator('.mb-problems').boundingBox())!
+      const pill = page.locator('.mb-badge')
+      await expect(pill).toHaveAttribute('title', 'Problems: 3 errors, 2 warnings, checking')
+      // the counts fold in, so measure once they are on and the pill's transitions are done
+      await expect(pill.locator('.mb-slot[data-on]')).toHaveCount(2)
+      await pill.evaluate(el => new Promise(requestAnimationFrame).then(() => Promise.all(el.getAnimations({ subtree: true }).filter(a => a instanceof CSSTransition).map(a => a.finished))))
+      const box = (await pill.boundingBox())!
       const clip = {
         x: box.x - 24,
         y: box.y - 24,
@@ -171,7 +175,7 @@ test.describe('README assets', () => {
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-problems').getByRole('button', { name: 'TypeScript 3' }).click()
+        await page.locator('my-bad-overlay-badge .mb-slot[data-level="error"] button').click()
         await page.frameLocator('my-bad-overlay-badge .mb-drawer iframe').locator('.mb-message').waitFor()
         await expect(page).toHaveScreenshot(`drawer-${scheme}.png`, {
           maxDiffPixels: 2000,
@@ -187,12 +191,13 @@ test.describe('README assets', () => {
   })
 
   test('warnings panel', async ({ page }) => {
-    const showcase = await startShowcase({ devtools: false })
+    // the page's own warnings open in the overlay while they are all there is
+    const showcase = await startShowcase({ devtools: false, problems: false })
     try {
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.locator('my-bad-overlay-badge .mb-slot[data-level="warning"] button').click()
         await page.locator('my-bad-overlay [data-message]').first().waitFor()
         await expect(page).toHaveScreenshot(`warnings-${scheme}.png`, {
           maxDiffPixels: 2000,
@@ -214,7 +219,7 @@ test.describe('README assets', () => {
       for (const scheme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
         await page.goto(showcase.url)
-        await page.locator('my-bad-overlay-badge .mb-badge').click()
+        await page.locator('my-bad-overlay-badge .mb-slot[data-level="error"] button').click()
         await page.frameLocator('iframe').locator('.mb-message').waitFor()
         await expect(page).toHaveScreenshot(`devtools-${scheme}.png`, {
           maxDiffPixels: 2000,

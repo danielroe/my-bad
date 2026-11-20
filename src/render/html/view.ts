@@ -10,11 +10,12 @@ import { stringifyValue } from '../../report/stringify'
 import { groupFrames } from '../frames'
 import { attr, escapeHtml, inlineHtml, safeUrl } from './escape'
 import { highlightLine } from './highlight'
-import { calmStatus, facets, filtering, listing, nothingOpen, parseQuery, sourceTone } from './problems'
+import { ago, calmStatus, facets, filtering, listing, nothingOpen, parseQuery, sourceTone } from './problems'
 import { DOCKED_TITLE } from './state'
 import { countsLabel, dockedCounts, firstLine, plural, repeatsLabel, reportLocation, warningCount } from './summary'
 
 export const ICONS = {
+  broken: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
   file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6v20h12V6zM14 2v6h4M9 13h6m-6 4h6"/></svg>',
   down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
   context: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8 4-4 4 4M12 4v6m-4 6 4 4 4-4m-4 4v-6M4 12h16"/></svg>',
@@ -302,7 +303,7 @@ export function renderIndex(state: DockedState, index: DockedIndex, shown?: Badg
   const groups = [
     current && `<section class="mb-index-group"><h2><span class="mb-index-label">Error</span></h2><ul>${renderIndexItem(current, indexLocation(current, state), shown)}</ul></section>`,
     shownWarnings.length && `<section class="mb-index-group"><h2><span class="mb-index-label">Warnings</span><span class="mb-count">${shownWarnings.length}</span></h2><ul>${shownWarnings.map(entry => renderIndexItem(entry, '', shown)).join('')}</ul></section>`,
-    ...listedSets.map(set => renderIndexSet(set, state, shown)),
+    ...listedSets.filter(set => !(failed(set) && !set.reports?.length)).map(set => renderIndexSet(set, state, shown)),
   ].filter(Boolean)
   if (view.group === 'file') {
     groups.splice(0, groups.length, ...renderByFile([
@@ -317,11 +318,41 @@ export function renderIndex(state: DockedState, index: DockedIndex, shown?: Badg
   }
   return `<nav class="mb-index" data-index aria-label="Errors, warnings and problems">${all.length
     ? renderTabs(state, index)
-    : ''}${groups.length
+    : ''}${renderBroken(index, shown)}${groups.length
     ? groups.join('')
     : filtering(view)
       ? `<div class="mb-index-empty"><p class="mb-index-empty-title">Nothing matches <code>${escapeHtml(view.filter!.trim())}</code></p><button type="button" class="mb-index-reset" data-action="show-all">Clear the filter</button></div>`
       : '<p class="mb-index-empty">Nothing to report.</p>'}</nav>`
+}
+
+/**
+ * Checks that could not run, above the list and outside its filters. A failed check is a broken tool, not a
+ * problem in the code, so it is shown as a notice rather than as an entry of the list.
+ */
+function renderBroken(index: DockedIndex, shown: BadgeFocus | undefined): string {
+  const broken = index.problems.filter(failed)
+  if (!broken.length) {
+    return ''
+  }
+  // the same heading and rows as the rest of the list, with the reason where a problem shows its location
+  return `<section class="mb-index-group" data-index-broken><h2><span class="mb-index-label">Couldn't run</span></h2><ul>${broken.map(set => `<li><button type="button" class="mb-index-item" data-action="select" data-kind="error" data-source="${escapeHtml(set.source)}" aria-current="${shown?.source === set.source && !shown.id}">${ICONS.broken}<span class="mb-index-title">${escapeHtml(set.group
+    ? `${set.group} · ${set.label ?? set.source}`
+    : set.label ?? set.source)}</span>${set.error
+    ? `<span class="mb-index-loc">${escapeHtml(set.error)}</span>`
+    : ''}</button></li>`).join('')}</ul></section>`
+}
+
+/** A check that could not run, laid out like a report: what failed, why, and what happens next. */
+function renderBrokenCheck(set: DockedIndex['problems'][number], now: number): string {
+  const name = set.group
+    ? `${set.group} · ${set.label ?? set.source}`
+    : set.label ?? set.source
+  const tried = set.lastRun?.startedAt
+  return `<div data-unselected><article class="mb-report" data-kind="error" aria-labelledby="mb-broken-title"><div class="mb-report-heading"><p class="mb-kicker"><span class="mb-name">Check failed</span></p></div><h1 class="mb-message" id="mb-broken-title">${escapeHtml(name)} couldn't run</h1><p class="mb-hint">Its problems are left out until it runs again${tried
+    ? `, last tried ${escapeHtml(ago(tried, now))}`
+    : ''}. Fix the cause below, and ${escapeHtml(set.label ?? set.source)} runs on the next change.</p>${set.error
+    ? `<section class="mb-source mb-broken-reason" aria-label="Why it failed"><pre>${escapeHtml(set.error)}</pre></section>`
+    : ''}</article></div>`
 }
 
 /** What a docked view shows while nothing is open: a calm state, and what each source is doing. */
@@ -353,6 +384,9 @@ export function renderUnselected(state: DockedState, index: DockedIndex, shown: 
   const set = shown?.source === undefined
     ? undefined
     : index.problems.find(entry => entry.source === shown.source)
+  if (set && failed(set)) {
+    return renderBrokenCheck(set, state.view?.now ?? Date.now())
+  }
   return set
     ? `<div class="mb-docked-empty" data-unselected><p class="mb-docked-empty-title">${escapeHtml(set.label ?? set.source)}</p><p>${escapeHtml(calmStatus(set, state.view?.now ?? Date.now()))}</p></div>`
     : '<div class="mb-docked-empty" data-unselected><p>Select an entry in the list to see it here.</p></div>'
