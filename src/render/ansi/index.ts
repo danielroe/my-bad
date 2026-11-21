@@ -89,12 +89,18 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
     : head.trimEnd())
   const styledHeadline = styleCode(headline, report.codeSpans, p)
   const messageWidth = width - 2
-  const messageLines = wrap(styledHeadline, messageWidth, '')
+  let messageLines = wrap(styledHeadline, messageWidth, '')
   const firstWidth = width - visibleWidth(title)
   if (visibleWidth(messageLines[0] ?? '') > firstWidth) {
     const narrow = wrap(styledHeadline, firstWidth, '')
     if (narrow.length > 1) {
       messageLines.splice(0, messageLines.length, narrow[0] ?? '', ...wrap(narrow.slice(1).join(' '), messageWidth, ''))
+    }
+    else {
+      const word = messageLines[0] ?? ''
+      if (visibleWidth(word) > 0 && visibleWidth(word) <= messageWidth) {
+        messageLines = ['', word]
+      }
     }
   }
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)

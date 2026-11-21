@@ -255,6 +255,16 @@ describe('first line wrap', () => {
       expect(line.length).toBeLessThanOrEqual(80)
     }
   })
+
+  it('moves an unbroken word below the title when it does not fit beside it', () => {
+    const output = stripAnsi(renderAnsi(report('a'.repeat(70), { status: 500 }), { colors: false, width: 80 }))
+    const lines = output.split('\n')
+    expect(lines[0]!.trimEnd()).toBe('✖ Error (500):')
+    expect(lines[1]).toBe(`  ${'a'.repeat(70)}`)
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(80)
+    }
+  })
 })
 
 describe('duplicate cause frames', () => {
