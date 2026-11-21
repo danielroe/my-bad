@@ -9,7 +9,7 @@ import { displayPath, isFilePath } from '../../report/path'
 import { stringifyValue } from '../../report/stringify'
 import { snippetTokens } from '../../report/tokenize'
 import { groupFrames, groupSummary } from '../frames'
-import { createPalette, detectAnsiEnv, truncateMiddle, wrap } from './style'
+import { createPalette, detectAnsiEnv, truncateMiddle, visibleWidth, wrap } from './style'
 
 export interface RenderAnsiOptions {
   cwd?: string
@@ -87,7 +87,22 @@ function renderReport(report: ErrorReport, ctx: Ctx, depth: number): string[] {
   const { headline, body } = splitHeadline(rest
     ? `${head}…`
     : head.trimEnd())
-  const messageLines = wrap(styleCode(headline, report.codeSpans, p), width - 2, '')
+  const styledHeadline = styleCode(headline, report.codeSpans, p)
+  const messageWidth = width - 2
+  let messageLines = wrap(styledHeadline, messageWidth, '')
+  const firstWidth = width - visibleWidth(title)
+  if (visibleWidth(messageLines[0] ?? '') > firstWidth) {
+    const narrow = wrap(styledHeadline, firstWidth, '')
+    if (narrow.length > 1) {
+      messageLines.splice(0, messageLines.length, narrow[0] ?? '', ...wrap(narrow.slice(1).join(' '), messageWidth, ''))
+    }
+    else {
+      const word = messageLines[0] ?? ''
+      if (visibleWidth(word) > 0 && visibleWidth(word) <= messageWidth) {
+        messageLines = ['', word]
+      }
+    }
+  }
   out.push(`${indent}${title}${p.bold(messageLines[0] ?? '')}`)
   for (const line of messageLines.slice(1)) {
     out.push(`${indent}  ${p.bold(line)}`)
