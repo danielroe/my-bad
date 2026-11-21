@@ -217,6 +217,46 @@ describe('echoing causes', () => {
   })
 })
 
+describe('first line wrap', () => {
+  const report = (message: string, overrides: Partial<ErrorReport> = {}): ErrorReport => ({
+    id: 'wrap',
+    kind: 'error',
+    name: 'Error',
+    message,
+    frames: [],
+    causes: [],
+    sections: [],
+    timestamp: 0,
+    ...overrides,
+  })
+
+  const message = 'Failed to apply discount code SUMMER-2026 to cart c_19be07: the pricing service responded with 422 Unprocessable Entity (the code expired on 2026-09-01 and cannot be combined with items already on sale)'
+
+  it('leaves room for the title on the first line', () => {
+    const output = stripAnsi(renderAnsi(report(message, { status: 500 }), { colors: false, width: 80 }))
+    const lines = output.split('\n')
+    expect(lines[0]).toContain('Error (500):')
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(80)
+    }
+  })
+
+  it('leaves room for the Caused by: title on nested causes', () => {
+    const cause = report(message, { name: 'TypeError', status: 422 })
+    const output = stripAnsi(renderAnsi(
+      report('Failed to fetch', {
+        causes: [cause],
+      }),
+      { colors: false, width: 80 },
+    ))
+    const lines = output.split('\n')
+    expect(lines.some(line => line.startsWith('  Caused by: TypeError (422):'))).toBe(true)
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(80)
+    }
+  })
+})
+
 describe('duplicate cause frames', () => {
   it('renders the innermost cause frames when they are all dependency frames', async () => {
     const inner = new TypeError('useSwitchLocalePath is not a function')
